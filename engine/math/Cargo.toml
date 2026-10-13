@@ -1,0 +1,21 @@
+[package]
+name = "wamr-math"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Port of the three.js r186 math primitives (Phase 1 of WAMR3D)"
+
+[features]
+default = []
+# wasm32 simd128 path for Matrix4 multiply and vector transforms.
+# On wasm32 this needs RUSTFLAGS="-C target-feature=+simd128". No-op on other targets.
+simd = []
+
+[dev-dependencies]
+# float_roundtrip: parse fixture numbers exactly (the default parser can be off by one ulp)
+serde_json = { version = "1", features = ["float_roundtrip"] }
+
+[lib]
+# No doc tests: every example lives in the unit tests. This also keeps
+# `cargo test --features simd` on wasm32 from needing RUSTDOCFLAGS as well as RUSTFLAGS.
+doctest = false

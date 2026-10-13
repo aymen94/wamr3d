@@ -1,0 +1,3 @@
+# `cargo test --target wasm32-wasip1` runs the test binaries under Node's WASI.
+[target.wasm32-wasip1]
+runner = "node --no-warnings tools/wasi-runner.mjs"
