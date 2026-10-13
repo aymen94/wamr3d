@@ -1,0 +1,16 @@
+[package]
+name = "wamr-objects"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Built-in shapes for WAMR3D"
+
+[dependencies]
+wamr-core = { path = "../core" }
+wamr-math = { path = "../math" }
+
+[dev-dependencies]
+serde_json = { version = "1", features = ["float_roundtrip"] }
+
+[lib]
+doctest = false
