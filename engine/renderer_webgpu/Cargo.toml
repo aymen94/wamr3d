@@ -1,0 +1,16 @@
+[package]
+name = "wamr-renderer"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Frame preparation and shaders for the WAMR3D WebGPU renderer"
+
+[dependencies]
+wamr-core = { path = "../core" }
+wamr-math = { path = "../math" }
+
+[dev-dependencies]
+wamr-objects = { path = "../objects" }
+
+[lib]
+doctest = false
