@@ -1,0 +1,15 @@
+[package]
+name = "wamr-core"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Scene model of WAMR3D: entities, components, geometry and resource stores (Phase 2)"
+
+[dependencies]
+wamr-math = { path = "../math" }
+
+[dev-dependencies]
+serde_json = { version = "1", features = ["float_roundtrip"] }
+
+[lib]
+doctest = false
