@@ -1,0 +1,12 @@
+{
+	"compilerOptions": {
+		"target": "es2022",
+		"module": "esnext",
+		"moduleResolution": "bundler",
+		"lib": [ "esnext", "dom" ],
+		"strict": true,
+		"noEmit": true,
+		"skipLibCheck": false
+	},
+	"files": [ "typecheck.ts", "../../dist/wamr3d/compat.d.ts", "../../dist/wamr3d/index.d.ts" ]
+}
