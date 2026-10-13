@@ -1,0 +1,10 @@
+html, body { margin: 0; height: 100%; background: #14161a; color: #e6e8eb; font: 13px/1.5 system-ui, sans-serif; }
+body { overflow: hidden; }
+canvas { display: block; width: 100vw; height: 100vh; cursor: grab; touch-action: none; }
+a { color: #7fb0ff; }
+#panel { position: fixed; top: 12px; left: 12px; padding: 10px 14px; background: rgba(20, 22, 26, 0.85); border: 1px solid #2c3038; border-radius: 8px; min-width: 270px; }
+#panel h1 { margin: 0 0 6px; font-size: 14px; }
+#panel table { border-collapse: collapse; width: 100%; }
+#panel td { padding: 1px 0; }
+#panel td:last-child { text-align: right; font-variant-numeric: tabular-nums; padding-left: 16px; }
+.muted { color: #9aa1ab; margin: 8px 0 0; }

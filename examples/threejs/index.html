@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>three.js r186 baseline scene</title>
+<link rel="icon" href="../../favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="../../favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="../../favicon-16x16.png">
+<link rel="apple-touch-icon" href="../../apple-touch-icon.png">
+<link rel="manifest" href="../../site.webmanifest">
+<link rel="stylesheet" href="../compare/style.css">
+</head>
+<body>
+<!-- Baseline: the comparison scene built, animated and drawn entirely by three.js r186. WAMR3D is not loaded.
+     ?engine=three-webgpu (default), three-webgl, or three (the older scene with a grid, WebGL). -->
+<canvas id="view"></canvas>
+<div id="panel">
+	<h1 id="engine">loading…</h1>
+	<table>
+		<tr><td>Frame rate</td><td id="fps">–</td></tr>
+		<tr><td>Frame time (median)</td><td id="frame">–</td></tr>
+		<tr><td>CPU update (transforms + matrices)</td><td id="update">–</td></tr>
+		<tr><td>Draw submission</td><td id="render">–</td></tr>
+		<tr><td>Objects</td><td id="objects">–</td></tr>
+		<tr><td>Time to first frame</td><td id="first">–</td></tr>
+		<tr><td>WebAssembly init</td><td id="wasm">–</td></tr>
+	</table>
+	<p class="muted"><a href="../compare/index.html" target="_top">Comparison page</a> · <a href="?engine=three-webgpu">WebGPU</a> · <a href="?engine=three-webgl">WebGL</a> · drag to orbit · wheel to zoom</p>
+</div>
+<script type="module">
+import { run } from '../compare/run.js';
+run( 'three-webgpu' );
+</script>
+</body>
+</html>

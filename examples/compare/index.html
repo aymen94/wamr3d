@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WAMR3D vs three.js r186</title>
+<link rel="icon" href="../../favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="../../favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="../../favicon-16x16.png">
+<link rel="apple-touch-icon" href="../../apple-touch-icon.png">
+<link rel="manifest" href="../../site.webmanifest">
+<link rel="stylesheet" href="./style.css">
+<style>
+	body { overflow: auto; padding: 14px; box-sizing: border-box; }
+	h1 { font-size: 16px; margin: 0 0 6px; }
+	.row { display: flex; gap: 10px; height: calc(100vh - 150px); min-height: 320px; }
+	.row > div { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+	iframe { flex: 1; border: 1px solid #2c3038; border-radius: 8px; width: 100%; }
+	select, button { background: #22262d; color: inherit; border: 1px solid #3a404a; border-radius: 6px; padding: 3px 8px; font: inherit; }
+	p { margin: 6px 0; max-width: 1100px; }
+</style>
+</head>
+<body>
+<h1>WAMR3D vs three.js r186: the same scene</h1>
+<p>
+	Compare:
+	<select id="mode">
+		<option value="api,three-webgpu">each engine with its own WebGPU renderer, same scene code</option>
+		<option value="api,three-webgl">WAMR3D (WebGPU) against three.js (WebGL), same scene code</option>
+		<option value="native,three-webgpu">WAMR3D batched calls against three.js (WebGPU)</option>
+		<option value="wamr3d,three">transforms only: both drawn by the three.js WebGL renderer</option>
+	</select>
+	Small cubes:
+	<select id="satellites"><option>12</option><option>500</option><option>2000</option><option>5000</option><option>10000</option></select>
+	<button id="reload">Reload both</button>
+	· open one at a time for a fair measurement:
+	<a id="left-link" href="#">left</a> · <a id="right-link" href="#">right</a> ·
+	<a href="../browser/index.html">WAMR3D demo with parity check</a>
+</p>
+<p class="muted">
+	"CPU update" is animation, world matrices and camera matrices; "draw submission" is the renderer's work on the CPU.
+	Frame rate is capped by the display and shared by two canvases in this view, so it is not an engine measurement:
+	use <code>node examples/compare/measure.mjs --gpu</code> for numbers.
+</p>
+<div class="row">
+	<div><iframe id="left" title="WAMR3D"></iframe></div>
+	<div><iframe id="right" title="three.js r186"></iframe></div>
+</div>
+<script>
+	const select = document.getElementById( 'satellites' ), mode = document.getElementById( 'mode' );
+	function load() {
+
+		const engines = mode.value.split( ',' );
+
+		[ 'left', 'right' ].forEach( ( side, i ) => {
+
+			const url = `./run.html?engine=${engines[ i ]}&satellites=${select.value}`;
+			document.getElementById( side ).src = url;
+			document.getElementById( side + '-link' ).href = url;
+			document.getElementById( side + '-link' ).textContent = engines[ i ];
+
+		} );
+
+	}
+	select.addEventListener( 'change', load );
+	mode.addEventListener( 'change', load );
+	document.getElementById( 'reload' ).addEventListener( 'click', load );
+	load();
+</script>
+</body>
+</html>

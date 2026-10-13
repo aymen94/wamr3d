@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WAMR3D WebGPU demo</title>
+<link rel="icon" href="../../favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="../../favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="../../favicon-16x16.png">
+<link rel="apple-touch-icon" href="../../apple-touch-icon.png">
+<link rel="manifest" href="../../site.webmanifest">
+<link rel="stylesheet" href="../compare/style.css">
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="panel">
+	<h1 id="status">loading…</h1>
+	<table>
+		<tr><td>Frame rate</td><td id="fps">–</td></tr>
+		<tr><td>Objects</td><td id="objects">–</td></tr>
+		<tr><td>Draw calls</td><td id="calls">–</td></tr>
+		<tr><td>Triangles</td><td id="triangles">–</td></tr>
+	</table>
+	<p class="muted">drag to orbit · wheel to zoom · click an object to recolour it · <a href="?textured=1">textured</a> · <a href="../../parity/visual/index.html">visual parity</a></p>
+</div>
+<script type="module" src="./main.js"></script>
+</body>
+</html>

@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WAMR3D visual check</title>
+<link rel="icon" href="../../favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="../../favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="../../favicon-16x16.png">
+<link rel="apple-touch-icon" href="../../apple-touch-icon.png">
+<link rel="manifest" href="../../site.webmanifest">
+<link rel="stylesheet" href="../compare/style.css">
+<style>
+	body { overflow: auto; padding: 14px; }
+	canvas { width: 640px; height: 400px; position: static; display: inline-block; border: 1px solid #2c3038; }
+	figure { display: inline-block; margin: 0 8px 8px 0; }
+</style>
+</head>
+<body>
+<h1 id="result">rendering…</h1>
+<p class="muted"><a href="./visual.html">diffuse</a> · <a href="./visual.html?standard">physically based</a> · <a href="./visual.html?standard&textured">physically based with textures</a></p>
+<figure><canvas id="native" width="640" height="400"></canvas><figcaption>WAMR3D, WebGPU</figcaption></figure>
+<figure><canvas id="reference" width="640" height="400"></canvas><figcaption>three.js r186, WebGL</figcaption></figure>
+<figure><canvas id="difference" width="640" height="400"></canvas><figcaption>difference × 8</figcaption></figure>
+<script type="module">
+// Draws the same scene, from the same scene code, with the WAMR3D WebGPU renderer and
+// with the reference renderer, and compares the two images pixel by pixel.
+
+import { loadThreeWebGL } from '../three-reference.js';
+import * as WAMR3D from '../../dist/wamr3d/compat.js';
+import { buildScene, CAMERA } from './scene.js';
+
+const WIDTH = 640, HEIGHT = 400, TIME = 1.7, SATELLITES = 36;
+const options = { standard: location.search.includes( 'standard' ), textured: location.search.includes( 'textured' ) };
+const result = window.__visual = { ready: false, error: null };
+
+function pixels( canvas ) {
+
+	const copy = new OffscreenCanvas( WIDTH, HEIGHT ).getContext( '2d', { willReadFrequently: true } );
+	copy.drawImage( canvas, 0, 0 );
+	return copy.getImageData( 0, 0, WIDTH, HEIGHT ).data;
+
+}
+
+try {
+
+	await WAMR3D.init();
+	const THREE = await loadThreeWebGL();
+
+	const reference = buildScene( THREE, SATELLITES, options );
+	reference.update( TIME );
+	reference.orbit( CAMERA, WIDTH / HEIGHT );
+	const webgl = new THREE.WebGLRenderer( { canvas: document.getElementById( 'reference' ), antialias: true, preserveDrawingBuffer: true } );
+	webgl.setSize( WIDTH, HEIGHT, false );
+	webgl.render( reference.scene, reference.camera );
+	const expected = pixels( webgl.domElement );
+
+	const native = buildScene( WAMR3D, SATELLITES, options );
+	native.update( TIME );
+	native.orbit( CAMERA, WIDTH / HEIGHT );
+	const webgpu = new WAMR3D.WebGPURenderer( { canvas: document.getElementById( 'native' ), antialias: true } );
+	await webgpu.init();
+	webgpu.setSize( WIDTH, HEIGHT, false );
+	webgpu.render( native.scene, native.camera );
+	const actual = pixels( webgpu.domElement );
+
+	const view = document.getElementById( 'difference' ).getContext( '2d' ), image = view.createImageData( WIDTH, HEIGHT );
+	let total = 0, different = 0, covered = 0;
+
+	for ( let i = 0; i < actual.length; i += 4 ) {
+
+		let worst = 0;
+
+		for ( let c = 0; c < 3; c ++ ) {
+
+			const d = Math.abs( actual[ i + c ] - expected[ i + c ] );
+			total += d;
+			worst = Math.max( worst, d );
+			image.data[ i + c ] = Math.min( 255, d * 8 );
+
+		}
+
+		image.data[ i + 3 ] = 255;
+		if ( worst > 12 ) different ++;
+		if ( Math.abs( actual[ i ] - 0x14 ) + Math.abs( actual[ i + 1 ] - 0x16 ) + Math.abs( actual[ i + 2 ] - 0x1a ) > 12 ) covered ++;
+
+	}
+
+	view.putImageData( image, 0, 0 );
+
+	const count = WIDTH * HEIGHT;
+	Object.assign( result, {
+		ready: true,
+		meanDifference: total / ( count * 3 ),
+		differentFraction: different / count,
+		coveredFraction: covered / count,
+		drawCalls: webgpu.info.render.calls,
+		referenceCalls: webgl.info.render.calls
+	} );
+	document.getElementById( 'result' ).textContent = `mean difference ${result.meanDifference.toFixed( 3 )} of 255 · ${( result.differentFraction * 100 ).toFixed( 2 )}% of pixels differ by more than 12 · ${result.drawCalls} draw calls`;
+
+} catch ( error ) {
+
+	result.error = String( error?.stack || error );
+	result.ready = true;
+	document.getElementById( 'result' ).textContent = 'failed: ' + ( error?.message || error );
+
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WAMR3D browser demo</title>
+<link rel="icon" href="../../favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="../../favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="../../favicon-16x16.png">
+<link rel="apple-touch-icon" href="../../apple-touch-icon.png">
+<link rel="manifest" href="../../site.webmanifest">
+<style>
+	html, body { margin: 0; height: 100%; background: #14161a; color: #e6e8eb; font: 13px/1.5 system-ui, sans-serif; overflow: hidden; }
+	canvas { display: block; width: 100vw; height: 100vh; cursor: grab; touch-action: none; }
+	canvas:active { cursor: grabbing; }
+	#panel { position: fixed; top: 12px; left: 12px; padding: 10px 14px; background: rgba(20, 22, 26, 0.85); border: 1px solid #2c3038; border-radius: 8px; min-width: 250px; }
+	#panel h1 { margin: 0 0 6px; font-size: 14px; }
+	#panel table { border-collapse: collapse; width: 100%; }
+	#panel td { padding: 1px 0; }
+	#panel td:last-child { text-align: right; font-variant-numeric: tabular-nums; padding-left: 16px; }
+	.ok { color: #6fd08c; } .bad { color: #ff6b6b; } .muted { color: #9aa1ab; }
+	label { display: block; margin-top: 8px; }
+	#hint { position: fixed; bottom: 12px; left: 12px; }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="panel">
+	<h1>WAMR3D</h1>
+	<table>
+		<tr><td>WebAssembly</td><td id="wasm" class="muted">loading…</td></tr>
+		<tr><td>Renderer</td><td id="renderer" class="muted">–</td></tr>
+		<tr><td>Frame rate</td><td id="fps">–</td></tr>
+		<tr><td>Objects in world</td><td id="objects">–</td></tr>
+		<tr><td>Transform parity</td><td id="parity" class="muted">–</td></tr>
+		<tr><td>Largest difference</td><td id="difference">–</td></tr>
+	</table>
+	<label><input type="checkbox" id="compare"> Comparison mode (loads three.js r186 from a CDN and recomputes every frame with it)</label>
+	<label><input type="checkbox" id="spin" checked> Animate</label>
+</div>
+<div id="hint" class="muted">Drag to orbit · wheel to zoom · draw with <a href="./" style="color:#7fb0ff">WAMR3D WebGPU</a> (default) or the <a href="?renderer=three" style="color:#7fb0ff">three.js adapter</a> (reference)</div>
+<script type="module" src="./main.js"></script>
+</body>
+</html>

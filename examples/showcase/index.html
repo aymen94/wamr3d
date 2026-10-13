@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WAMR3D showcase: belts</title>
+<link rel="icon" href="../../favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="../../favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="../../favicon-16x16.png">
+<link rel="apple-touch-icon" href="../../apple-touch-icon.png">
+<link rel="manifest" href="../../site.webmanifest">
+<style>
+	html, body { margin: 0; height: 100%; background: #070a12; color: #e6e8eb; font: 13px/1.45 system-ui, sans-serif; overflow: hidden; }
+	#stage, #stage canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; touch-action: none; cursor: grab; }
+	.box { position: fixed; top: 12px; background: rgba(10, 13, 22, 0.82); border: 1px solid #252b3a; border-radius: 8px; padding: 10px 12px; }
+	#stats { left: 12px; width: 320px; }
+	#panel { right: 12px; width: 250px; max-height: calc(100vh - 48px); overflow: auto; }
+	h1 { margin: 0; font-size: 15px; }
+	.muted { color: #8b93a3; }
+	#summary { margin: 2px 0 8px; }
+	table { border-collapse: collapse; width: 100%; }
+	td { padding: 1px 0; }
+	td:last-child, th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; padding-left: 12px; }
+	th { font-weight: 500; color: #8b93a3; text-align: left; }
+	label { display: grid; grid-template-columns: 92px 1fr 42px; align-items: center; gap: 6px; margin: 4px 0; }
+	label.check { grid-template-columns: 18px 1fr; }
+	label output { text-align: right; font-variant-numeric: tabular-nums; color: #8b93a3; }
+	select, button { background: #171c29; color: inherit; border: 1px solid #2f3648; border-radius: 5px; padding: 3px 6px; font: inherit; grid-column: 2 / 4; min-width: 0; }
+	button { cursor: pointer; width: 100%; margin-top: 6px; }
+	button:disabled { opacity: 0.5; cursor: default; }
+	input[type=range] { width: 100%; min-width: 0; accent-color: #6ea8ff; }
+	h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #8b93a3; margin: 10px 0 2px; }
+	#results { margin-top: 8px; }
+	#results td, #results th { padding: 1px 0 1px 8px; white-space: nowrap; }
+	#results td:first-child, #results th:first-child { padding-left: 0; }
+	.best { color: #6fd08c; }
+	#error { color: #ff7b7b; white-space: pre-wrap; max-width: 420px; }
+	a { color: #7fb0ff; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+
+<div id="stats" class="box">
+	<h1 id="engine">loading…</h1>
+	<div id="summary" class="muted"></div>
+	<table>
+		<tr><td>Frame rate</td><td id="fps">–</td></tr>
+		<tr><td>Frame time <span class="muted">(whole frame, median)</span></td><td id="frame">–</td></tr>
+		<tr><td>CPU update <span class="muted">(animation + matrices)</span></td><td id="update">–</td></tr>
+		<tr><td>Draw submission <span class="muted">(renderer, CPU side)</span></td><td id="submit">–</td></tr>
+		<tr><td>Objects in the scene graph</td><td id="nodes">–</td></tr>
+		<tr><td>Draw calls</td><td id="calls">–</td></tr>
+		<tr><td>Triangles</td><td id="triangles">–</td></tr>
+	</table>
+	<div id="error"></div>
+	<div id="results"></div>
+</div>
+
+<div id="panel" class="box">
+	<div id="controls"></div>
+	<button id="compare">Compare all four renderers</button>
+	<p class="muted" style="margin: 8px 0 0">
+		Drag to orbit, wheel to zoom. Times are measured in JavaScript on the CPU; work done by the GPU
+		itself only shows up in the frame rate.<br>
+		Not in WAMR3D yet, so not used here: shadows, environment reflections, points and sprites, post-processing.
+	</p>
+</div>
+
+<script type="module" src="./main.js"></script>
+</body>
+</html>
