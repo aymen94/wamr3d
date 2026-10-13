@@ -46,7 +46,7 @@ run( tool( 'wasm-bindgen' ), [
 	path.join( engine, 'target', 'wasm32-unknown-unknown', 'release', 'wamr3d.wasm' )
 ] );
 
-for ( const file of [ 'index.js', 'index.d.ts', 'compat.js', 'compat.d.ts', 'webgpu.js', 'package.json' ] ) {
+for ( const file of [ 'index.js', 'index.d.ts', 'compat.js', 'compat.d.ts', 'webgpu.js', 'package.json', 'README.md' ] ) {
 
 	fs.copyFileSync( path.join( here, 'js', file ), path.join( dist, file ) );
 
