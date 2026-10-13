@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WAMR3D visual parity</title>
+<link rel="icon" href="../../favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="../../favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="../../favicon-16x16.png">
+<link rel="apple-touch-icon" href="../../apple-touch-icon.png">
+<link rel="manifest" href="../../site.webmanifest">
+<style>
+	body { background: #14161a; color: #e6e8eb; font: 13px/1.5 system-ui, sans-serif; padding: 14px; }
+	canvas, img { border: 1px solid #2c3038; }
+	figure { display: inline-block; margin: 0 8px 8px 0; }
+	a { color: #7fb0ff; }
+</style>
+</head>
+<body>
+<h1 id="result">rendering…</h1>
+<p><a href="?case=cube">cube</a> · <a href="?case=sphere">lit sphere</a> · <a href="?case=plane">textured plane</a> · <a href="?case=triangle">triangle</a></p>
+<figure><canvas id="actual"></canvas><figcaption id="actual-label">WAMR3D, WebGPU</figcaption></figure>
+<figure><canvas id="expected"></canvas><figcaption>stored three.js r186 reference</figcaption></figure>
+<figure><canvas id="difference"></canvas><figcaption>difference × 8</figcaption></figure>
+<script type="module">
+// ?case=<name> draws the case with WAMR3D and compares it with reference/<name>.png.
+// ?case=<name>&mode=generate draws it with three.js r186 instead, for run.mjs to store.
+
+import { CASES, REFERENCE_URL, WIDTH, HEIGHT, MEAN_LIMIT, DIFFERENT_LIMIT, PIXEL_THRESHOLD, BACKGROUND_RGB } from './cases.js';
+
+const params = new URLSearchParams( location.search );
+const name = params.get( 'case' ) || 'cube', generate = params.get( 'mode' ) === 'generate';
+const result = window.__visual = { ready: false, error: null, case: name };
+const $ = ( id ) => document.getElementById( id );
+for ( const canvas of document.querySelectorAll( 'canvas' ) ) Object.assign( canvas, { width: WIDTH, height: HEIGHT } );
+
+function pixels( source ) {
+
+	const copy = new OffscreenCanvas( WIDTH, HEIGHT ).getContext( '2d', { willReadFrequently: true } );
+	copy.drawImage( source, 0, 0 );
+	return copy.getImageData( 0, 0, WIDTH, HEIGHT ).data;
+
+}
+
+try {
+
+	if ( ! CASES[ name ] ) throw new Error( `unknown case "${name}"` );
+
+	if ( generate ) {
+
+		const THREE = await import( REFERENCE_URL );
+		const { scene, camera } = CASES[ name ]( THREE );
+		const renderer = new THREE.WebGPURenderer( { canvas: $( 'actual' ), antialias: true } );
+		await renderer.init();
+		if ( ! renderer.backend.isWebGPUBackend ) throw new Error( 'the reference renderer fell back to WebGL' );
+		renderer.setSize( WIDTH, HEIGHT, false );
+		renderer.render( scene, camera );
+		$( 'actual-label' ).textContent = 'three.js r186, WebGPU';
+		result.png = $( 'actual' ).toDataURL( 'image/png' );
+		$( 'result' ).textContent = `${name}: reference image`;
+
+	} else {
+
+		const WAMR3D = await import( '../../dist/wamr3d/compat.js' );
+		await WAMR3D.init();
+		const { scene, camera, probes = [] } = CASES[ name ]( WAMR3D );
+		const renderer = new WAMR3D.WebGPURenderer( { canvas: $( 'actual' ), antialias: true } );
+		await renderer.init();
+		renderer.setSize( WIDTH, HEIGHT, false );
+		renderer.render( scene, camera );
+		const actual = pixels( $( 'actual' ) );
+
+		const image = new Image();
+		image.src = `./reference/${name}.png`;
+		await image.decode();
+		$( 'expected' ).getContext( '2d' ).drawImage( image, 0, 0 );
+		const expected = pixels( image );
+
+		const view = $( 'difference' ).getContext( '2d' ), difference = view.createImageData( WIDTH, HEIGHT );
+		let total = 0, different = 0, covered = 0;
+		const offBackground = ( data, i ) => Math.abs( data[ i ] - BACKGROUND_RGB[ 0 ] ) + Math.abs( data[ i + 1 ] - BACKGROUND_RGB[ 1 ] ) + Math.abs( data[ i + 2 ] - BACKGROUND_RGB[ 2 ] ) > 40;
+
+		for ( let i = 0; i < actual.length; i += 4 ) {
+
+			let worst = 0;
+
+			for ( let c = 0; c < 3; c ++ ) {
+
+				const d = Math.abs( actual[ i + c ] - expected[ i + c ] );
+				total += d;
+				worst = Math.max( worst, d );
+				difference.data[ i + c ] = Math.min( 255, d * 8 );
+
+			}
+
+			difference.data[ i + 3 ] = 255;
+			if ( worst > PIXEL_THRESHOLD ) different ++;
+			if ( offBackground( actual, i ) ) covered ++;
+
+		}
+
+		view.putImageData( difference, 0, 0 );
+
+		const count = WIDTH * HEIGHT;
+		const probesPass = probes.every( ( { x, y, covered } ) => offBackground( actual, ( y * WIDTH + x ) * 4 ) === covered );
+		Object.assign( result, { meanDifference: total / ( count * 3 ), differentFraction: different / count, coveredFraction: covered / count, probes: probes.length, probesPass, drawCalls: renderer.info.render.calls } );
+		result.pass = result.meanDifference <= MEAN_LIMIT && result.differentFraction <= DIFFERENT_LIMIT && result.coveredFraction > 0.02 && probesPass;
+		result.png = $( 'difference' ).toDataURL( 'image/png' );
+		result.actualPng = $( 'actual' ).toDataURL( 'image/png' );
+		$( 'result' ).textContent = `${name}: ${result.pass ? 'pass' : 'FAIL'} · mean difference ${result.meanDifference.toFixed( 3 )} of 255 · ${( result.differentFraction * 100 ).toFixed( 2 )}% of pixels differ by more than ${PIXEL_THRESHOLD}`;
+
+	}
+
+} catch ( error ) {
+
+	result.error = String( error?.stack || error );
+	$( 'result' ).textContent = 'failed: ' + ( error?.message || error );
+
+}
+
+result.ready = true;
+</script>
+</body>
+</html>
