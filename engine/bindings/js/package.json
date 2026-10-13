@@ -1,0 +1,33 @@
+{
+  "name": "wamr3d",
+  "version": "0.1.0",
+  "description": "WAMR3D: a 3D engine core in WebAssembly",
+  "license": "MIT",
+  "type": "module",
+  "main": "./index.js",
+  "module": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./compat": {
+      "types": "./compat.d.ts",
+      "default": "./compat.js"
+    },
+    "./wamr3d_wasm_bg.wasm": "./wamr3d_wasm_bg.wasm"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "compat.js",
+    "compat.d.ts",
+    "webgpu.js",
+    "wamr3d_wasm.js",
+    "wamr3d_wasm.d.ts",
+    "wamr3d_wasm_bg.wasm",
+    "wamr3d_wasm_bg.wasm.d.ts"
+  ],
+  "sideEffects": false
+}
