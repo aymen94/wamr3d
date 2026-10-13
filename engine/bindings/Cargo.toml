@@ -1,0 +1,18 @@
+[package]
+name = "wamr3d"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "WAMR3D: WebAssembly bindings for the wamr-math and wamr-core crates"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+doctest = false
+
+[dependencies]
+wamr-core = { path = "../core" }
+wamr-math = { path = "../math" }
+wamr-objects = { path = "../objects" }
+wamr-renderer = { path = "../renderer_webgpu" }
+# The wasm-bindgen CLI used by build.mjs must be this exact version.
+wasm-bindgen = "=0.2.129"
