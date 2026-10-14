@@ -1,6 +1,6 @@
-//! `wamr-math`: the three.js r186 math primitives, ported to Rust (WAMR3D Phase 1).
+//! `wamr-math`: the three.js math primitives, ported to Rust (WAMR3D Phase 1).
 //!
-//! Semantics follow three.js r186: right-handed, +Y up, column-major
+//! Semantics follow three.js: right-handed, +Y up, column-major
 //! matrices, `XYZ` default Euler order. Values are stored as contiguous `f32`; every
 //! function computes in `f64` and rounds once on store (DECISIONS.md D1).
 //!
