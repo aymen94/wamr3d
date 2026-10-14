@@ -99,6 +99,14 @@ fn raycast_mesh(world: &World, object: Entity, raycaster: &Raycaster, intersects
     let Some(renderable) = world.renderable(object) else {
         return;
     };
+    if renderable.sprite.is_some() {
+        // Picking a sprite needs the camera it faces; not supported yet.
+        return;
+    }
+    if renderable.primitive == Primitive::Points {
+        raycast_points(world, object, raycaster, intersects);
+        return;
+    }
     if renderable.primitive != Primitive::Mesh {
         raycast_line(world, object, renderable.primitive == Primitive::LineSegments, raycaster, intersects);
         return;
@@ -249,6 +257,75 @@ fn raycast_line(world: &World, object: Entity, segments: bool, raycaster: &Rayca
         }
 
         i += if segments { 2 } else { 1 };
+    }
+}
+
+/// Every vertex closer to the ray than `points_threshold` is a hit; `line_index` holds
+/// the vertex (through the index, if any).
+fn raycast_points(world: &World, object: Entity, raycaster: &Raycaster, intersects: &mut Vec<Intersection>) {
+    let Some(renderable) = world.renderable(object) else {
+        return;
+    };
+    let (Some(geometry), Some(transform)) = (world.geometry(renderable.geometry), world.transform(object)) else {
+        return;
+    };
+    let Some(position) = geometry.get_attribute("position") else {
+        return;
+    };
+    let matrix_world = transform.matrix_world;
+    let threshold = raycaster.params.points_threshold;
+
+    let mut sphere: Sphere = match geometry.bounding_sphere {
+        Some(sphere) => sphere,
+        None => {
+            let mut measured = geometry.clone();
+            measured.compute_bounding_sphere();
+            measured.bounding_sphere.unwrap_or_default()
+        }
+    };
+    sphere.apply_matrix4(&matrix_world);
+    sphere.radius += threshold;
+    if !raycaster.ray.intersects_sphere(&sphere) {
+        return;
+    }
+
+    let mut inverse = matrix_world;
+    inverse.invert();
+    let mut local_ray = raycaster.ray;
+    local_ray.apply_matrix4(&inverse);
+
+    let scale = transform.scale;
+    let local_threshold = threshold as f64 / ((scale.x as f64 + scale.y as f64 + scale.z as f64) / 3.0);
+    let threshold_sq = local_threshold * local_threshold;
+
+    let index = geometry.get_index();
+    let count = index.map_or(position.count(), |index| index.count());
+    let start = (geometry.draw_range.start as usize).min(count);
+    let end = count.min(geometry.draw_range.start.saturating_add(geometry.draw_range.count) as usize);
+
+    for i in start..end {
+        let vertex = index.map_or(i, |index| index.array.get(i) as usize);
+        let point = position.get_vector3(vertex);
+        if (local_ray.distance_sq_to_point(&point) as f64) >= threshold_sq {
+            continue;
+        }
+        let mut closest = local_ray.closest_point_to_point(&point);
+        closest.apply_matrix4(&matrix_world);
+        let distance = raycaster.ray.origin.distance_to(&closest);
+        if distance < raycaster.near || distance > raycaster.far {
+            continue;
+        }
+        intersects.push(Intersection {
+            distance,
+            point: closest,
+            object,
+            line_index: Some(vertex as u32),
+            face_index: 0,
+            face: Face { a: 0, b: 0, c: 0, normal: Vector3::default(), material_index: 0 },
+            barycoord: Vector3::default(),
+            uv: None,
+            normal: None,
+        });
     }
 }
 

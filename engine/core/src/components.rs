@@ -246,7 +246,7 @@ impl Default for Visibility {
 
 /// What an object draws. Both handles point into the owning `World`; either may be
 /// dead if the resource was disposed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Renderable {
     pub geometry: GeometryHandle,
     pub material: MaterialHandle,
@@ -255,11 +255,14 @@ pub struct Renderable {
     /// the object once.
     pub instances: u32,
     pub instance_count: u32,
+    /// `Some(center)` draws the geometry as a sprite: a quad that faces the camera,
+    /// anchored at `center` (0.5, 0.5 is the middle), sized by the world scale.
+    pub sprite: Option<[f32; 2]>,
 }
 
 impl Renderable {
     pub fn mesh(geometry: GeometryHandle, material: MaterialHandle) -> Self {
-        Self { geometry, material, primitive: Primitive::Mesh, instances: 0, instance_count: 0 }
+        Self { geometry, material, primitive: Primitive::Mesh, instances: 0, instance_count: 0, sprite: None }
     }
 }
 
@@ -274,6 +277,8 @@ pub enum Primitive {
     Line = 1,
     /// Separate segments, one per pair of vertices.
     LineSegments = 2,
+    /// One point per vertex, one pixel in size.
+    Points = 3,
 }
 
 #[cfg(test)]

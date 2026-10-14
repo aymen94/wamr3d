@@ -444,6 +444,43 @@ impl Timer {
 pub struct Renderer {
     lighting: wamr_renderer::Lighting,
     frame: wamr_renderer::Frame,
+    /// Per draw, the record in `geometry_state` that describes its geometry.
+    geometry_slots: Vec<u32>,
+    /// The same for the draws of each shadow pass.
+    shadow_geometry_slots: Vec<Vec<u32>>,
+    /// [`GEOMETRY_STATE_FIELDS`] numbers per distinct geometry of the frame.
+    geometry_state: Vec<u32>,
+}
+
+/// Vertex inputs of the shader in location order, with their floats per vertex. The
+/// host binds its vertex buffers in the same order.
+const VERTEX_ATTRIBUTES: [(&str, usize); 4] = [("position", 3), ("normal", 3), ("uv", 2), ("color", 3)];
+
+/// Slot index, generation, vertex count, a (version, address) pair per vertex input,
+/// index version.
+const GEOMETRY_STATE_FIELDS: usize = 3 + VERTEX_ATTRIBUTES.len() * 2 + 1;
+
+/// Appends what the host needs to keep the GPU copy of `handle` current. An input that
+/// is missing, not float, or of the wrong length gets address 0, and the host binds
+/// zeros in its place. An address is valid until the attribute is replaced or the
+/// geometry disposed; a view over it must be created after the last allocation, since
+/// memory growth detaches earlier views.
+fn push_geometry_state(out: &mut Vec<u32>, world: &wamr_core::World, handle: GeometryHandle) {
+    let start = out.len();
+    out.extend([handle.index(), handle.generation()]);
+    if let Some(geometry) = world.geometry(handle) {
+        let vertices = geometry.get_attribute("position").map_or(0, |a| a.count());
+        out.push(vertices as u32);
+        for (name, size) in VERTEX_ATTRIBUTES {
+            let state = geometry.get_attribute(name).and_then(|a| match &a.array {
+                AttributeArray::Float32(values) if values.len() == vertices * size => Some([a.version, values.as_ptr() as usize as u32]),
+                _ => None,
+            });
+            out.extend(state.unwrap_or([0, 0]));
+        }
+        out.push(geometry.get_index().map_or(0, |index| index.version));
+    }
+    out.resize(start + GEOMETRY_STATE_FIELDS, 0);
 }
 
 #[wasm_bindgen]
@@ -456,7 +493,134 @@ impl Renderer {
     /// WGSL source of the mesh pipeline.
     #[wasm_bindgen(js_name = shaderSource)]
     pub fn shader_source() -> String {
-        wamr_renderer::SHADER.to_string()
+        wamr_renderer::shader_source()
+    }
+
+    /// WGSL source of the passes that prefilter an environment map (three.js PMREM).
+    #[wasm_bindgen(js_name = pmremShaderSource)]
+    pub fn pmrem_shader_source() -> String {
+        wamr_renderer::pmrem_shader_source()
+    }
+
+    /// Lights standard materials that use it with an equirectangular environment map:
+    /// the host's texture id, the source image width, and the rotation of sampling
+    /// directions as a 3x3 matrix (column-major, already inverted).
+    #[wasm_bindgen(js_name = setEnvironment)]
+    pub fn set_environment(&mut self, texture: u32, source_width: u32, rotation: &[f32]) {
+        let mut matrix = wamr_math::Matrix3::default();
+        if rotation.len() == 9 {
+            matrix.elements.copy_from_slice(rotation);
+        }
+        self.lighting.environment = Some(wamr_renderer::Environment { texture, source_width, rotation: matrix });
+    }
+
+    #[wasm_bindgen(js_name = clearEnvironment)]
+    pub fn clear_environment(&mut self) {
+        self.lighting.environment = None;
+    }
+
+    /// The environment of the last prepared frame: texture id, `lodMax`, width and height
+    /// of the prefiltered map; empty without one.
+    #[wasm_bindgen(js_name = environmentInfo)]
+    pub fn environment_info(&self) -> Vec<u32> {
+        self.frame.environment.map_or_else(Vec::new, |e| {
+            let (width, height) = e.layout_size();
+            vec![e.texture, e.lod_max(), width, height]
+        })
+    }
+
+    /// WGSL source of the output pass that tone-maps a linear frame onto the canvas.
+    #[wasm_bindgen(js_name = outputShaderSource)]
+    pub fn output_shader_source() -> String {
+        wamr_renderer::OUTPUT_SHADER.to_string()
+    }
+
+    /// WGSL source of the depth-only shadow pipeline.
+    #[wasm_bindgen(js_name = shadowShaderSource)]
+    pub fn shadow_shader_source() -> String {
+        wamr_renderer::SHADOW_SHADER.to_string()
+    }
+
+    /// Layers of the shadow texture array, the most shadow-casting lights per frame.
+    #[wasm_bindgen(js_name = maxShadows)]
+    pub fn max_shadows() -> u32 {
+        wamr_renderer::MAX_SHADOWS as u32
+    }
+
+    /// three.js `renderer.shadowMap.enabled`.
+    #[wasm_bindgen(js_name = setShadowsEnabled)]
+    pub fn set_shadows_enabled(&mut self, enabled: bool) {
+        self.lighting.shadows = enabled;
+    }
+
+    /// Gives the light added last a shadow. `orthographic` selects the projection:
+    /// `a, b, c, d` are left, right, top, bottom for an orthographic camera, or the
+    /// field of view in degrees and the aspect for a perspective one. The shadow camera
+    /// looks at the target. Ignored for point lights.
+    #[wasm_bindgen(js_name = setLastLightShadow)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_last_light_shadow(&mut self, orthographic: bool, a: f32, b: f32, c: f32, d: f32, near: f32, far: f32, target_x: f32, target_y: f32, target_z: f32, bias: f32, normal_bias: f32, intensity: f32, radius: f32, map_width: u32, map_height: u32) {
+        let projection = if orthographic {
+            wamr_renderer::ShadowProjection::Orthographic { left: a, right: b, top: c, bottom: d, near, far }
+        } else {
+            wamr_renderer::ShadowProjection::Perspective { fov: a, aspect: b, near, far }
+        };
+        if let Some(light) = self.lighting.lights.last_mut() {
+            light.shadow = Some(wamr_renderer::LightShadow { projection, target: wamr_math::Vector3::new(target_x, target_y, target_z), bias, normal_bias, intensity, radius, map_width, map_height });
+        }
+    }
+
+    /// Shadow passes of the last prepared frame.
+    #[wasm_bindgen(js_name = shadowCount)]
+    pub fn shadow_count(&self) -> u32 {
+        self.frame.shadows.len() as u32
+    }
+
+    /// Width and height of each layer of the shadow texture array.
+    #[wasm_bindgen(js_name = shadowMapSize)]
+    pub fn shadow_map_size(&self) -> Vec<u32> {
+        vec![self.frame.shadow_map_width, self.frame.shadow_map_height]
+    }
+
+    /// Layer, width and height of a pass's map, then its view-projection (16 floats).
+    #[wasm_bindgen(js_name = shadowPassInfo)]
+    pub fn shadow_pass_info(&self, pass: u32) -> Vec<f32> {
+        self.frame.shadows.get(pass as usize).map_or_else(Vec::new, |p| {
+            let mut out = vec![p.layer as f32, p.width as f32, p.height as f32];
+            out.extend(p.view_projection);
+            out
+        })
+    }
+
+    /// Like `drawInfo`, for the casters of a shadow pass.
+    #[wasm_bindgen(js_name = shadowDrawInfo)]
+    pub fn shadow_draw_info(&self, pass: u32) -> Vec<u32> {
+        self.frame.shadows.get(pass as usize).map_or_else(Vec::new, |p| p.draws.iter().flat_map(|d| [d.pipeline, d.map, d.start, d.count, d.instances, d.instance_count]).collect())
+    }
+
+    /// Like `drawGeometrySlots`, for the casters of a shadow pass.
+    #[wasm_bindgen(js_name = shadowDrawGeometrySlots)]
+    pub fn shadow_draw_geometry_slots(&self, pass: u32) -> Vec<u32> {
+        self.shadow_geometry_slots.get(pass as usize).cloned().unwrap_or_default()
+    }
+
+    /// Object uniforms of a shadow pass (only the model matrix is read), same stride as
+    /// `objectUniforms`.
+    #[wasm_bindgen(js_name = shadowObjectUniforms)]
+    pub fn shadow_object_uniforms(&self, pass: u32) -> Vec<f32> {
+        self.frame.shadows.get(pass as usize).map_or_else(Vec::new, |p| p.object_uniforms.clone())
+    }
+
+    /// Index in `frameUniforms` of the tone mapping (a three.js constant, 0 for none);
+    /// the exposure follows `TONE_MAPPING_EXPOSURE_INDEX`.
+    #[wasm_bindgen(js_name = toneMappingIndex)]
+    pub fn tone_mapping_index() -> u32 {
+        wamr_renderer::TONE_MAPPING_INDEX as u32
+    }
+
+    #[wasm_bindgen(js_name = toneMappingExposureIndex)]
+    pub fn tone_mapping_exposure_index() -> u32 {
+        wamr_renderer::TONE_MAPPING_EXPOSURE_INDEX as u32
     }
 
     /// Bytes per object in `objectUniforms`.
@@ -488,6 +652,14 @@ impl Renderer {
             _ => wamr_renderer::FogKind::None,
         };
         self.lighting.fog = wamr_renderer::Fog { kind, color: wamr_math::Color::new(r, g, b), near, far, density };
+    }
+
+    /// Tone mapping of the output, as a three.js constant (0 none, 1 linear, 2 Reinhard,
+    /// 3 Cineon, 4 ACES filmic, 6 AgX, 7 neutral), and its exposure.
+    #[wasm_bindgen(js_name = setToneMapping)]
+    pub fn set_tone_mapping(&mut self, kind: u8, exposure: f32) {
+        self.lighting.tone_mapping = wamr_renderer::ToneMapping::from_u8(kind);
+        self.lighting.exposure = exposure;
     }
 
     #[wasm_bindgen(js_name = clearLights)]
@@ -533,6 +705,7 @@ impl Renderer {
             decay,
             cone_cos: (angle as f64).cos() as f32,
             penumbra_cos: (angle as f64 * (1.0 - penumbra as f64)).cos() as f32,
+            shadow: None,
         });
     }
 
@@ -556,7 +729,49 @@ impl Renderer {
     pub fn prepare(&mut self, world: &mut World, root: u64, camera: u64) -> Result<u32, JsError> {
         self.frame = wamr_renderer::prepare_frame(&mut world.inner, entity(root), entity(camera), &self.lighting)
             .ok_or_else(|| JsError::new("object is not a camera"))?;
+
+        self.geometry_slots.clear();
+        self.geometry_state.clear();
+        self.shadow_geometry_slots.clear();
+        let mut records: std::collections::HashMap<GeometryHandle, u32> = std::collections::HashMap::new();
+        let state = &mut self.geometry_state;
+        let mut slot_of = |geometry: GeometryHandle| -> u32 {
+            *records.entry(geometry).or_insert_with(|| {
+                let slot = (state.len() / GEOMETRY_STATE_FIELDS) as u32;
+                push_geometry_state(state, &world.inner, geometry);
+                slot
+            })
+        };
+        for draw in &self.frame.draws {
+            self.geometry_slots.push(slot_of(draw.geometry));
+        }
+        for pass in &self.frame.shadows {
+            self.shadow_geometry_slots.push(pass.draws.iter().map(|d| slot_of(d.geometry)).collect());
+        }
+
         Ok(self.frame.draws.len() as u32)
+    }
+
+    /// Numbers per record of `geometryState`.
+    #[wasm_bindgen(js_name = geometryStateSize)]
+    pub fn geometry_state_size() -> u32 {
+        GEOMETRY_STATE_FIELDS as u32
+    }
+
+    /// One record per distinct geometry of the last prepared frame: slot index and
+    /// generation of the handle, vertex count, then for position, normal, uv and colour
+    /// the attribute's version and the address of its floats (0 when the shader input
+    /// cannot use it), then the index version. Everything the host needs to decide what
+    /// to upload, in one call.
+    #[wasm_bindgen(js_name = geometryState)]
+    pub fn geometry_state(&self) -> Vec<u32> {
+        self.geometry_state.clone()
+    }
+
+    /// Per draw, which record of `geometryState` describes its geometry.
+    #[wasm_bindgen(js_name = drawGeometrySlots)]
+    pub fn draw_geometry_slots(&self) -> Vec<u32> {
+        self.geometry_slots.clone()
     }
 
     /// Objects that had something to draw before culling, in the last prepared frame.
@@ -1407,6 +1622,15 @@ impl World {
         }
     }
 
+    /// three.js `castShadow` and `receiveShadow`.
+    #[wasm_bindgen(js_name = setShadowFlags)]
+    pub fn set_shadow_flags(&mut self, object: u64, cast: bool, receive: bool) {
+        if let Some(v) = self.inner.visibility_mut(entity(object)) {
+            v.cast_shadow = cast;
+            v.receive_shadow = receive;
+        }
+    }
+
     /// How a material is lit: `shading` 0 diffuse, 1 unlit, 2 standard (which uses
     /// `roughness` and `metalness`).
     #[wasm_bindgen(js_name = setMaterialShading)]
@@ -1469,11 +1693,12 @@ impl World {
     /// Casts a ray against the meshes at and (with `recursive`) below `root`. World
     /// matrices must be up to date. `direction` must be normalized; pass `Infinity` as
     /// `far` for no limit.
-    /// `line_threshold` is how close, in world units, the ray must pass to a line to
+    /// `line_threshold` and `points_threshold` are how close, in world units, the ray must pass to a line or a point to
     /// hit it; anything that is not a number means 1.
-    pub fn raycast(&self, root: u64, recursive: bool, origin: &Vector3, direction: &Vector3, near: f32, far: f32, line_threshold: f32) -> RaycastHits {
+    pub fn raycast(&self, root: u64, recursive: bool, origin: &Vector3, direction: &Vector3, near: f32, far: f32, line_threshold: f32, points_threshold: f32) -> RaycastHits {
         let mut raycaster = wamr_core::Raycaster::new(origin.inner, direction.inner, near, far);
         raycaster.params.line_threshold = if line_threshold.is_finite() { line_threshold } else { 1.0 };
+        raycaster.params.points_threshold = if points_threshold.is_finite() { points_threshold } else { 1.0 };
         RaycastHits { hits: wamr_objects::intersect_object(&self.inner, &raycaster, entity(root), recursive) }
     }
 
@@ -1631,6 +1856,41 @@ impl World {
         self.inner.set_renderable(entity(object), Some(renderable));
     }
 
+    /// Makes the object draw `geometry_handle` as points, one pixel per vertex.
+    #[wasm_bindgen(js_name = setPoints)]
+    pub fn set_points(&mut self, object: u64, geometry_handle: u64, material_handle: u64) {
+        let renderable = Renderable { primitive: wamr_core::Primitive::Points, ..Renderable::mesh(geometry(geometry_handle), material(material_handle)) };
+        self.inner.set_renderable(entity(object), Some(renderable));
+    }
+
+    /// Makes the object a sprite: `geometry_handle` (a quad) faces the camera, anchored
+    /// at `center_x, center_y` (0.5, 0.5 is the middle) and sized by the world scale.
+    #[wasm_bindgen(js_name = setSprite)]
+    pub fn set_sprite(&mut self, object: u64, geometry_handle: u64, material_handle: u64, center_x: f32, center_y: f32) {
+        let renderable = Renderable { sprite: Some([center_x, center_y]), ..Renderable::mesh(geometry(geometry_handle), material(material_handle)) };
+        self.inner.set_renderable(entity(object), Some(renderable));
+    }
+
+    /// Whether a standard material is lit by the frame's environment map, and how
+    /// strongly (three.js `envMapIntensity` or the scene's `environmentIntensity`).
+    #[wasm_bindgen(js_name = setMaterialEnvironment)]
+    pub fn set_material_environment(&mut self, handle: u64, uses_environment: bool, intensity: f32) -> Result<(), JsError> {
+        let material = self.inner.material_mut(material(handle)).ok_or_else(|| dead("material"))?;
+        material.uses_environment = uses_environment;
+        material.env_map_intensity = intensity;
+        Ok(())
+    }
+
+    /// Sprite settings of a material: rotation in radians, and whether the sprite gets
+    /// smaller with distance.
+    #[wasm_bindgen(js_name = setMaterialSprite)]
+    pub fn set_material_sprite(&mut self, handle: u64, rotation: f32, size_attenuation: bool) -> Result<(), JsError> {
+        let material = self.inner.material_mut(material(handle)).ok_or_else(|| dead("material"))?;
+        material.rotation = rotation;
+        material.size_attenuation = size_attenuation;
+        Ok(())
+    }
+
     #[wasm_bindgen(js_name = clearRenderable)]
     pub fn clear_renderable(&mut self, object: u64) {
         self.inner.set_renderable(entity(object), None);
@@ -1693,6 +1953,34 @@ mod tests {
         assert_eq!(world.drain_events(), [0, child, 0, 2, root, child]);
         assert!(world.destroy(child) && !world.is_alive(child));
         assert_eq!(world.object_count(), 1);
+    }
+
+    #[test]
+    fn geometry_state_describes_each_distinct_geometry_once() {
+        let mut world = World::new();
+        let (root, camera) = (world.create_object(), world.create_object());
+        world.add(root, camera);
+        world.set_perspective_camera(camera, 90.0, 1.0, 0.1, 100.0, true);
+        let geometry = world.create_box_geometry(1.0, 1.0, 1.0, 1, 1, 1);
+        let material = world.create_material("");
+        for z in [-5.0, -6.0] {
+            let object = world.create_object();
+            world.add(root, object);
+            world.set_renderable(object, geometry, material);
+            assert!(world.set_position(object, 0.0, 0.0, z).is_ok());
+        }
+        world.update_matrix_world(root, false);
+
+        let mut renderer = Renderer::new();
+        assert_eq!(renderer.prepare(&mut world, root, camera).ok(), Some(2));
+        assert_eq!(renderer.draw_geometry_slots(), [0, 0]);
+        let state = renderer.geometry_state();
+        assert_eq!(state.len(), GEOMETRY_STATE_FIELDS);
+        assert_eq!(u64::from(state[0]) | u64::from(state[1]) << 32, geometry);
+        assert_eq!(state[2], 24);
+        // position, normal and uv can be bound; a box has no colours
+        assert!(state[4] != 0 && state[6] != 0 && state[8] != 0);
+        assert_eq!(state[10], 0);
     }
 
     #[test]

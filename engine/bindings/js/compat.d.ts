@@ -5,6 +5,8 @@ export function init( source?: RequestInfo | URL | Response | BufferSource | Web
 export function getWorld(): W.World;
 
 export const FrontSide: 0;
+export const NoToneMapping: 0, LinearToneMapping: 1, ReinhardToneMapping: 2, CineonToneMapping: 3, ACESFilmicToneMapping: 4, CustomToneMapping: 5, AgXToneMapping: 6, NeutralToneMapping: 7;
+export type ToneMapping = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 export const BackSide: 1;
 export const DoubleSide: 2;
 export const WebGLCoordinateSystem: 2000;
@@ -43,6 +45,10 @@ export class Vector2 extends Vector2Base {
 
 	constructor( x?: number, y?: number );
 	readonly isVector2: true;
+	/** Same as `x`. */
+	width: number;
+	/** Same as `y`. */
+	height: number;
 	fromArray( array: ArrayLike<number>, offset?: number ): this;
 
 }
@@ -228,7 +234,7 @@ export class Object3D {
 	readonly layers: Layers;
 	/** A copy of the local matrix. */
 	matrix: Matrix4;
-	/** A copy of the world matrix. */
+	/** The world matrix, refreshed from the engine on each access; the same object every time. */
 	readonly matrixWorld: Matrix4;
 
 	add( ...children: Object3D[] ): this;
@@ -468,7 +474,13 @@ export class BufferAttribute {
 	getX( index: number ): number;
 	getY( index: number ): number;
 	getZ( index: number ): number;
+	getW( index: number ): number;
+	setX( index: number, x: number ): this;
+	setY( index: number, y: number ): this;
+	setZ( index: number, z: number ): this;
+	setXY( index: number, x: number, y: number ): this;
 	setXYZ( index: number, x: number, y: number, z: number ): this;
+	setXYZW( index: number, x: number, y: number, z: number, w: number ): this;
 
 }
 
@@ -648,6 +660,8 @@ export class Material {
 	depthWrite: boolean;
 	/** Multiply the colour by the geometry's `color` attribute (three floats per vertex). */
 	vertexColors: boolean;
+	/** Accepted for compatibility. As with the three.js r186 WebGPU renderer, tone mapping is applied to the whole frame, so this has no effect on screen output. */
+	toneMapped: boolean;
 	userData: Record<string, any>;
 	setValues( parameters: MaterialParameters ): void;
 	clone(): this;
@@ -685,8 +699,78 @@ export class Clock {
 }
 
 /** Present so that using it fails with a clear error. */
+/** One pixel per vertex, as with the three.js r186 WebGPU renderer. */
+export class Points<G extends BufferGeometry = BufferGeometry, M extends Material = Material> extends Object3D {
+
+	constructor( geometry?: G, material?: M );
+	readonly isPoints: true;
+	geometry: G;
+	material: M;
+
+}
+
+/** A quad facing the camera, sized by its scale. Not picked by `Raycaster` yet. */
+export class Sprite<M extends Material = SpriteMaterial> extends Object3D {
+
+	constructor( material?: M );
+	readonly isSprite: true;
+	readonly geometry: BufferGeometry;
+	material: M;
+	center: Vector2;
+
+}
+
+/** `size` and `sizeAttenuation` are kept but have no effect: points are one pixel. */
+export class PointsMaterial extends Material {
+
+	constructor( parameters?: MaterialParameters & { size?: number; sizeAttenuation?: boolean } );
+	readonly isPointsMaterial: true;
+	size: number;
+	sizeAttenuation: boolean;
+
+}
+
+export class SpriteMaterial extends Material {
+
+	constructor( parameters?: MaterialParameters & { rotation?: number; sizeAttenuation?: boolean } );
+	readonly isSpriteMaterial: true;
+	rotation: number;
+	sizeAttenuation: boolean;
+
+}
+
+export const UnsignedByteType: 1009, FloatType: 1015, HalfFloatType: 1016;
+
+export interface RenderTargetOptions {
+
+	type?: 1009 | 1015 | 1016;
+	samples?: number;
+	depthBuffer?: boolean;
+	generateMipmaps?: boolean;
+	minFilter?: number;
+	magFilter?: number;
+	colorSpace?: '' | 'srgb';
+
+}
+
+/** Drawn into with `renderer.setRenderTarget( target )`; `texture` can be a material's map. Linear colour, no tone mapping. */
+export class RenderTarget {
+
+	constructor( width?: number, height?: number, options?: RenderTargetOptions );
+	readonly isRenderTarget: true;
+	width: number;
+	height: number;
+	samples: number;
+	readonly texture: Texture;
+	setSize( width: number, height: number ): void;
+	dispose(): void;
+
+}
+
+export class WebGLRenderTarget extends RenderTarget {}
+
 type NotAvailable = new ( ...args: any[] ) => never;
-export const WebGLRenderer: NotAvailable, RectAreaLight: NotAvailable, LineLoop: NotAvailable, Points: NotAvailable, Sprite: NotAvailable, SkinnedMesh: NotAvailable, LOD: NotAvailable, MeshPhongMaterial: NotAvailable, MeshPhysicalMaterial: NotAvailable, MeshToonMaterial: NotAvailable, MeshNormalMaterial: NotAvailable, ShaderMaterial: NotAvailable, PointsMaterial: NotAvailable, SpriteMaterial: NotAvailable, IcosahedronGeometry: NotAvailable, CapsuleGeometry: NotAvailable, AnimationMixer: NotAvailable, CubeTextureLoader: NotAvailable, ObjectLoader: NotAvailable;
+export const WebGLRenderer: NotAvailable, RectAreaLight: NotAvailable, LineLoop: NotAvailable, SkinnedMesh: NotAvailable, LOD: NotAvailable, MeshPhongMaterial: NotAvailable, MeshPhysicalMaterial: NotAvailable, MeshToonMaterial: NotAvailable, MeshNormalMaterial: NotAvailable, ShaderMaterial: NotAvailable, IcosahedronGeometry: NotAvailable, CapsuleGeometry: NotAvailable, AnimationMixer: NotAvailable, CubeTextureLoader: NotAvailable, ObjectLoader: NotAvailable;
 
 export interface Intersection {
 
@@ -730,6 +814,14 @@ export interface WebGPURendererParameters {
 
 /** Draws a scene with WebGPU. `await renderer.init()` before the first `render`. */
 export class WebGPURenderer {
+
+	/** Draws into `target` until set back to null (the canvas). */
+	setRenderTarget( target: RenderTarget | null ): void;
+	getRenderTarget(): RenderTarget | null;
+
+	/** Applied when drawing to the canvas. `CustomToneMapping` is not supported and draws like `NoToneMapping`. */
+	toneMapping: ToneMapping;
+	toneMappingExposure: number;
 
 	constructor( parameters?: WebGPURendererParameters );
 	readonly isWebGPURenderer: true;

@@ -25,6 +25,15 @@ pub struct Material {
     pub depth_write: bool,
     /// Multiplies the colour by the geometry's `color` attribute.
     pub vertex_colors: bool,
+    /// Sprites only: rotation of the quad on screen, in radians.
+    pub rotation: f32,
+    /// Sprites only: whether the sprite gets smaller with distance (perspective cameras).
+    pub size_attenuation: bool,
+    /// `Shading::Standard` only: lit by the frame's environment map, scaled by
+    /// `env_map_intensity` (three.js picks `envMapIntensity` or the scene's
+    /// `environmentIntensity`; the caller resolves which).
+    pub uses_environment: bool,
+    pub env_map_intensity: f32,
 }
 
 impl Default for Material {
@@ -43,6 +52,10 @@ impl Default for Material {
             depth_test: true,
             depth_write: true,
             vertex_colors: false,
+            rotation: 0.0,
+            size_attenuation: true,
+            uses_environment: false,
+            env_map_intensity: 1.0,
         }
     }
 }

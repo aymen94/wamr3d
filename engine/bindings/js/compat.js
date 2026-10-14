@@ -14,6 +14,8 @@ import * as W from './index.js';
 import { createBackend } from './webgpu.js';
 
 export const FrontSide = 0, BackSide = 1, DoubleSide = 2;
+export const BasicShadowMap = 0, PCFShadowMap = 1, PCFSoftShadowMap = 2, VSMShadowMap = 3;
+export const NoToneMapping = 0, LinearToneMapping = 1, ReinhardToneMapping = 2, CineonToneMapping = 3, ACESFilmicToneMapping = 4, CustomToneMapping = 5, AgXToneMapping = 6, NeutralToneMapping = 7;
 export const WebGLCoordinateSystem = 2000, WebGPUCoordinateSystem = 2001;
 export const MathUtils = W.MathUtils;
 export const Timer = W.Timer;
@@ -153,6 +155,30 @@ export class Vector2 extends W.Vector2 {
 	constructor( x = 0, y = 0 ) {
 
 		super( x, y );
+
+	}
+
+	get width() {
+
+		return this.x;
+
+	}
+
+	set width( value ) {
+
+		this.x = value;
+
+	}
+
+	get height() {
+
+		return this.y;
+
+	}
+
+	set height( value ) {
+
+		this.y = value;
 
 	}
 
@@ -717,18 +743,20 @@ class BoundLayers {
 	constructor( owner ) {
 
 		this._o = owner;
+		this._m = undefined;
 
 	}
 
+	// The mask is kept here after the first read, so tests and toggles cost no engine call.
 	get mask() {
 
-		return w().layers( this._o.handle );
+		return this._m ??= w().layers( this._o.handle );
 
 	}
 
 	set mask( value ) {
 
-		w().setLayers( this._o.handle, value >>> 0 );
+		w().setLayers( this._o.handle, this._m = value >>> 0 );
 
 	}
 
@@ -837,6 +865,7 @@ export class Object3D {
 		this._stale = 0;
 		this._matrixAutoUpdate = true;
 		this._matrix = null;
+		this._matrixWorld = null;
 		this._matrixTouched = false;
 		this.matrixWorldNeedsUpdate = false;
 		this.id = nextId ++;
@@ -855,6 +884,8 @@ export class Object3D {
 		this._visible = true;
 		this._renderOrder = 0;
 		this._frustumCulled = true;
+		this._castShadow = false;
+		this._receiveShadow = false;
 		objects.set( handle, new WeakRef( this ) );
 		finalizer.register( this, this._token = { kind: OBJECT, handle, instances: 0 }, this );
 
@@ -916,6 +947,30 @@ export class Object3D {
 
 	}
 
+	get castShadow() {
+
+		return this._castShadow;
+
+	}
+
+	set castShadow( value ) {
+
+		w().setShadowFlags( this.handle, this._castShadow = !! value, this._receiveShadow );
+
+	}
+
+	get receiveShadow() {
+
+		return this._receiveShadow;
+
+	}
+
+	set receiveShadow( value ) {
+
+		w().setShadowFlags( this.handle, this._castShadow, this._receiveShadow = !! value );
+
+	}
+
 	get frustumCulled() {
 
 		return this._frustumCulled;
@@ -957,10 +1012,10 @@ export class Object3D {
 
 	}
 
-	/** A copy of the world matrix. */
+	/** The world matrix: one `Matrix4` per object, refreshed from the engine on each access. */
 	get matrixWorld() {
 
-		return new Matrix4().fromArray( w().matrixWorld( this.handle ) );
+		return ( this._matrixWorld ??= new Matrix4() ).fromArray( w().matrixWorld( this.handle ) );
 
 	}
 
@@ -1214,6 +1269,8 @@ export class Object3D {
 		this.visible = source.visible;
 		this.renderOrder = source.renderOrder;
 		this.frustumCulled = source.frustumCulled;
+		this.castShadow = source.castShadow;
+		this.receiveShadow = source.receiveShadow;
 		this.layers.mask = source.layers.mask;
 		this.matrixWorldAutoUpdate = source.matrixWorldAutoUpdate;
 
@@ -1606,6 +1663,130 @@ export class Line extends Object3D {
 
 Line.prototype.isLine = true;
 
+/**
+ * One point per vertex. As with the three.js r186 WebGPU renderer, points are one pixel
+ * in size: `PointsMaterial.size` has no effect.
+ */
+export class Points extends Object3D {
+
+	constructor( geometry = new BufferGeometry(), material = new PointsMaterial() ) {
+
+		super();
+		this.type = 'Points';
+		this._geometry = geometry;
+		this._material = material;
+		this._link();
+
+	}
+
+	get geometry() {
+
+		return this._geometry;
+
+	}
+
+	set geometry( value ) {
+
+		this._geometry = value;
+		this._link();
+
+	}
+
+	get material() {
+
+		return this._material;
+
+	}
+
+	set material( value ) {
+
+		this._material = value;
+		this._link();
+
+	}
+
+	_link() {
+
+		w().setPoints( this.handle, this._geometry.handle, this._material.handle );
+
+	}
+
+	copy( source, recursive ) {
+
+		super.copy( source, recursive );
+		this._geometry = source.geometry;
+		this._material = source.material;
+		this._link();
+		return this;
+
+	}
+
+}
+
+Points.prototype.isPoints = true;
+
+let spriteGeometry = null;
+
+/** A quad that always faces the camera, sized by its scale. Not picked by `Raycaster` yet. */
+export class Sprite extends Object3D {
+
+	constructor( material = new SpriteMaterial() ) {
+
+		super();
+		this.type = 'Sprite';
+		spriteGeometry ??= new BufferGeometry()
+			.setAttribute( 'position', new Float32BufferAttribute( [ - 0.5, - 0.5, 0, 0.5, - 0.5, 0, 0.5, 0.5, 0, - 0.5, 0.5, 0 ], 3 ) )
+			.setAttribute( 'uv', new Float32BufferAttribute( [ 0, 0, 1, 0, 1, 1, 0, 1 ], 2 ) )
+			.setIndex( [ 0, 1, 2, 0, 2, 3 ] );
+		this.geometry = spriteGeometry;
+		this.center = new Vector2( 0.5, 0.5 );
+		this._sentCenter = [ NaN, NaN ];
+		this._material = material;
+		this._link();
+
+	}
+
+	get material() {
+
+		return this._material;
+
+	}
+
+	set material( value ) {
+
+		this._material = value;
+		this._link();
+
+	}
+
+	_link() {
+
+		const { x, y } = this.center;
+		w().setSprite( this.handle, this.geometry.handle, this._material.handle, this._sentCenter[ 0 ] = x, this._sentCenter[ 1 ] = y );
+
+	}
+
+	// The centre is a plain value that can change at any time, so it is sent when drawing.
+	_syncCenter() {
+
+		if ( this.center.x !== this._sentCenter[ 0 ] || this.center.y !== this._sentCenter[ 1 ] ) this._link();
+
+	}
+
+	copy( source, recursive ) {
+
+		super.copy( source, recursive );
+		this.center.copy( source.center );
+		this._material = source.material;
+		this._link();
+		return this;
+
+	}
+
+}
+
+Sprite.prototype.isSprite = true;
+
 /** Separate segments, one per pair of vertices. */
 export class LineSegments extends Line {
 
@@ -1703,24 +1884,28 @@ export class Camera extends Object3D {
 
 		super();
 		this.type = 'Camera';
+		this._projectionMatrix = null;
+		this._projectionMatrixInverse = null;
+		this._matrixWorldInverse = null;
 
 	}
 
+	// Like `matrixWorld`: one persistent matrix each, refreshed on access.
 	get projectionMatrix() {
 
-		return new Matrix4().fromArray( w().projectionMatrix( this.handle ) );
+		return ( this._projectionMatrix ??= new Matrix4() ).fromArray( w().projectionMatrix( this.handle ) );
 
 	}
 
 	get projectionMatrixInverse() {
 
-		return new Matrix4().fromArray( w().projectionMatrixInverse( this.handle ) );
+		return ( this._projectionMatrixInverse ??= new Matrix4() ).fromArray( w().projectionMatrixInverse( this.handle ) );
 
 	}
 
 	get matrixWorldInverse() {
 
-		return new Matrix4().fromArray( w().matrixWorldInverse( this.handle ) );
+		return ( this._matrixWorldInverse ??= new Matrix4() ).fromArray( w().matrixWorldInverse( this.handle ) );
 
 	}
 
@@ -1894,12 +2079,104 @@ export class DirectionalLight extends Light {
 		this.type = 'DirectionalLight';
 		this.position.set( 0, 1, 0 );
 		this.target = new Object3D();
+		this.shadow = new DirectionalLightShadow();
 
 	}
 
 }
 
 DirectionalLight.prototype.isDirectionalLight = true;
+
+// ---------------------------------------------------------------- shadows
+
+/** A light's shadow settings, with the three.js defaults. */
+export class LightShadow {
+
+	constructor( camera ) {
+
+		this.camera = camera;
+		this.intensity = 1;
+		this.bias = 0;
+		this.normalBias = 0;
+		this.radius = 1;
+		this.blurSamples = 8;
+		this.mapSize = new Vector2( 512, 512 );
+		this.map = null;
+		this.autoUpdate = true;
+		this.needsUpdate = false;
+
+	}
+
+	copy( source ) {
+
+		this.camera = source.camera.clone();
+		this.intensity = source.intensity;
+		this.bias = source.bias;
+		this.radius = source.radius;
+		this.normalBias = source.normalBias;
+		this.mapSize.copy( source.mapSize );
+		return this;
+
+	}
+
+	clone() {
+
+		return new this.constructor().copy( this );
+
+	}
+
+	dispose() {}
+
+}
+
+export class DirectionalLightShadow extends LightShadow {
+
+	constructor() {
+
+		super( new OrthographicCamera( - 5, 5, 5, - 5, 0.5, 500 ) );
+
+	}
+
+}
+
+DirectionalLightShadow.prototype.isDirectionalLightShadow = true;
+
+/** The camera's field of view follows the light's cone: `2 * angle * focus`. */
+export class SpotLightShadow extends LightShadow {
+
+	constructor() {
+
+		super( new PerspectiveCamera( 50, 1, 0.5, 500 ) );
+		this.focus = 1;
+		this.aspect = 1;
+
+	}
+
+	copy( source ) {
+
+		super.copy( source );
+		this.focus = source.focus;
+		this.aspect = source.aspect;
+		return this;
+
+	}
+
+}
+
+SpotLightShadow.prototype.isSpotLightShadow = true;
+
+/** Accepted so code runs; point lights do not cast shadows yet. */
+export class PointLightShadow extends LightShadow {
+
+	constructor() {
+
+		super( new PerspectiveCamera( 90, 1, 0.5, 500 ) );
+
+	}
+
+}
+
+PointLightShadow.prototype.isPointLightShadow = true;
 
 /** Shines in all directions from its position. `distance` 0 means no cutoff. */
 export class PointLight extends Light {
@@ -1910,6 +2187,7 @@ export class PointLight extends Light {
 		this.type = 'PointLight';
 		this.distance = distance;
 		this.decay = decay;
+		this.shadow = new PointLightShadow();
 
 	}
 
@@ -1939,6 +2217,7 @@ export class SpotLight extends Light {
 		this.angle = angle;
 		this.penumbra = penumbra;
 		this.decay = decay;
+		this.shadow = new SpotLightShadow();
 
 	}
 
@@ -1962,6 +2241,12 @@ SpotLight.prototype.isSpotLight = true;
 function toFloat32( array ) {
 
 	return array instanceof Float32Array ? array : Float32Array.from( array );
+
+}
+
+function toUint32( array ) {
+
+	return array instanceof Uint32Array ? array : Uint32Array.from( array );
 
 }
 
@@ -1989,7 +2274,7 @@ export class BufferAttribute {
 
 		if ( this._name === 'index' ) {
 
-			w().setIndex( handle, Uint32Array.from( this.array ) );
+			w().setIndex( handle, toUint32( this.array ) );
 
 		} else {
 
@@ -2018,9 +2303,59 @@ export class BufferAttribute {
 
 	}
 
+	getW( index ) {
+
+		return this.array[ index * this.itemSize + 3 ];
+
+	}
+
+	setX( index, x ) {
+
+		this.array[ index * this.itemSize ] = x;
+		return this;
+
+	}
+
+	setY( index, y ) {
+
+		this.array[ index * this.itemSize + 1 ] = y;
+		return this;
+
+	}
+
+	setZ( index, z ) {
+
+		this.array[ index * this.itemSize + 2 ] = z;
+		return this;
+
+	}
+
+	setXY( index, x, y ) {
+
+		const array = this.array, i = index * this.itemSize;
+		array[ i ] = x;
+		array[ i + 1 ] = y;
+		return this;
+
+	}
+
 	setXYZ( index, x, y, z ) {
 
-		this.array.set( [ x, y, z ], index * this.itemSize );
+		const array = this.array, i = index * this.itemSize;
+		array[ i ] = x;
+		array[ i + 1 ] = y;
+		array[ i + 2 ] = z;
+		return this;
+
+	}
+
+	setXYZW( index, x, y, z, w_ ) {
+
+		const array = this.array, i = index * this.itemSize;
+		array[ i ] = x;
+		array[ i + 1 ] = y;
+		array[ i + 2 ] = z;
+		array[ i + 3 ] = w_;
 		return this;
 
 	}
@@ -2126,7 +2461,7 @@ export class BufferGeometry {
 
 		if ( index === null ) throw new Error( 'WAMR3D: removing an index is not supported; use toNonIndexed()' );
 		const attribute = Array.isArray( index ) || ArrayBuffer.isView( index ) ? new BufferAttribute( Uint32Array.from( index ), 1 ) : index;
-		w().setIndex( this.handle, Uint32Array.from( attribute.array ) );
+		w().setIndex( this.handle, toUint32( attribute.array ) );
 		attribute._geometry = this;
 		attribute._name = 'index';
 		this.index = attribute;
@@ -2348,6 +2683,7 @@ export const RepeatWrapping = 1000, ClampToEdgeWrapping = 1001, MirroredRepeatWr
 export const NearestFilter = 1003, NearestMipmapNearestFilter = 1004, NearestMipmapLinearFilter = 1005;
 export const LinearFilter = 1006, LinearMipmapNearestFilter = 1007, LinearMipmapLinearFilter = 1008;
 export const NoColorSpace = '', SRGBColorSpace = 'srgb';
+export const UnsignedByteType = 1009, FloatType = 1015, HalfFloatType = 1016;
 
 const warned = new Set();
 
@@ -2402,6 +2738,69 @@ export class Texture {
 }
 
 Texture.prototype.isTexture = true;
+
+// Backends that may hold the GPU side of render targets.
+const backends = new Set();
+
+/**
+ * Something to draw into instead of the canvas, with `texture` usable as a material's
+ * map. As in three.js, what is drawn into it is linear colour without tone mapping.
+ * `type` UnsignedByteType (default) stores 8 bits per channel, HalfFloatType or
+ * FloatType 16-bit floats. `samples` above 1 multisamples (4x) when the renderer is
+ * antialiased. Depth is always kept; there are no depth textures, stencil or multiple
+ * colour attachments yet.
+ */
+export class RenderTarget {
+
+	constructor( width = 1, height = 1, options = {} ) {
+
+		this.width = width;
+		this.height = height;
+		this.depth = 1;
+		this.samples = options.samples ?? 0;
+		this.depthBuffer = options.depthBuffer ?? true;
+		this.stencilBuffer = false;
+		this.scissor = new Vector4( 0, 0, width, height );
+		this.scissorTest = false;
+		this.viewport = new Vector4( 0, 0, width, height );
+		const texture = new Texture( { width, height, depth: 1 } );
+		texture.isRenderTargetTexture = true;
+		texture.renderTarget = this;
+		texture.flipY = false;
+		texture.generateMipmaps = options.generateMipmaps ?? false;
+		texture.minFilter = options.minFilter ?? LinearFilter;
+		texture.magFilter = options.magFilter ?? LinearFilter;
+		texture.type = options.type ?? UnsignedByteType;
+		texture.colorSpace = options.colorSpace ?? NoColorSpace;
+		if ( options.depthTexture || ( options.count ?? 1 ) > 1 || options.stencilBuffer ) ignored( 'RenderTarget depth textures, stencil and multiple attachments' );
+		this.texture = texture;
+		this.textures = [ texture ];
+
+	}
+
+	setSize( width, height ) {
+
+		this.width = this.texture.image.width = width;
+		this.height = this.texture.image.height = height;
+		this.viewport.set( 0, 0, width, height );
+		this.scissor.set( 0, 0, width, height );
+
+	}
+
+	dispose() {
+
+		for ( const backend of backends ) backend.disposeRenderTarget( this.texture.id );
+
+	}
+
+}
+
+RenderTarget.prototype.isRenderTarget = true;
+
+/** The same as `RenderTarget`; the name three.js code written for WebGL uses. */
+export class WebGLRenderTarget extends RenderTarget {}
+
+WebGLRenderTarget.prototype.isWebGLRenderTarget = true;
 
 /** Pixels from an array: `data` is RGBA, one byte per channel, rows bottom to top. */
 export class DataTexture extends Texture {
@@ -2458,7 +2857,7 @@ export class TextureLoader {
 
 }
 
-const MATERIAL_KEYS = new Set( [ 'toneMapped', 'fog', 'color', 'side', 'name', 'map', 'roughness', 'metalness', 'userData', 'transparent', 'opacity', 'depthTest', 'depthWrite', 'vertexColors' ] );
+const MATERIAL_KEYS = new Set( [ 'size', 'sizeAttenuation', 'rotation', 'toneMapped', 'fog', 'color', 'side', 'name', 'map', 'roughness', 'metalness', 'userData', 'transparent', 'opacity', 'depthTest', 'depthWrite', 'vertexColors' ] );
 
 export class Material {
 
@@ -2474,9 +2873,10 @@ export class Material {
 		this.depthTest = true;
 		this.depthWrite = true;
 		this.vertexColors = false;
+		this.toneMapped = true;
 		this.userData = {};
 		this._side = FrontSide;
-		this._sent = new Array( 18 ).fill( NaN );
+		this._sent = new Array( 20 ).fill( NaN );
 		finalizer.register( this, { kind: MATERIAL, handle: this.handle }, this );
 		if ( parameters ) this.setValues( parameters );
 
@@ -2528,15 +2928,17 @@ export class Material {
 
 		}
 
+		const spriteRotation = this.rotation ?? 0, sizeAttenuation = this.sizeAttenuation ?? true;
+		if ( spriteRotation !== sent[ 18 ] || sizeAttenuation !== sent[ 19 ] ) w().setMaterialSprite( this.handle, sent[ 18 ] = spriteRotation, sent[ 19 ] = sizeAttenuation );
+
 		if ( this.map ) {
 
 			const { offset, repeat, center, rotation } = this.map;
-			const transform = [ offset.x, offset.y, repeat.x, repeat.y, rotation, center.x, center.y ];
+			const ox = offset.x, oy = offset.y, rx = repeat.x, ry = repeat.y, cx = center.x, cy = center.y;
 
-			if ( transform.some( ( value, i ) => value !== sent[ 11 + i ] ) ) {
+			if ( ox !== sent[ 11 ] || oy !== sent[ 12 ] || rx !== sent[ 13 ] || ry !== sent[ 14 ] || rotation !== sent[ 15 ] || cx !== sent[ 16 ] || cy !== sent[ 17 ] ) {
 
-				for ( let i = 0; i < 7; i ++ ) sent[ 11 + i ] = transform[ i ];
-				w().setMaterialMapTransform( this.handle, ...transform );
+				w().setMaterialMapTransform( this.handle, sent[ 11 ] = ox, sent[ 12 ] = oy, sent[ 13 ] = rx, sent[ 14 ] = ry, sent[ 15 ] = rotation, sent[ 16 ] = cx, sent[ 17 ] = cy );
 
 			}
 
@@ -2602,6 +3004,47 @@ export class LineBasicMaterial extends Material {
 
 LineBasicMaterial.prototype._shading = 1;
 LineBasicMaterial.prototype.isLineBasicMaterial = true;
+
+/**
+ * For `Points`: the colour (and vertex colours) as is, without lighting. `size` and
+ * `sizeAttenuation` are kept but have no effect: points are one pixel, as with the
+ * three.js r186 WebGPU renderer. `map` is not supported on points.
+ */
+export class PointsMaterial extends Material {
+
+	constructor( parameters ) {
+
+		super();
+		this.type = 'PointsMaterial';
+		this.size = 1;
+		this.sizeAttenuation = true;
+		if ( parameters ) this.setValues( parameters );
+
+	}
+
+}
+
+PointsMaterial.prototype._shading = 1;
+PointsMaterial.prototype.isPointsMaterial = true;
+
+/** For `Sprite`: colour and map without lighting, `rotation` in radians, transparent by default. */
+export class SpriteMaterial extends Material {
+
+	constructor( parameters ) {
+
+		super();
+		this.type = 'SpriteMaterial';
+		this.transparent = true;
+		this.rotation = 0;
+		this.sizeAttenuation = true;
+		if ( parameters ) this.setValues( parameters );
+
+	}
+
+}
+
+SpriteMaterial.prototype._shading = 1;
+SpriteMaterial.prototype.isSpriteMaterial = true;
 
 /** Diffuse (Lambert) lighting. */
 export class MeshLambertMaterial extends Material {
@@ -2709,11 +3152,10 @@ function missing( name, hint = '' ) {
 
 export const WebGLRenderer = missing( 'WebGLRenderer', '; use WebGPURenderer' );
 export const RectAreaLight = missing( 'RectAreaLight' );
-export const LineLoop = missing( 'LineLoop' ), Points = missing( 'Points' ), Sprite = missing( 'Sprite' );
+export const LineLoop = missing( 'LineLoop' );
 export const SkinnedMesh = missing( 'SkinnedMesh' ), LOD = missing( 'LOD' );
 export const MeshPhongMaterial = missing( 'MeshPhongMaterial', '; use MeshLambertMaterial or MeshStandardMaterial' ), MeshPhysicalMaterial = missing( 'MeshPhysicalMaterial', '; use MeshStandardMaterial' );
 export const MeshToonMaterial = missing( 'MeshToonMaterial' ), MeshNormalMaterial = missing( 'MeshNormalMaterial' ), ShaderMaterial = missing( 'ShaderMaterial' );
-export const PointsMaterial = missing( 'PointsMaterial' ), SpriteMaterial = missing( 'SpriteMaterial' );
 export const IcosahedronGeometry = missing( 'IcosahedronGeometry' ), CapsuleGeometry = missing( 'CapsuleGeometry' );
 export const AnimationMixer = missing( 'AnimationMixer' ), CubeTextureLoader = missing( 'CubeTextureLoader' ), ObjectLoader = missing( 'ObjectLoader' );
 
@@ -2762,7 +3204,7 @@ export class Raycaster {
 	intersectObject( object, recursive = true, intersects = [] ) {
 
 		const origin = this.ray.origin, direction = this.ray.direction;
-		const hits = w().raycast( object.handle, recursive, origin, direction, this.near, this.far, this.params.Line.threshold );
+		const hits = w().raycast( object.handle, recursive, origin, direction, this.near, this.far, this.params.Line.threshold, this.params.Points.threshold );
 
 		for ( let i = 0; i < hits.length; i ++ ) {
 
@@ -2808,7 +3250,6 @@ export class Raycaster {
 
 // ---------------------------------------------------------------- renderer
 
-const MAX_LIGHTS = 8;
 let frameStamp = 0;
 const linear = ( { r, g, b } ) => ( { r, g, b, a: 1 } );
 
@@ -2824,8 +3265,12 @@ export class WebGPURenderer {
 		this._width = this.domElement.width;
 		this._height = this.domElement.height;
 		this._clearColor = new Color( 0x000000 );
+		this.toneMapping = NoToneMapping;
+		this.toneMappingExposure = 1;
+		this.shadowMap = { enabled: false, autoUpdate: true, needsUpdate: false, type: PCFShadowMap };
 		this._backend = null;
 		this._frame = null;
+		this._renderTarget = null;
 		this._initializing = null;
 		this._loop = null;
 
@@ -2836,6 +3281,7 @@ export class WebGPURenderer {
 		return this._initializing ??= createBackend( this.domElement, this._options ).then( ( backend ) => {
 
 			this._backend = backend;
+			backends.add( backend );
 			this._frame = new W.Renderer();
 			return this;
 
@@ -2878,6 +3324,19 @@ export class WebGPURenderer {
 
 	}
 
+	/** Draws into `target` until set back to null (the canvas). */
+	setRenderTarget( target ) {
+
+		this._renderTarget = target ?? null;
+
+	}
+
+	getRenderTarget() {
+
+		return this._renderTarget;
+
+	}
+
 	setClearColor( color ) {
 
 		this._clearColor.set( color );
@@ -2898,8 +3357,13 @@ export class WebGPURenderer {
 		if ( scene.matrixWorldAutoUpdate ) scene.updateMatrixWorld();
 		if ( camera.parent === null && camera.matrixWorldAutoUpdate ) camera.updateMatrixWorld();
 
-		const sky = [ 0, 0, 0 ], ground = [ 0, 0, 0 ], frame = this._frame;
+		const sky = [ 0, 0, 0 ], ground = [ 0, 0, 0 ], frame = this._frame, MAX_LIGHTS = W.Renderer.maxLights();
 		let lights = 0;
+		if ( this.toneMapping === CustomToneMapping ) ignored( 'CustomToneMapping' );
+		frame.setToneMapping( this.toneMapping, this.toneMappingExposure );
+		const shadows = this.shadowMap.enabled === true;
+		frame.setShadowsEnabled( shadows );
+		if ( shadows && this.shadowMap.type !== PCFShadowMap ) ignored( 'shadowMap.type other than PCFShadowMap (drawn as PCFShadowMap)' );
 		const stamp = ++ frameStamp;
 		frame.clearLights();
 		const stack = [ scene ];
@@ -2930,6 +3394,8 @@ export class WebGPURenderer {
 
 				}
 
+				if ( object.isSprite ) object._syncCenter();
+
 			} else if ( object.isLight ) {
 
 				const { r, g, b } = object.color, k = object.intensity;
@@ -2946,6 +3412,15 @@ export class WebGPURenderer {
 						if ( object.isDirectionalLight ) frame.addDirectionalLight( from[ 12 ] - to[ 12 ], from[ 13 ] - to[ 13 ], from[ 14 ] - to[ 14 ], r, g, b, k );
 						else if ( object.isPointLight ) frame.addPointLight( from[ 12 ], from[ 13 ], from[ 14 ], r, g, b, k, object.distance, object.decay );
 						else frame.addSpotLight( from[ 12 ], from[ 13 ], from[ 14 ], to[ 12 ], to[ 13 ], to[ 14 ], r, g, b, k, object.distance, object.decay, object.angle, object.penumbra );
+
+						if ( shadows && object.castShadow ) {
+
+							const shadow = object.shadow, c = shadow.camera, size = shadow.mapSize;
+							if ( object.isPointLight ) ignored( 'shadows of point lights' );
+							else if ( object.isDirectionalLight ) frame.setLastLightShadow( true, c.left, c.right, c.top, c.bottom, c.near, c.far, to[ 12 ], to[ 13 ], to[ 14 ], shadow.bias, shadow.normalBias, shadow.intensity, shadow.radius, size.width, size.height );
+							else frame.setLastLightShadow( false, 2 * object.angle * shadow.focus * 180 / Math.PI, size.width / size.height * shadow.aspect, 0, 0, c.near, object.distance || c.far, to[ 12 ], to[ 13 ], to[ 14 ], shadow.bias, shadow.normalBias, shadow.intensity, shadow.radius, size.width, size.height );
+
+						}
 
 					}
 
@@ -2976,7 +3451,9 @@ export class WebGPURenderer {
 		else frame.setFog( 0, 0, 0, 0, 0, 0, 0 );
 
 		const backend = this._backend;
-		backend.render( w(), this._frame, scene.handle, camera.handle, linear( scene.background && scene.background.isColor ? scene.background : this._clearColor ), textureSources, instanceSources );
+		const rt = this._renderTarget, texture = rt?.texture;
+		const target = rt ? { id: texture.id, width: Math.max( 1, rt.width | 0 ), height: Math.max( 1, rt.height | 0 ), samples: rt.samples, type: texture.type === UnsignedByteType ? 'byte' : 'float', texture } : null;
+		backend.render( w(), this._frame, scene.handle, camera.handle, linear( scene.background && scene.background.isColor ? scene.background : this._clearColor ), textureSources, instanceSources, target );
 		this.info.render.calls = backend.info.calls;
 		this.info.render.triangles = backend.info.triangles;
 		this.info.memory.geometries = backend.info.geometries;
@@ -3012,6 +3489,7 @@ export class WebGPURenderer {
 	dispose() {
 
 		this._loop = null;
+		backends.delete( this._backend );
 		this._backend?.dispose();
 		this._frame?.free();
 		this._backend = this._frame = null;
