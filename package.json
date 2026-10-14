@@ -3,6 +3,14 @@
   "private": true,
   "type": "module",
   "description": "Development scripts for WAMR3D. The engine and its package (dist/wamr3d) have no dependencies; three is only the optional reference for comparisons and for regenerating fixtures.",
+  "keywords": [
+    "3d",
+    "webgpu",
+    "webassembly",
+    "wasm",
+    "rust",
+    "three.js"
+  ],
   "scripts": {
     "build": "node engine/bindings/build.mjs",
     "serve": "node examples/browser/serve.mjs",

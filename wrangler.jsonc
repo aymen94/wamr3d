@@ -1,0 +1,5 @@
+{
+  "name": "wamr3d",
+  "compatibility_date": "2026-10-14",
+  "assets": { "directory": "./website/dist" }
+}
