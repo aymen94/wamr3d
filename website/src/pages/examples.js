@@ -5,6 +5,18 @@ const port = (dir, tag, title, body, credit, original) => ({ href: `./examples/p
 
 const sections = [
   {
+    id: 'engine',
+    label: 'Engine and measurements',
+    title: 'Measure it yourself',
+    intro: 'Pages that test the engine itself: load, speed against three.js, and pixel accuracy.',
+    items: [
+      { href: './examples/showcase/', tag: 'Up to 100,000 bodies', title: 'Showcase', body: 'A four-level scene graph of spinning belts. Change the body count, instancing, shading, lights and fog, switch between WAMR3D and three.js, and compare live timings.', source: 'examples/showcase/main.js', art: 'from-brand-cyan/40 via-brand-blue/30 to-transparent' },
+      { href: './examples/compare/', tag: 'Side by side', title: 'Engine comparison', body: 'The same scene on WAMR3D and three.js (WebGPU and WebGL) with timing overlays, including the three.js-only baseline. Run one engine at a time for measurement.', source: 'examples/compare/run.js', art: 'from-brand-blue/50 via-brand-violet/30 to-transparent' },
+      { href: './examples/browser/', tag: 'Low-level API', title: 'Browser demo', body: 'The handle-based API driving a scene in the browser, with an optional transform check against three.js.', source: 'examples/browser/main.js', art: 'from-brand-violet/40 via-brand-cyan/20 to-transparent' },
+      { href: './parity/visual/index.html', tag: '23 visual cases', title: 'Visual parity', body: 'From cubes, lights and textures to points, sprites, shadows, tone mapping and render targets, compared pixel by pixel with stored three.js images.', source: 'parity/visual/cases.js', art: 'from-brand-cyan/40 via-brand-violet/20 to-transparent' }
+    ]
+  },
+  {
     id: 'games',
     label: 'Games',
     title: 'Games that ran on three.js',
@@ -35,18 +47,6 @@ const sections = [
       port('triangles', '160,000 triangles', 'BufferGeometry triangles', 'One geometry with 160,000 separate triangles, flat normals and vertex colours, lit by two lights through fog.', 'three.js authors', 'https://threejs.org/examples/#webgl_buffergeometry'),
       port('points', '500,000 points', 'BufferGeometry points', 'Half a million vertex-coloured points in a single draw call, rotating in fog.', 'three.js authors', 'https://threejs.org/examples/#webgl_buffergeometry_points'),
       port('lines', '10,000 vertices', 'BufferGeometry lines', 'A 10,000-vertex coloured line that blends towards a second random shape, with its position attribute updated every frame.', 'three.js authors', 'https://threejs.org/examples/#webgl_buffergeometry_lines')
-    ]
-  },
-  {
-    id: 'engine',
-    label: 'Engine and measurements',
-    title: 'Measure it yourself',
-    intro: 'Pages that test the engine itself: load, speed against three.js, and pixel accuracy.',
-    items: [
-      { href: './examples/showcase/', tag: 'Up to 100,000 bodies', title: 'Showcase', body: 'A four-level scene graph of spinning belts. Change the body count, instancing, shading, lights and fog, switch between WAMR3D and three.js, and compare live timings.', source: 'examples/showcase/main.js', art: 'from-brand-cyan/40 via-brand-blue/30 to-transparent' },
-      { href: './examples/compare/', tag: 'Side by side', title: 'Engine comparison', body: 'The same scene on WAMR3D and three.js (WebGPU and WebGL) with timing overlays, including the three.js-only baseline. Run one engine at a time for measurement.', source: 'examples/compare/run.js', art: 'from-brand-blue/50 via-brand-violet/30 to-transparent' },
-      { href: './examples/browser/', tag: 'Low-level API', title: 'Browser demo', body: 'The handle-based API driving a scene in the browser, with an optional transform check against three.js.', source: 'examples/browser/main.js', art: 'from-brand-violet/40 via-brand-cyan/20 to-transparent' },
-      { href: './parity/visual/index.html', tag: '23 visual cases', title: 'Visual parity', body: 'From cubes, lights and textures to points, sprites, shadows, tone mapping and render targets, compared pixel by pixel with stored three.js images.', source: 'parity/visual/cases.js', art: 'from-brand-cyan/40 via-brand-violet/20 to-transparent' }
     ]
   }
 ];
