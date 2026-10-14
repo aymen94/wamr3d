@@ -30,4 +30,12 @@ export const MathUtils: Readonly<{
 	ceilPowerOfTwo( value: number ): number;
 	floorPowerOfTwo( value: number ): number;
 	seededRandom( seed?: number ): number;
+	/** Random integer in [low, high], both included. */
+	randInt( low: number, high: number ): number;
+	/** Random float in [low, high). */
+	randFloat( low: number, high: number ): number;
+	/** Random float in (-range / 2, range / 2]. */
+	randFloatSpread( range: number ): number;
+	/** A version 4 UUID in lower case. */
+	generateUUID(): string;
 }>;

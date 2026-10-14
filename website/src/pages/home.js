@@ -149,9 +149,9 @@ function performance() {
 
 function liveDemo() {
   const others = [
+    ['#/examples', 'Games and scenes', 'Stack, City 3D, a voxel world and official three.js examples, ported by changing the import.'],
     ['./examples/showcase/', 'Showcase', 'Up to 100,000 animated bodies. Switch between WAMR3D and three.js and compare live timings.'],
-    ['./examples/compare/', 'Side by side', 'The same scene on each engine, with timing overlays.'],
-    ['./parity/visual/index.html', 'Visual parity', 'WAMR3D renders compared pixel by pixel with three.js images.']
+    ['./examples/compare/', 'Side by side', 'The same scene on each engine, with timing overlays.']
   ];
   return `<section id="demo" class="relative px-6 py-20">
     <div class="mx-auto max-w-6xl">
@@ -159,12 +159,12 @@ function liveDemo() {
       <div class="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <div class="gradient-border relative aspect-[16/10] overflow-hidden rounded-3xl bg-ink-900" data-reveal data-demo>
           <div class="grid-backdrop absolute inset-0 flex flex-col items-center justify-center gap-5 p-8 text-center" data-demo-poster>
-            <p class="font-mono text-[11px] uppercase tracking-[0.2em] text-brand-cyan">WAMR3D · WebGPU</p>
-            <p class="max-w-sm font-display text-2xl font-semibold text-white">Physically based materials, textures, lights, fog, interactive camera movement and picking.</p>
+            <p class="font-mono text-[11px] uppercase tracking-[0.2em] text-brand-cyan">A three.js game · now on WAMR3D</p>
+            <p class="max-w-sm font-display text-2xl font-semibold text-white">Crossy Road, with only the import changed. Hop with the arrow keys.</p>
             <button type="button" data-demo-start class="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-ink-950 transition hover:bg-brand-cyan">
-              <svg viewBox="0 0 20 20" class="size-4" fill="currentColor" aria-hidden="true"><path d="M6 4.5v11l9-5.5Z"/></svg>Start the live demo
+              <svg viewBox="0 0 20 20" class="size-4" fill="currentColor" aria-hidden="true"><path d="M6 4.5v11l9-5.5Z"/></svg>Play the game
             </button>
-            <a href="./examples/webgpu/" class="text-xs text-slate-400 underline-offset-4 hover:text-white hover:underline">or open it full screen</a>
+            <a href="./examples/ports/crossy-road/" class="text-xs text-slate-400 underline-offset-4 hover:text-white hover:underline">or open it full screen</a>
           </div>
         </div>
         <div class="flex flex-col gap-4">

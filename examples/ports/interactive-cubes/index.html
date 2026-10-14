@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interactive cubes · WAMR3D port</title>
+<link rel="icon" href="../../../favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="../../../favicon-32x32.png">
+<link rel="apple-touch-icon" href="../../../apple-touch-icon.png">
+<link rel="stylesheet" href="../ports.css">
+</head>
+<body>
+<aside id="info">
+	<h1>Interactive cubes</h1>
+	<p>2,000 cubes picked with a Raycaster every frame. Hover a cube to highlight it.</p>
+	<p>Original: <a href="https://threejs.org/examples/#webgl_interactive_cubes" target="_blank" rel="noreferrer">three.js example <code>webgl_interactive_cubes</code></a> (MIT, © three.js authors). Ported to WAMR3D by changing the library.</p>
+	<details>
+		<summary>What changed besides the import</summary>
+		<ul>
+			<li>The hover highlight changes <code>material.color</code> instead of <code>material.emissive</code> (no emissive yet).</li>
+		</ul>
+	</details>
+</aside>
+<script type="module" src="./main.js"></script>
+</body>
+</html>

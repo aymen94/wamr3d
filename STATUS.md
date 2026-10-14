@@ -9,6 +9,10 @@
 
 The latest benchmark run (2026-10-14, four canvas resolutions, one run per configuration on one machine) has its raw logs in `bench/results/2026-10-14/`; the website's figures in `website/src/data/benchmarks.js` are a checked-in projection of those logs. The run predates the shadow, tone mapping, points, sprite and render-target features, so it measures the showcase workloads, not the cost of those effects.
 
+## Ported examples
+
+`examples/ports/` holds three.js games and scenes run on WAMR3D through `wamr3d/compat` with the import changed: Crossy Road and Stack (Hunor Márton Borbély), City 3D (Victor Vergara), and the official r186 examples `webgl_geometry_minecraft`, `webgl_lights_spotlights`, `webgl_interactive_cubes`, `webgl_buffergeometry`, `webgl_buffergeometry_points` and `webgl_buffergeometry_lines`. `?engine=three` runs the same code on three.js r186 from the CDN. Each page lists what changed besides the import. `node examples/ports/check.mjs [--three]` drives them in headless Chrome; on 2026-10-15 all nine drew frames without console errors on both libraries. The gaps the ports had to work around are listed under "Object API and geometry" below.
+
 ## Undeveloped and incomplete work
 
 ### Renderer and materials
@@ -28,12 +32,13 @@ The latest benchmark run (2026-10-14, four canvas resolutions, one run per confi
 - Add morph targets, interleaved buffers, and JavaScript bindings for integer vertex attributes.
 - Add geometry primitives beyond box, plane, sphere, cylinder, cone, circle, ring, and torus.
 - Add JavaScript bindings for `Triangle`, `Line3`, `Spherical`, and `Cylindrical`.
+- Found while porting examples: `BufferGeometry.clone()`, `Box3.setFromObject`, `material.emissive`, four-component vertex colours, and `Color.setRGB` with a colour-space argument are missing from the object API.
 
 ### Supporting systems
 
 - Add loaders beyond `TextureLoader`, including object and buffer geometry loading. glTF support would require an add-on.
 - Add animation, audio, controls, and additional helpers.
-- Add random helpers and UUID support.
+- Give objects a `uuid` property. `MathUtils.generateUUID` and the random helpers exist (D39).
 
 ## Constraints
 

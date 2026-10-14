@@ -1,6 +1,6 @@
 {
   "name": "wamr3d",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "WAMR3D: a 3D engine core in WebAssembly",
   "license": "MIT",
   "private": false,
@@ -10,7 +10,14 @@
     "url": "git+https://github.com/aymen94/wamr3d.git"
   },
   "bugs": "https://github.com/aymen94/wamr3d/issues",
-  "keywords": ["3d", "webgpu", "webassembly", "wasm", "rust", "three.js"],
+  "keywords": [
+    "3d",
+    "webgpu",
+    "webassembly",
+    "wasm",
+    "rust",
+    "three.js"
+  ],
   "type": "module",
   "main": "./index.js",
   "module": "./index.js",

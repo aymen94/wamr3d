@@ -26,6 +26,7 @@ try {
 }
 
 await copyWebsiteAsset('images/favicon.ico', 'images/favicon.ico');
+await fs.cp(path.join(websiteRoot, 'images', 'examples'), path.join(outputRoot, 'images', 'examples'), { recursive: true });
 for (const asset of ['favicon.ico', 'favicon-16x16.png', 'favicon-32x32.png', 'apple-touch-icon.png', 'android-chrome-192x192.png', 'android-chrome-512x512.png', 'logo.png', 'site.webmanifest']) await copy(asset, asset);
 for (const document of ['README.md', 'MIGRATION.md', 'STATUS.md', 'DECISIONS.md']) await copy(document, `project-docs/${document}`);
 await fs.cp(path.join(projectRoot, 'examples'), path.join(outputRoot, 'examples'), { recursive: true });
@@ -35,4 +36,4 @@ await fs.writeFile(path.join(outputRoot, '.nojekyll'), '');
 const site = 'https://aymen94.github.io/wamr3d/';
 await fs.writeFile(path.join(outputRoot, 'robots.txt'), `User-agent: *\nAllow: /\nSitemap: ${site}sitemap.xml\n`);
 await fs.writeFile(path.join(outputRoot, 'sitemap.xml'), `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${site}</loc></url></urlset>\n`);
-console.log('Prepared Pages output: docs, standalone renderer demo, showcase, comparison, and visual parity fixtures.');
+console.log('Prepared Pages output: docs, ported games and scenes, showcase, comparison, and visual parity fixtures.');

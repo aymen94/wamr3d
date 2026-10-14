@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spotlights · WAMR3D port</title>
+<link rel="icon" href="../../../favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="../../../favicon-32x32.png">
+<link rel="apple-touch-icon" href="../../../apple-touch-icon.png">
+<link rel="stylesheet" href="../ports.css">
+</head>
+<body>
+<aside id="info">
+	<h1>Spotlights</h1>
+	<p>Three coloured spot lights with PCF shadows, tweened to new angles, penumbras and positions every five seconds. Drag to orbit.</p>
+	<p>Original: <a href="https://threejs.org/examples/#webgl_lights_spotlights" target="_blank" rel="noreferrer">three.js example <code>webgl_lights_spotlights</code></a> (MIT, © three.js authors). Ported to WAMR3D by changing the library.</p>
+	<details>
+		<summary>What changed besides the import</summary>
+		<ul>
+			<li><code>MeshPhongMaterial</code> → <code>MeshLambertMaterial</code>; no <code>SpotLightHelper</code> cones.</li>
+			<li><code>OrbitControls</code> is a small stand-in in <code>controls.js</code>; tween.js comes from a CDN instead of <code>three/addons</code>.</li>
+		</ul>
+	</details>
+</aside>
+<script type="module" src="./main.js"></script>
+</body>
+</html>

@@ -372,7 +372,7 @@ Keep using three.js for these:
 - **Objects:** `LineLoop`, `SkinnedMesh`, `LOD`; picking single instances of an `InstancedMesh`; picking sprites.
 - **Math from JavaScript:** `Triangle`, `Line3`, `Spherical`, `Cylindrical`. They exist in the Rust crates but have no JavaScript binding.
 - **Geometry:** shapes other than box, plane, sphere, cylinder, cone, circle, ring and torus; integer attributes from JavaScript; morph targets; interleaved buffers.
-- **Everything else:** loaders, the animation system (`AnimationMixer`, clips, tracks), audio, controls, helpers, random helpers and UUIDs.
+- **Everything else:** loaders, the animation system (`AnimationMixer`, clips, tracks), audio, controls, helpers. (`MathUtils.randInt`, `randFloat`, `randFloatSpread` and `generateUUID` exist; objects carry no `uuid`.)
 
 ## Checklist
 

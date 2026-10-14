@@ -1,6 +1,8 @@
-//! Not ported: `generateUUID`, `randInt`, `randFloat`, `randFloatSpread`. They need a
-//! `Math.random` source, which Rust's standard library does not have (STATUS.md, "Needs
-//! decision").
+//! `random` stands in for JavaScript's `Math.random`, which three.js reads in
+//! `generateUUID`, `randInt`, `randFloat` and `randFloatSpread`. Rust's standard library
+//! has no random source, so the crate carries a SplitMix64 generator. It starts from a
+//! fixed state; the JavaScript package seeds it from `crypto.getRandomValues` at start-up,
+//! and `set_random_seed` restarts it for reproducible runs.
 
 use crate::quaternion::Quaternion;
 use crate::wide;
@@ -15,7 +17,10 @@ const RAD2DEG_WIDE: f64 = 180.0 / core::f64::consts::PI;
 
 thread_local! {
     static SEED: Cell<u32> = const { Cell::new(1234567) };
+    static RANDOM: Cell<u64> = const { Cell::new(0x853C_49E6_748F_EA9B) };
 }
+
+const HEX: &[u8; 16] = b"0123456789abcdef";
 
 pub fn clamp(value: f32, min: f32, max: f32) -> f32 {
     wide::clamp32(value, min, max)
@@ -105,6 +110,64 @@ pub fn seeded_random(s: Option<u32>) -> f64 {
 
         (t ^ (t >> 14)) as f64 / 4294967296.0
     })
+}
+
+/// Restarts the sequence behind `random`: the same seed gives the same numbers.
+pub fn set_random_seed(seed: u64) {
+    RANDOM.with(|state| state.set(seed));
+}
+
+/// Uniform in [0, 1) with 53 random bits, the resolution of `Math.random`.
+pub fn random() -> f64 {
+    RANDOM.with(|state| {
+        // SplitMix64
+        let mut z = state.get().wrapping_add(0x9E37_79B9_7F4A_7C15);
+        state.set(z);
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^= z >> 31;
+        (z >> 11) as f64 / (1u64 << 53) as f64
+    })
+}
+
+/// Random integer in [low, high], both included. In f64 so that any JavaScript safe
+/// integer range works, as in three.js.
+pub fn rand_int(low: f64, high: f64) -> f64 {
+    low + (random() * (high - low + 1.0)).floor()
+}
+
+/// Random float in [low, high).
+pub fn rand_float(low: f64, high: f64) -> f64 {
+    low + random() * (high - low)
+}
+
+/// Random float in (-range / 2, range / 2].
+pub fn rand_float_spread(range: f64) -> f64 {
+    range * (0.5 - random())
+}
+
+/// A version 4 UUID in lower case, such as `"3f2c1a7e-9b0d-4e8a-a1c4-5d6e7f809a1b"`.
+pub fn generate_uuid() -> String {
+    // `Math.random() * 0xffffffff | 0`: truncated; only the low 32 bits are read.
+    let mut d = [0u32; 4];
+    for word in d.iter_mut() {
+        *word = (random() * 4294967295.0) as u32;
+    }
+    let bytes = [
+        d[0] & 0xff, d[0] >> 8 & 0xff, d[0] >> 16 & 0xff, d[0] >> 24 & 0xff,
+        d[1] & 0xff, d[1] >> 8 & 0xff, d[1] >> 16 & 0x0f | 0x40, d[1] >> 24 & 0xff,
+        d[2] & 0x3f | 0x80, d[2] >> 8 & 0xff, d[2] >> 16 & 0xff, d[2] >> 24 & 0xff,
+        d[3] & 0xff, d[3] >> 8 & 0xff, d[3] >> 16 & 0xff, d[3] >> 24 & 0xff,
+    ];
+    let mut uuid = String::with_capacity(36);
+    for (i, byte) in bytes.iter().enumerate() {
+        if matches!(i, 4 | 6 | 8 | 10) {
+            uuid.push('-');
+        }
+        uuid.push(HEX[(byte >> 4) as usize] as char);
+        uuid.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    uuid
 }
 
 pub fn deg_to_rad(degrees: f32) -> f32 {
@@ -279,6 +342,56 @@ mod tests {
         assert_eq!(a, b);
         assert!(a[0] != a[1] && a[1] != a[2]);
         assert!(a.iter().all(|x| (0.0..1.0).contains(x)));
+    }
+
+    #[test]
+    fn random_is_seedable_and_in_range() {
+        set_random_seed(7);
+        let a: Vec<f64> = (0..1000).map(|_| random()).collect();
+        set_random_seed(7);
+        let b: Vec<f64> = (0..1000).map(|_| random()).collect();
+        assert_eq!(a, b);
+        assert!(a.iter().all(|x| (0.0..1.0).contains(x)));
+        let mean = a.iter().sum::<f64>() / a.len() as f64;
+        assert!((mean - 0.5).abs() < 0.05, "mean {mean}");
+    }
+
+    #[test]
+    fn rand_int_covers_both_ends() {
+        set_random_seed(11);
+        let values: Vec<f64> = (0..2000).map(|_| rand_int(-8.0, 8.0)).collect();
+        assert!(values.iter().all(|v| v.fract() == 0.0 && (-8.0..=8.0).contains(v)));
+        for expected in -8..=8 {
+            assert!(values.contains(&(expected as f64)), "{expected} never drawn");
+        }
+        assert_eq!(rand_int(3.0, 3.0), 3.0);
+    }
+
+    #[test]
+    fn rand_float_and_spread_ranges() {
+        set_random_seed(3);
+        for _ in 0..1000 {
+            let f = rand_float(2.0, 5.0);
+            assert!((2.0..5.0).contains(&f));
+            let s = rand_float_spread(10.0);
+            assert!(s > -5.0 && s <= 5.0);
+        }
+    }
+
+    #[test]
+    fn generate_uuid_is_version_4() {
+        set_random_seed(5);
+        let a = generate_uuid();
+        let b = generate_uuid();
+        assert_ne!(a, b);
+        for uuid in [&a, &b] {
+            assert_eq!(uuid.len(), 36);
+            let parts: Vec<&str> = uuid.split('-').collect();
+            assert_eq!(parts.iter().map(|p| p.len()).collect::<Vec<_>>(), [8, 4, 4, 4, 12]);
+            assert!(uuid.chars().all(|c| c == '-' || c.is_ascii_digit() || ('a'..='f').contains(&c)));
+            assert!(parts[2].starts_with('4'));
+            assert!(matches!(parts[3].as_bytes()[0], b'8' | b'9' | b'a' | b'b'));
+        }
     }
 
     #[test]

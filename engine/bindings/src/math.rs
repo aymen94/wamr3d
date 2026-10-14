@@ -940,9 +940,50 @@ pub fn seeded_random(seed: Option<u32>) -> f64 {
     math_utils::seeded_random(seed)
 }
 
+/// Random integer in [low, high], both included.
+#[wasm_bindgen(js_name = randInt)]
+pub fn rand_int(low: f64, high: f64) -> f64 {
+    math_utils::rand_int(low, high)
+}
+
+/// Random float in [low, high).
+#[wasm_bindgen(js_name = randFloat)]
+pub fn rand_float(low: f64, high: f64) -> f64 {
+    math_utils::rand_float(low, high)
+}
+
+/// Random float in (-range / 2, range / 2].
+#[wasm_bindgen(js_name = randFloatSpread)]
+pub fn rand_float_spread(range: f64) -> f64 {
+    math_utils::rand_float_spread(range)
+}
+
+/// A version 4 UUID in lower case.
+#[wasm_bindgen(js_name = generateUUID)]
+pub fn generate_uuid() -> String {
+    math_utils::generate_uuid()
+}
+
+/// Restarts the sequence behind `randInt`, `randFloat`, `randFloatSpread` and
+/// `generateUUID` from a 64-bit seed given as two halves. `init()` seeds it from
+/// `crypto.getRandomValues`; call this for a reproducible sequence.
+#[wasm_bindgen(js_name = setRandomSeed)]
+pub fn set_random_seed(high: u32, low: u32) {
+    math_utils::set_random_seed((high as u64) << 32 | low as u64);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn random_helpers_reach_the_math_crate() {
+        set_random_seed(0, 9);
+        let first = (rand_int(1.0, 6.0), rand_float(0.0, 1.0), rand_float_spread(2.0), generate_uuid());
+        set_random_seed(0, 9);
+        assert_eq!(first, (rand_int(1.0, 6.0), rand_float(0.0, 1.0), rand_float_spread(2.0), generate_uuid()));
+        assert!((1.0..=6.0).contains(&first.0));
+    }
 
     #[test]
     fn forwarding_macros_reach_the_math_crate() {

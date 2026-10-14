@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stack · WAMR3D port</title>
+<link rel="icon" href="../../../favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="../../../favicon-32x32.png">
+<link rel="apple-touch-icon" href="../../../apple-touch-icon.png">
+<link rel="stylesheet" href="../ports.css">
+<style>
+body { background: #222; }
+#score { position: fixed; top: 64px; right: 24px; font: 700 2.6em system-ui, sans-serif; color: #fff; }
+#instructions, #results { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; pointer-events: none; z-index: 1; }
+#instructions { flex-direction: column; color: #fff; font-size: 16px; text-shadow: 0 1px 4px #000; }
+#instructions p { margin: 4px; }
+#results { display: none; background: rgba(20, 20, 20, .75); color: #fff; font-size: 18px; }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+</head>
+<body>
+<aside id="info">
+	<h1>Stack</h1>
+	<p>Click, tap or press space to drop the moving block; R restarts. The overhang falls with real physics.</p>
+	<p>Original: <a href="https://codepen.io/HunorMarton/pen/MWjBRWp" target="_blank" rel="noreferrer">Stack by Hunor Márton Borbély (CodePen)</a> (MIT). Ported to WAMR3D by changing the library.</p>
+	<details>
+		<summary>What changed besides the import</summary>
+		<ul>
+			<li><code>WebGLRenderer</code> → <code>WebGPURenderer</code>. The physics stays Cannon.js 0.6.2, loaded as in the original.</li>
+			<li>On resize, <code>camera.updateProjectionMatrix()</code> is called so the view follows the window.</li>
+		</ul>
+	</details>
+</aside>
+<div id="instructions"><p>Stack the blocks on top of each other.</p><p>Click, tap or press space to place the block. Press R to restart.</p></div>
+<div id="results"><div class="content"><p>You missed the block</p><p>Press R or click to restart</p></div></div>
+<div id="score">0</div>
+<script type="module" src="./main.js"></script>
+</body>
+</html>

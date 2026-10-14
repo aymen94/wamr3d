@@ -166,8 +166,8 @@ function bindChart(chart) {
 function startDemo(event) {
   const container = event.currentTarget.closest('[data-demo]');
   const frame = document.createElement('iframe');
-  frame.src = './examples/webgpu/index.html';
-  frame.title = 'WAMR3D WebGPU demo';
+  frame.src = './examples/ports/crossy-road/index.html';
+  frame.title = 'Crossy Road on WAMR3D';
   frame.allow = 'fullscreen';
   frame.className = 'absolute inset-0 size-full border-0';
   container.querySelector('[data-demo-poster]').replaceWith(frame);

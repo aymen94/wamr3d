@@ -108,6 +108,7 @@ Then open:
 | Page | What you get |
 |---|---|
 | <http://localhost:8080/examples/showcase/> | **The showcase.** Up to 100,000 tumbling bodies in eight belts around a sun, as separate or instanced meshes, with a settings panel, live timings, and the same scene on three.js (WebGPU and WebGL) one click away. "Compare all four renderers" measures them in turn |
+| <http://localhost:8080/examples/ports/crossy-road/> | **three.js games and scenes on WAMR3D, import changed**: `crossy-road`, `stack`, `city`, `voxel-world`, `spotlights`, `interactive-cubes`, `triangles`, `points`, `lines` under `examples/ports/`. Add `?engine=three` to run the same code on three.js r186. Each page lists what changed besides the import |
 | <http://localhost:8080/examples/webgpu/> | **WAMR3D drawing by itself with WebGPU**: rotating cube, orbiting cubes, a moving point light, a see-through ring, a line grid, click to recolour. No other library on the page. |
 | <http://localhost:8080/parity/visual/> | Each visual parity case drawn by WAMR3D next to the stored three.js image, with the pixel difference |
 | <http://localhost:8080/examples/webgpu/visual.html> | The demo scene drawn by WAMR3D and by three.js (WebGL) on the same page, with the pixel difference |
@@ -175,7 +176,7 @@ The full typed API is in `dist/wamr3d/wamr3d_wasm.d.ts` after a build. A Node.js
 
 | Area | Unfinished or missing |
 |---|---|
-| Math | `Triangle`, `Line3`, `Spherical` and `Cylindrical` exist in Rust but have no JavaScript binding. Random helpers and UUIDs are missing. |
+| Math | `Triangle`, `Line3`, `Spherical` and `Cylindrical` exist in Rust but have no JavaScript binding. Objects have no `uuid`; `MathUtils.generateUUID` and the random helpers exist. |
 | Geometry | Float attributes only from JavaScript; no integer attributes, morph targets or interleaved buffers. Shapes other than box, plane, sphere, cylinder, cone, circle, ring and torus are missing. |
 | Objects | `LineLoop`, `SkinnedMesh` and `LOD` are missing. Sprites and single instances of an `InstancedMesh` are not picked. |
 | Materials | Only basic, Lambert, standard, line, points and sprite materials; no Phong, Physical, Toon, Normal or Shader material. Only the colour `map`; no normal, roughness, metalness or other maps. |
@@ -199,6 +200,7 @@ node parity/bindings/check.mjs                          # the low-level API agai
 
 node parity/visual/run.mjs                              # the WebGPU renderer against stored three.js images (server running, needs a GPU; --headed, --browser=edge)
 tsc -p parity/bindings                                  # the typings, against an application-style program
+node examples/ports/check.mjs --three                   # every ported example draws on WAMR3D and on three.js
 node examples/webgpu/smoke.mjs                          # the demo page, and its image against three.js WebGL
 node examples/showcase/check.mjs                        # the showcase: settings panel and all four engines; --measure prints the comparison
 node examples/browser/smoke.mjs                         # the demo in headless Chrome or Edge (server running)

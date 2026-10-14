@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>10,000 line segments · WAMR3D port</title>
+<link rel="icon" href="../../../favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="../../../favicon-32x32.png">
+<link rel="apple-touch-icon" href="../../../apple-touch-icon.png">
+<link rel="stylesheet" href="../ports.css">
+</head>
+<body>
+<aside id="info">
+	<h1>10,000 line segments</h1>
+	<p>A 10,000-vertex line with vertex colours, blending towards a second random shape.</p>
+	<p>Original: <a href="https://threejs.org/examples/#webgl_buffergeometry_lines" target="_blank" rel="noreferrer">three.js example <code>webgl_buffergeometry_lines</code></a> (MIT, © three.js authors). Ported to WAMR3D by changing the library.</p>
+	<details>
+		<summary>What changed besides the import</summary>
+		<ul>
+			<li>No morph targets yet: the blend writes the position attribute each frame (<code>needsUpdate</code>) instead of <code>morphTargetInfluences</code>.</li>
+			<li><code>new Timer( performance.now() )</code> and <code>timer.update( timestamp )</code> instead of <code>timer.connect( document )</code>.</li>
+		</ul>
+	</details>
+</aside>
+<div id="container"></div>
+<script type="module" src="./main.js"></script>
+</body>
+</html>

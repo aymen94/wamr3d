@@ -1,0 +1,13 @@
+html, body { margin: 0; height: 100%; background: #000; color: #e6e8eb; font: 13px/1.5 system-ui, sans-serif; }
+body { overflow: hidden; }
+canvas { display: block; touch-action: none; }
+a { color: #7fb0ff; }
+#info { position: fixed; top: 10px; left: 10px; max-width: min(420px, calc(100vw - 20px)); padding: 10px 14px; background: rgba(12, 14, 18, 0.82); border: 1px solid #2c3038; border-radius: 8px; z-index: 2; }
+#info h1 { margin: 0 0 4px; font-size: 14px; }
+#info p { margin: 4px 0; color: #b7bdc6; }
+#info details { margin-top: 4px; color: #9aa1ab; }
+#info summary { cursor: pointer; }
+#info ul { margin: 4px 0 0; padding-left: 18px; }
+#engine { position: fixed; top: 10px; right: 10px; padding: 8px 12px; background: rgba(12, 14, 18, 0.82); border: 1px solid #2c3038; border-radius: 8px; text-align: right; font-variant-numeric: tabular-nums; z-index: 2; }
+.port-error { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: 480px; padding: 16px 20px; background: #3a1418; border: 1px solid #a33; border-radius: 8px; z-index: 5; }
+@media (max-width: 640px) { #info details { display: none; } #engine { top: auto; bottom: 10px; } }

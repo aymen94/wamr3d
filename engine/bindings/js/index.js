@@ -6,7 +6,7 @@
 // Everything exported here except `init`, `attributeView`, `memory` and the scalar
 // helpers is implemented in the WebAssembly module; this file only loads it.
 
-import initWasm, { seededRandom } from './wamr3d_wasm.js';
+import initWasm, { seededRandom, randInt, randFloat, randFloatSpread, generateUUID, setRandomSeed } from './wamr3d_wasm.js';
 
 export * from './wamr3d_wasm.js';
 
@@ -14,8 +14,8 @@ let wasm;
 
 // The scalar helpers run in JavaScript: a call into the module costs more than the
 // arithmetic, and doubles give the same results as three.js. These local exports take
-// precedence over the module's functions of the same name. `seededRandom` stays in the
-// module so that its sequence is shared with the engine.
+// precedence over the module's functions of the same name. `seededRandom` and the random
+// helpers stay in the module so that their sequences are shared with the engine.
 
 const DEG2RAD = Math.PI / 180, RAD2DEG = 180 / Math.PI;
 
@@ -112,7 +112,9 @@ export function floorPowerOfTwo( value ) {
 /** The scalar helpers, also available as individual exports. */
 export const MathUtils = Object.freeze( {
 	degToRad, radToDeg, clamp, lerp, inverseLerp, mapLinear, damp, pingpong, smoothstep, smootherstep,
-	euclideanModulo, isPowerOfTwo, ceilPowerOfTwo, floorPowerOfTwo, seededRandom: ( seed ) => seededRandom( seed )
+	euclideanModulo, isPowerOfTwo, ceilPowerOfTwo, floorPowerOfTwo, seededRandom: ( seed ) => seededRandom( seed ),
+	randInt: ( low, high ) => randInt( low, high ), randFloat: ( low, high ) => randFloat( low, high ),
+	randFloatSpread: ( range ) => randFloatSpread( range ), generateUUID: () => generateUUID()
 } );
 
 /**
@@ -134,6 +136,13 @@ export async function init( source ) {
 	}
 
 	wasm = await initWasm( source === undefined ? undefined : { module_or_path: source } );
+
+	// The module has no random source of its own; without this every page load would draw
+	// the same random sequence.
+	const seed = new Uint32Array( 2 );
+	if ( globalThis.crypto?.getRandomValues ) globalThis.crypto.getRandomValues( seed );
+	else seed.set( [ Math.random() * 0x100000000, Math.random() * 0x100000000 ] );
+	setRandomSeed( seed[ 0 ], seed[ 1 ] );
 
 }
 

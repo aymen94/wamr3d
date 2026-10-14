@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voxel world · WAMR3D port</title>
+<link rel="icon" href="../../../favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="../../../favicon-32x32.png">
+<link rel="apple-touch-icon" href="../../../apple-touch-icon.png">
+<link rel="stylesheet" href="../ports.css">
+</head>
+<body>
+<aside id="info">
+	<h1>Voxel world</h1>
+	<p>A 128 × 128 Minecraft-style terrain from Perlin noise, merged into one mesh. Move the mouse to look; W/S, arrows or mouse buttons to fly.</p>
+	<p>Original: <a href="https://threejs.org/examples/#webgl_geometry_minecraft" target="_blank" rel="noreferrer">three.js example <code>webgl_geometry_minecraft</code></a> (MIT, © three.js authors). Ported to WAMR3D by changing the library.</p>
+	<details>
+		<summary>What changed besides the import</summary>
+		<ul>
+			<li>Faces are merged in the page instead of cloning one geometry per block with the BufferGeometryUtils add-on (WAMR3D geometries have no <code>clone()</code> yet).</li>
+			<li>The texture atlas is painted on a canvas with the same layout; <code>ImprovedNoise</code> is the three.js add-on, copied.</li>
+			<li><code>FirstPersonControls</code> is a small stand-in in <code>controls.js</code>.</li>
+		</ul>
+	</details>
+</aside>
+<div id="container"></div>
+<script type="module" src="./main.js"></script>
+</body>
+</html>

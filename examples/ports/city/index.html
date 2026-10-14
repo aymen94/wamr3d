@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>City 3D · WAMR3D port</title>
+<link rel="icon" href="../../../favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="../../../favicon-32x32.png">
+<link rel="apple-touch-icon" href="../../../apple-touch-icon.png">
+<link rel="stylesheet" href="../ports.css">
+<style>
+body { cursor: crosshair; }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/1.20.3/TweenMax.min.js"></script>
+</head>
+<body>
+<aside id="info">
+	<h1>City 3D</h1>
+	<p>A procedural night city with shadowed towers, 60 light streaks on GSAP tweens, floating particles, fog and a grid. Move the mouse to tilt it.</p>
+	<p>Original: <a href="https://codepen.io/vcomics/pen/aGmoae" target="_blank" rel="noreferrer">City 3D by Victor Vergara (CodePen)</a> (MIT). Ported to WAMR3D by changing the library.</p>
+	<details>
+		<summary>What changed besides the import</summary>
+		<ul>
+			<li>Written for three.js r89: <code>CubeGeometry</code> → <code>BoxGeometry</code>, the removed <code>shading</code> option dropped. GSAP TweenMax 1.20.3 is loaded as in the original.</li>
+			<li><code>MeshToonMaterial</code> → <code>MeshLambertMaterial</code>, <code>MeshPhongMaterial</code> → <code>MeshStandardMaterial</code>; the 3 % wireframe overlay is left out (no wireframes yet).</li>
+			<li>PCF shadows with a 2048 map instead of PCFSoft at 6000.</li>
+		</ul>
+	</details>
+</aside>
+<script type="module" src="./main.js"></script>
+</body>
+</html>

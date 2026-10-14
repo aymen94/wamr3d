@@ -121,7 +121,7 @@ The project owner approved the Phase 1 approach. These are now settled:
 |---|---|---|
 | A1 | Parity tolerance | `|error| <= 1e-6 * max(1, |expected|)`; non-finite values must match exactly (D2). |
 | A2 | Arithmetic | f64 inside functions, one rounding on store to f32 (D1). Do not switch to pure f32 without measurements. |
-| A3 | Random helpers | `Math.random`-based helpers stay unported. Revisit in the bindings phase. |
+| A3 | Random helpers | `Math.random`-based helpers stay unported. Revisit in the bindings phase. (Superseded by D39.) |
 | A4 | SIMD | Keep `f64x2`, bit-identical to scalar (D3). No speed-up may be claimed until benchmarked. |
 | A5 | Constants | The limited read of `src/constants.js` is approved. Shared values go in a Rust constants module with their source documented here (D13, D16). |
 | A6 | Unlisted math files | Not added to Phase 1. Deferred until a later phase has a concrete need. |
@@ -374,3 +374,14 @@ Each follows the behaviour of the three.js r186 WebGPU renderer, read from its s
 - **Sprites** are a flag on the renderable (`Renderable.sprite`, the centre) and two material settings; the vertex shader lays the quad along the camera's right and up vectors, which the frame now carries (frame header grew by 8 floats; lights start at float 48).
 - **Render targets** are drawn without flipping, as r186 WebGPU does; pipelines are keyed by target format and sample count.
 - **Environment (incomplete).** The PMREM port keeps three.js's cube-UV layout, level sizes and passes so that results can be compared texel for texel; the sampling direction is y-flipped as r186 `PMREMNode` does. The object API is not wired yet.
+
+### D39. Random helpers in Rust (2026-10-15)
+
+`randInt`, `randFloat`, `randFloatSpread` and `generateUUID` are ported into `engine/math/src/math_utils.rs` and exported through the bindings and `MathUtils`, replacing A3 ("stay unported"). Their formulas are three.js r186's; only the source of randomness differs:
+
+- three.js reads `Math.random`. Rust's standard library has no random source, so the crate carries a SplitMix64 generator (`random()`, 53 random bits in [0, 1), like `Math.random`). No crate was added.
+- The generator starts from a fixed state, so native tests are reproducible. `init()` in the JavaScript package seeds it from `crypto.getRandomValues` (or `Math.random` where that is missing), so each page load draws a different sequence, as three.js does.
+- New export, not in three.js: `setRandomSeed( high, low )` restarts the sequence from a 64-bit seed for reproducible runs. It is a low-level export only and is not on `MathUtils`.
+- Results cannot be compared to fixtures (the sequences differ by design); tests check ranges, coverage of both ends of `randInt`, the UUID version-4 format and reproducibility under a seed.
+- `seededRandom` is unchanged (Mulberry32, three.js's own sequence).
+- Objects still have no `uuid` property.
