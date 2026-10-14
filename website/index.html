@@ -1,16 +1,62 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" class="bg-ink-950">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#10130f">
-  <meta name="description" content="WAMR3D: a WebAssembly 3D engine with a Three.js-style API and WebGPU renderer.">
-  <title>WAMR3D &middot; A native core for the web</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>WAMR3D | WebAssembly 3D rendering engine with a three.js-style API</title>
+  <script>
+    // Apply the saved or system theme before the first paint, so the page never flashes.
+    (function () {
+      var pref = 'system';
+      try { pref = localStorage.getItem('wamr3d-theme') || 'system'; } catch (e) {}
+      var dark = pref === 'dark' || (pref !== 'light' && !matchMedia('(prefers-color-scheme: light)').matches);
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      document.documentElement.dataset.themePref = pref;
+    })();
+  </script>
+  <meta name="description" content="WAMR3D is a WebAssembly 3D rendering engine with a Rust core and its own WebGPU renderer. Its object API follows three.js, so migrating supported code starts with one import.">
+  <meta name="keywords" content="WebAssembly 3D engine, WebGPU renderer, three.js alternative, three.js migration, Rust WebAssembly, browser 3D graphics">
+  <meta name="theme-color" content="#04050c" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f4f6fb" media="(prefers-color-scheme: light)">
+  <meta name="color-scheme" content="dark light">
+  <link rel="canonical" href="https://aymen94.github.io/wamr3d/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="WAMR3D">
+  <meta property="og:title" content="WAMR3D: the 3D engine you already know, compiled to WebAssembly">
+  <meta property="og:description" content="A WebAssembly 3D rendering engine with a Rust core, its own WebGPU renderer and a three.js-style API.">
+  <meta property="og:url" content="https://aymen94.github.io/wamr3d/">
+  <meta property="og:image" content="https://aymen94.github.io/wamr3d/logo.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="WAMR3D: the 3D engine you already know, compiled to WebAssembly">
+  <meta name="twitter:description" content="A WebAssembly 3D rendering engine with a Rust core, its own WebGPU renderer and a three.js-style API.">
+  <meta name="twitter:image" content="https://aymen94.github.io/wamr3d/logo.png">
+  <link rel="icon" href="./images/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32x32.png">
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+  <link rel="manifest" href="./site.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareSourceCode",
+    "name": "WAMR3D",
+    "description": "A WebAssembly 3D rendering engine with a Rust core, its own WebGPU renderer and an object API that follows three.js.",
+    "codeRepository": "https://github.com/aymen94/wamr3d",
+    "programmingLanguage": ["Rust", "JavaScript", "WebAssembly"],
+    "license": "https://opensource.org/licenses/MIT",
+    "url": "https://aymen94.github.io/wamr3d/"
+  }
+  </script>
 </head>
-<body>
-  <canvas id="scene-bg" aria-hidden="true"></canvas>
-  <div id="app"></div>
+<body class="min-h-screen overflow-x-hidden bg-ink-950 font-sans text-slate-200 antialiased">
+  <a href="#main" data-skip class="sr-only z-[100] rounded-lg bg-white px-4 py-2 text-ink-950 focus:not-sr-only focus:fixed focus:left-4 focus:top-4">Skip to content</a>
+  <div class="grid-backdrop pointer-events-none fixed inset-0" aria-hidden="true"></div>
+  <canvas id="scene" class="pointer-events-none fixed inset-0 block size-full opacity-0 transition-opacity duration-[1500ms]" aria-hidden="true"></canvas>
+  <div class="scene-scrim pointer-events-none fixed inset-0" aria-hidden="true"></div>
+  <div id="app" data-prerendered="/"><!--app--></div>
+  <noscript><p class="relative z-10 mx-auto max-w-xl p-6 text-slate-300">WAMR3D's live scene and interactive charts need JavaScript. The documentation is on <a class="text-cyan-300 underline" href="https://github.com/aymen94/wamr3d">GitHub</a>.</p></noscript>
   <script type="module" src="./src/main.js"></script>
 </body>
 </html>
-

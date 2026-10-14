@@ -1,0 +1,131 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-ink-950: #04050c;
+  --color-ink-900: #080a16;
+  --color-ink-850: #0d1020;
+  --color-ink-800: #12162a;
+  --color-ink-700: #1c2140;
+  --color-brand-violet: #a259ff;
+  --color-brand-blue: #3d5afe;
+  --color-brand-cyan: #22e4ff;
+
+  --animate-float: float 9s ease-in-out infinite;
+  --animate-shine: shine 6s linear infinite;
+  --animate-pulse-dot: pulse-dot 2s ease-in-out infinite;
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+  }
+  @keyframes shine {
+    to { background-position: 200% center; }
+  }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: .45; transform: scale(.8); }
+  }
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    /* Chart series, in this order, validated on the dark surface (colour-blind separation and contrast). */
+    --color-series-1: #3987e5;
+    --color-series-2: #d95926;
+    --color-series-3: #199e70;
+    --color-series-4: #c98500;
+    --code-keyword: #c792ff; --code-string: #7ee7c7; --code-comment: #6b7394; --code-number: #ffb86b;
+    --code-removed: #ff8b8b; --code-added: #8bffb7;
+    --logo-face: #e8ecff;
+  }
+
+  /* Light theme: the same utilities, with the colour tokens they read redefined. "white" is
+     the strongest ink and "ink-950" the page, so every class keeps its role in both themes.
+     Chart series use the light steps of the same validated palette. */
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --color-white: #0b1020;
+    --color-slate-200: #1f2638;
+    --color-slate-300: #2f3a4f;
+    --color-slate-400: #4a5568;
+    --color-ink-950: #f4f6fb;
+    --color-ink-900: #ffffff;
+    --color-ink-850: #eef1f8;
+    --color-ink-800: #e6eaf4;
+    --color-ink-700: #d5dbea;
+    --color-brand-violet: #7c3aed;
+    --color-brand-blue: #2f4ae0;
+    --color-brand-cyan: #0b7c94;
+    --color-emerald-300: #047857;
+    --color-series-1: #2a78d6;
+    --color-series-2: #eb6834;
+    --color-series-3: #1baf7a;
+    --color-series-4: #eda100;
+    --code-keyword: #7c3aed; --code-string: #047857; --code-comment: #6b7280; --code-number: #b45309;
+    --code-removed: #b42318; --code-added: #067647;
+    --logo-face: #1c2140;
+  }
+  html { scroll-behavior: smooth; -webkit-tap-highlight-color: transparent; }
+  body { background: var(--color-ink-950); }
+  ::selection { background: color-mix(in oklab, var(--color-brand-cyan) 35%, transparent); color: var(--color-white); }
+  :focus-visible { outline: 2px solid var(--color-brand-cyan); outline-offset: 3px; border-radius: 6px; }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+  }
+}
+
+@layer components {
+  .text-gradient {
+    background: linear-gradient(100deg, var(--color-brand-violet), var(--color-brand-blue) 40%, var(--color-brand-cyan) 70%, var(--color-brand-violet));
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .glass {
+    background: color-mix(in oklab, var(--color-ink-900) 72%, transparent);
+    border: 1px solid color-mix(in oklab, var(--color-white) 9%, transparent);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+  }
+  .gradient-border { position: relative; isolation: isolate; }
+  .gradient-border::before {
+    content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; padding: 1px;
+    background: linear-gradient(135deg, rgb(162 89 255 / .55), rgb(61 90 254 / .25) 45%, rgb(34 228 255 / .5));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor; mask-composite: exclude;
+  }
+  .grid-backdrop {
+    background-image:
+      radial-gradient(60% 50% at 75% 30%, rgb(61 90 254 / .28), transparent 70%),
+      radial-gradient(40% 40% at 20% 70%, rgb(162 89 255 / .18), transparent 70%),
+      linear-gradient(color-mix(in oklab, var(--color-white) 5%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in oklab, var(--color-white) 5%, transparent) 1px, transparent 1px);
+    background-size: auto, auto, 48px 48px, 48px 48px;
+  }
+  .code-token-keyword { color: var(--code-keyword); }
+  .code-token-string { color: var(--code-string); }
+  .code-token-comment { color: var(--code-comment); font-style: italic; }
+  .code-token-number { color: var(--code-number); }
+  .code-token-removed { color: var(--code-removed); background: color-mix(in oklab, var(--code-removed) 10%, transparent); display: block; }
+  .code-token-added { color: var(--code-added); background: color-mix(in oklab, var(--code-added) 10%, transparent); display: block; }
+  .logo-face { fill: var(--logo-face); }
+  /* Keeps text readable over the 3D scene: solid on small screens, a left-hand fade on wide ones. */
+  .scene-scrim { background: color-mix(in oklab, var(--color-ink-950) 50%, transparent); }
+  @media (min-width: 64rem) {
+    .scene-scrim { background: linear-gradient(90deg, color-mix(in oklab, var(--color-ink-950) 88%, transparent) 0%, color-mix(in oklab, var(--color-ink-950) 55%, transparent) 38%, transparent 62%); }
+  }
+}
+
+/* Scroll reveal: content is visible without JavaScript; the script opts elements in. */
+.reveal-ready [data-reveal] { opacity: 0; transform: translateY(24px); transition: opacity .7s cubic-bezier(.2,.7,.2,1), transform .7s cubic-bezier(.2,.7,.2,1); transition-delay: var(--reveal-delay, 0ms); }
+.reveal-ready [data-reveal].is-visible { opacity: 1; transform: none; }
+
+/* Route changes cross-fade where view transitions exist. */
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: .28s; }
