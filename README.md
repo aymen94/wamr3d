@@ -2,22 +2,30 @@
 
 # WAMR3D
 
-**A 3D engine in Rust and WebAssembly that draws with WebGPU, for people who want their animation loop to run native-speed math.**
+**A 3D engine in Rust and WebAssembly with its own WebGPU renderer and a three.js-style API.**
 
-WAMR3D keeps your scene graph, transforms, cameras, geometry processing, culling and draw ordering inside a WebAssembly module. You drive it from JavaScript, either through classes that follow three.js conventions or through batched calls for large scenes. It is checked against three.js r186 value by value and pixel by pixel.
+WAMR3D provides a WebAssembly scene graph, transforms, cameras, geometry processing, culling and draw ordering, plus a separate WebGPU renderer. Drive it from JavaScript through classes that follow three.js conventions or through batched calls for large scenes. The object API keeps user-facing transforms in JavaScript and synchronizes them with the engine in batches. Behaviour is checked against three.js r186 value by value and pixel by pixel.
 
-It is an enthusiast project, MIT licensed, with no runtime dependencies. It is also unfinished: **the renderer is young** (meshes, lines and instanced meshes, diffuse or physically based materials, colour textures, directional, point and spot lights, transparency, fog; no shadows, environment reflections, points or render targets yet). Read [Status](#status) before you plan around it.
+It is an enthusiast project with no runtime dependencies. It is also unfinished: **the renderer is young** (meshes, lines, points, sprites and instanced meshes; basic, Lambert and standard materials; colour textures; up to 16 directional, point and spot lights; directional and spot shadows with PCF; tone mapping; render targets; transparency; and fog). Environment reflections are partly built but not usable; point-light shadows, area lights, post-processing and a WebGL fallback are not available. Read [Status](#status) before you plan around it.
 
 ## Why try it
 
-- **Faster scene updates where it counts.** Updating 10,000 animated objects (rotations, world matrices, camera) took a median 2.2 ms in WAMR3D against 4.2 ms in three.js, in Chrome on the same machine with the same scene. At 2,000 objects it was 0.5 ms against 0.8 ms.
+- **Faster scene updates where it counts.** Updating 10,000 animated objects (rotations, world matrices, camera) took a median 1.6 ms in WAMR3D against 4.5 ms in three.js at 1920×1080, in Chrome on the same machine with the same scene and the same renderer. At 2,000 objects it was 0.4 ms against 0.6 ms.
 - **Same results as three.js.** Over 7,600 reference cases generated from the three.js r186 source are replayed against the Rust code. Individual operations agree to about one part in a million.
 - **No garbage-collector pauses from the engine.** Objects live in WebAssembly memory and are created and destroyed explicitly. A handle to a destroyed object can never reach a different one.
 - **Zero-copy vertex data.** Read and write geometry attributes through typed-array views straight over engine memory.
-- **Its own WebGPU renderer.** In the showcase scene with 10,000 separate animated meshes, WAMR3D held 60 fps (12 ms of draw submission per frame); three.js r186 ran at 34 fps with its WebGL renderer (23 ms) and 9 fps with its WebGPU renderer (100 ms). With 50,000 instanced bodies in a four-level scene graph, WAMR3D held 60 fps (12 ms of scene update) against about 20 fps for three.js (39 to 46 ms). One run on one machine; see [`STATUS.md`](STATUS.md) for the full table and its limits.
-- **Small and free.** The module is about 450 KiB of WebAssembly. MIT licensed. Nothing to pay, nothing else to install at run time.
+- **Its own WebGPU renderer.** In the showcase scene with 10,000 separate animated meshes at 1920×1080, WAMR3D held 60 fps (12.2 ms of draw submission per frame); three.js r186 ran at 34 fps with its WebGL renderer (23.7 ms) and 9.5 fps with its WebGPU renderer (100.5 ms). With 50,000 instanced bodies in a four-level scene graph, WAMR3D held 60 fps (12.0 ms of scene update) against 21 to 23 fps for three.js (39 to 40 ms). Measured at 1280×720, 1920×1080, 2560×1440 and 3840×2160 with similar results at each; one run per resolution on one machine. This snapshot predates the latest renderer-feature additions and does not measure their performance. See [`STATUS.md`](STATUS.md) for the full tables and their limits.
+- **Small and free.** The current SIMD WebAssembly module is about 488 KiB. Nothing to pay, nothing else to install at run time.
 
 What it is not: a complete replacement for three.js. Calls that do very little work (a single vector operation, one property at a time) are *slower* than plain JavaScript, because crossing into WebAssembly has a fixed cost. WAMR3D wins when you batch. The numbers for both cases are in [`STATUS.md`](STATUS.md).
+
+## Install
+
+```
+npm install wamr3d
+```
+
+The package is on npm: <https://www.npmjs.com/package/wamr3d>. To build it from source instead, see [Build](#build).
 
 ## Quick look
 
@@ -128,7 +136,9 @@ npm run build --prefix website
 npm run preview --prefix website
 ```
 
-The GitHub Actions workflow in `.github/workflows/pages.yml` builds the package and deploys `website/dist` to GitHub Pages. Set the repository's Pages source to **GitHub Actions**.
+The site is plain JavaScript styled with Tailwind CSS. Its animated backdrop is drawn by WAMR3D itself (`website/src/scene/hero-scene.js`, WebGPU only; browsers without WebGPU get a static backdrop, and three.js is never loaded). Benchmark figures in `website/src/data/benchmarks.js` are a checked-in projection of the latest measurements and their raw logs in `bench/results/`; the methodology and full tables are in `STATUS.md`. Update the data and documentation together when new results are measured. The demos, the parity page and the package are served from the repository root in development and copied into `website/dist` by `website/scripts/prepare-pages.mjs`.
+
+The GitHub Actions workflow in `.github/workflows/pages.yml` builds the package and deploys `website/dist` to GitHub Pages. Its benchmark figures are the recorded 2026-10-14 run; that snapshot predates the renderer-feature milestone below, and does not measure the performance of the newly added effects. Set the repository's Pages source to **GitHub Actions**.
 
 ## Build
 
@@ -145,7 +155,7 @@ Then:
 node engine/bindings/build.mjs
 ```
 
-This writes the importable package to `dist/wamr3d/`: `index.js`, the generated bindings, TypeScript typings, `wamr3d_wasm_bg.wasm` and a `package.json`. Use it from another project with `npm install /path/to/dist/wamr3d` and `import { init, World } from 'wamr3d'` or `import * as WAMR3D from 'wamr3d/compat'`. In a browser the page must be served over HTTP, not opened from `file://`.
+This writes the importable package to `dist/wamr3d/`: `index.js`, the generated bindings, TypeScript typings, `wamr3d_wasm_bg.wasm` and a `package.json`. Use a local build from another project with `npm install /path/to/dist/wamr3d` (or install the published package with `npm install wamr3d`) and `import { init, World } from 'wamr3d'` or `import * as WAMR3D from 'wamr3d/compat'`. In a browser the page must be served over HTTP, not opened from `file://`.
 
 ## Things to know before you write code
 
@@ -171,12 +181,13 @@ The full typed API is in `dist/wamr3d/wamr3d_wasm.d.ts` after a build. A Node.js
 | Picking (rays against meshes, from a camera or free) and object cloning | Done and exposed. |
 | Geometry (attributes, index, normals, tangents, bounds, transforms) | Done for float data. |
 | Built-in shapes | Box, plane, sphere, cylinder, cone, circle, ring, torus. |
-| Lines | `Line` and `LineSegments`, one pixel wide, not picked by the raycaster. |
+| Lines | `Line` and `LineSegments`, one pixel wide; raycasting uses `Raycaster.params.Line.threshold`. |
 | Instancing, material arrays, fog, hand-set matrices | Done. |
-| Points, sprites, shadows, environment reflections, render targets | Not started. |
-| **Renderer** (WebGPU) | **In progress.** Meshes and lines; unlit, diffuse and physically based (roughness/metalness) materials; colour textures with mipmaps and uv transforms; vertex colours; alpha blending; up to 8 directional, point and spot lights plus ambient/hemisphere light; fog; instanced meshes; a material per geometry group; frustum culling; draw ranges; 4x MSAA. Eleven cases are compared with stored three.js WebGPU images. No environment reflections, other maps, shadows, points, sprites, render targets or tone mapping yet. |
-| Object API (`wamr3d/compat`: classes, properties, chaining) | Scene, group, mesh, instanced mesh, lines, grid and axes helpers, cameras, eight shapes, four materials, textures, five lights, fog, raycaster, clock, renderer, math. Typings are compiled with TypeScript. Classes that are missing throw a clear "not available yet" error. |
-| Loaders, animation system, audio, controls, helpers | Not planned for the first version. |
+| Points, sprites, render targets, tone mapping, shadows (directional and spot) | Done, each compared with three.js r186 images. Points are one pixel, as in three.js r186's WebGPU renderer. |
+| Environment reflections | Partly built (prefiltering and shading in the renderer), not connected to `scene.environment` or `envMap` yet, so not usable. |
+| **Renderer** (WebGPU) | Implemented but incomplete: meshes, lines, points, sprites and instanced meshes; basic, Lambert and standard materials; colour maps, fog, up to 16 directional/point/spot lights, PCF shadows for up to four directional/spot lights, tone mapping, render targets, geometry groups, frustum culling, draw ranges and 4× MSAA. All 23 visual cases are compared with stored three.js WebGPU images. See [STATUS](STATUS.md) for limitations. |
+| Object API (`wamr3d/compat`: classes, properties, chaining) | Scene, group, mesh, instanced mesh, lines, points, sprites, render targets, grid and axes helpers, cameras, eight shapes, six materials (basic, Lambert, standard, line, points, sprite), textures, five light types, shadows, tone mapping, fog, raycaster, clock, renderer and math. Typings are compiled with TypeScript. Unsupported classes throw a clear "not available yet" error. |
+| Still incomplete | Environment reflections are not wired to the object API; point-light shadows, area lights, post-processing, scene background textures, non-colour maps, render-target depth textures and multiple attachments, and WebGL fallback are unavailable. Loaders other than `TextureLoader`, animation, audio and controls are not implemented. |
 
 Verified so far in Node.js v24 and headless Chrome. Not yet tried in Firefox, Safari or with a bundler.
 
@@ -184,13 +195,13 @@ Verified so far in Node.js v24 and headless Chrome. Not yet tried in Firefox, Sa
 
 ```
 cd engine
-cargo test --workspace                                  # 638 Rust tests: unit, parity, allocation
+cargo test --workspace                                  # 643 Rust tests: unit, parity, allocation
 cargo build --workspace --target wasm32-unknown-unknown
 cd ..
 node engine/bindings/build.mjs
 node parity/bindings/compat-check.mjs                   # the object API against stored three.js r186 values
 node parity/bindings/check.mjs                          # the low-level API against three.js live (needs `npm install`)
-node parity/bindings/compat-check.mjs                   # one script run against three.js and the object API
+
 node parity/visual/run.mjs                              # the WebGPU renderer against stored three.js images (server running, needs a GPU; --headed, --browser=edge)
 tsc -p parity/bindings                                  # the typings, against an application-style program
 node examples/webgpu/smoke.mjs                          # the demo page, and its image against three.js WebGL
@@ -198,6 +209,7 @@ node examples/showcase/check.mjs                        # the showcase: settings
 node examples/browser/smoke.mjs                         # the demo in headless Chrome or Edge (server running)
 node bench/bench.mjs                                    # micro-benchmarks against three.js under Node.js (needs `npm install`)
 node examples/compare/measure.mjs --gpu                 # the scene comparison in a browser (server running)
+npm run build --prefix website                          # build the publication site after building the package
 ```
 
 three.js r186 is the reference and is not part of this repository. Nothing in `engine/`, `dist/` or the primary examples needs it: the parity tests read committed fixtures and reference images. It is only fetched on request: the comparison pages load the pinned r186 builds from a CDN when a three.js engine or the reference check is selected, and `npm install` fetches `three@0.186.1` for the scripts that regenerate fixtures or compare live (`npm run reference:fixtures`, `reference:api`, `reference:bench`). Measured results, with the environment and method, are in [`STATUS.md`](STATUS.md).
@@ -226,4 +238,4 @@ Help is welcome, especially on the renderer (textures, physically based shading,
 
 ## License
 
-MIT. WAMR3D's behaviour is derived from three.js, which is also MIT licensed; see [`THIRD_PARTY.md`](THIRD_PARTY.md).
+Inspired by three.js; see [`THIRD_PARTY.md`](THIRD_PARTY.md).

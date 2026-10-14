@@ -2,8 +2,363 @@
 
 > three.js r186 is no longer kept in this repository (2026-10-14, DECISIONS.md D37). Older entries below that name `three/src/...` or builds of three.js refer to the pinned `three@0.186.1`.
 
-**Current state: the native WebGPU renderer is the default everywhere, an application written against the supported three.js classes runs with the import changed, and `examples/showcase/` shows the same large animated scene on WAMR3D and on three.js with live timings. It is not a full three.js replacement: shadows, environment reflections, points, sprites and render targets do not exist yet.**
+**Current state: the native WebGPU renderer is the default everywhere, an application written against the supported three.js classes runs with the import changed, and `examples/showcase/` shows the same large animated scene on WAMR3D and on three.js with live timings. Since the milestone below it also has shadows (directional and spot), tone mapping, up to 16 lights, points, sprites and render targets, each checked against three.js r186 images. It is not a full three.js replacement: environment reflections are only partly built and not usable, and point-light shadows, area lights, post-processing, loaders, animation, audio, controls and a WebGL fallback do not exist.**
 three.js is used only as a reference: the comparison engines of the showcase and of `examples/compare`, the optional adapter (`examples/browser/?renderer=three`), and the stored images.
+
+## Publication readiness (2026-10-14)
+
+The project has one maintained progress/handoff file (`STATUS.md`); there are no separate agent status files or tracked task lists to reconcile. The website, root README, npm package README, and migration page now describe the current renderer surface consistently. The parity page links all 23 stored visual cases, and the Pages build now includes the root favicon required by the copied demo pages.
+
+The unused `website/examples/` mirror was removed (33 duplicate files); `examples/` is the source served in development and copied into the publication output. No other files were removed because their publication or reproducibility purpose was confirmed.
+
+| Check | Result |
+|---|---|
+| `npm run build --prefix website` | pass; Vite bundle and Pages assets prepared |
+| Built-site links and production preview | 66 local HTML references resolve; all 12 checked site, example, parity, favicon, docs, JS and Wasm URLs return HTTP 200 |
+| `node parity/visual/run.mjs` | 23/23 pass, including shadows, points, sprites, tone mapping and render targets |
+| `node examples/showcase/check.mjs` | 11/11 pass |
+| `node examples/browser/smoke.mjs` | 9/9 pass |
+| `node examples/webgpu/smoke.mjs` | 8/8 pass |
+| Benchmark data | unchanged; website data is from the latest recorded four-resolution run and raw logs under `bench/results/2026-10-14/`. That run predates the renderer-feature milestone above; no benchmark experiment was repeated. |
+
+The remaining engine gaps below are documented capability limits, not website-build blockers. GitHub Pages deployment and repository-level Pages settings have not been verified from this local checkout.
+
+## Milestone: renderer features (2026-10-14)
+
+Feature implementation stopped at this milestone; the website and browser smoke checks from the publication pass are recorded above. The tree builds (`node engine/bindings/build.mjs`, 488.3 KiB of wasm). Nothing in this section has been benchmarked: the benchmark results further down were measured before these changes.
+
+### Implemented and verified
+
+"Verified" means a case in `parity/visual/cases.js` whose reference image was drawn by three.js r186 (WebGPU renderer, from the CDN) and which WAMR3D matches within the agreed tolerance (mean difference 1.5 of 255, at most 2% of pixels off by more than 12).
+
+| Feature | API | Visual cases (mean difference of 255) | Notes |
+|---|---|---|---|
+| More lights | up to 16 directional, point and spot lights (was 8) | `lights_many`, 12 point lights (1.434) | `Renderer.maxLights()` is 16; further lights are ignored with a warning |
+| Tone mapping | `renderer.toneMapping`, `toneMappingExposure`; `NoToneMapping`, `LinearToneMapping`, `ReinhardToneMapping`, `CineonToneMapping`, `ACESFilmicToneMapping`, `AgXToneMapping`, `NeutralToneMapping` | `tonemapping_aces` (0.506), `_agx` (0.692), `_neutral` (0.429), `_linear` (0.405), `_reinhard` (0.405), `_cineon` (0.417) | As in three.js r186's WebGPU renderer, the frame is drawn into an `rgba16float` target and a full-screen output pass tone-maps every pixel, background included. So blending happens before tone mapping and `material.toneMapped` has no effect on screen output (it is accepted). `CustomToneMapping` draws like `NoToneMapping` with a warning |
+| Shadows | `renderer.shadowMap.enabled`, `light.castShadow`, `object.castShadow`, `object.receiveShadow`; `light.shadow` with `mapSize`, `bias`, `normalBias`, `radius`, `intensity`, `camera` (orthographic for directional, perspective from the cone for spot), `focus` | `shadows_directional` (0.293), `shadows_spot` (0.031) | PCF filtering like three.js r186 `PCFShadowMap`: five comparisons on a Vogel disk turned by interleaved gradient noise, bilinear comparison sampling. Casters draw the opposite side of `material.side`. Up to 4 shadow-casting lights per frame (`Renderer.maxShadows()`), in one `depth32float` texture array sized to the largest map |
+| Points | `Points`, `PointsMaterial` (`color`, `vertexColors`, `opacity`, `transparent`) | `points`, 12,000 vertex-coloured points (0.032) | One pixel per point, as with three.js r186's WebGPU renderer: `size` and `sizeAttenuation` are accepted and have no effect there either. `Raycaster` picks points with `params.Points.threshold` (ported `Points.raycast`) |
+| Sprites | `Sprite`, `SpriteMaterial` (`color`, `map`, `rotation`, `sizeAttenuation`, `opacity`; transparent by default), `sprite.center` | `sprites` (0.003) | Camera-facing quad sized by the world scale, as three.js `SpriteNodeMaterial` |
+| Render targets | `RenderTarget`, `WebGLRenderTarget` (same class), `renderer.setRenderTarget`, `getRenderTarget`, `target.texture` as a material map, `setSize`, `dispose` | `render_target` (0.002) | Linear colour without tone mapping, like three.js. `type`: `UnsignedByteType` (8-bit) or `HalfFloatType`/`FloatType` (16-bit float). `samples > 1` gives 4x MSAA when the renderer is antialiased. Drawn as three.js r186 WebGPU draws it: the texture appears upside down on a plane, and the reference image does the same |
+| Smaller additions | `Vector2.width` and `.height` (aliases of `x`, `y`); constants `BasicShadowMap`, `PCFShadowMap`, `PCFSoftShadowMap`, `VSMShadowMap`, `UnsignedByteType`, `HalfFloatType`, `FloatType` | | |
+
+Rust tests cover the frame layout of each feature (new tests in `engine/renderer_webgpu`: tone mapping packing, shadow casters and receivers, points and sprites, environment packing). The visual suite runner gained `--cases=a,b` and cases may return `setup( renderer )`.
+
+### Partially implemented, not usable yet
+
+- **Environment reflections (image-based lighting).** Built: the cube-UV sampling of three.js r186 `textureCubeUV` (`CUBE_UV` in `engine/renderer_webgpu`), the prefiltering passes of `PMREMGenerator` (equirectangular to cube-UV, then GGX convolution per level through a ping-pong target; `PMREM_SHADER` and `prefilter()` in `engine/bindings/js/webgpu.js`), the material terms (radiance along the reflection bent by roughness⁴, irradiance along the normal times π) in the mesh shader, and the bindings `setEnvironment`, `clearEnvironment`, `environmentInfo`, `setMaterialEnvironment`. **Missing:** the object API never calls them: `scene.environment`, `scene.environmentIntensity`, `scene.environmentRotation`, `material.envMap`, `envMapIntensity`, `envMapRotation` and the texture `mapping` constants are not wired in `engine/bindings/js/compat.js`, so the feature cannot be used yet and has no visual case. Next steps: wire those properties (the precedence rules are in three.js `MaterialProperties.js`: `material.envMap` wins over `scene.environment`, the rotation is inverted, intensity is `envMapIntensity` or `environmentIntensity`), add a visual case with an equirectangular `DataTexture`, and compare. Only `MeshStandardMaterial` is planned to use it; one environment per frame.
+- **Shadow types.** Only PCF filtering exists; `BasicShadowMap`, `PCFSoftShadowMap` and `VSMShadowMap` draw as PCF with a warning.
+
+### Not implemented
+
+| Feature | State | Fallback |
+|---|---|---|
+| Point-light shadows | `castShadow` on a `PointLight` warns and draws without a shadow (three.js uses cube shadow maps) | three.js |
+| Area lights (`RectAreaLight`) | throws "not available yet"; needs the LTC lookup tables | three.js |
+| Post-processing | none; three.js r186's WebGPU post-processing is node-based (TSL), which v1 does not port (AGENTS.md R1). A render target plus a textured quad covers simple cases | three.js |
+| Scene background textures, `backgroundBlurriness` | `scene.background` must be a `Color`; a texture is ignored with a warning | three.js |
+| Loaders | only `TextureLoader`; no `ObjectLoader`, `BufferGeometryLoader`, `FileLoader`, `LoadingManager`; glTF is a three.js add-on, not core | three.js |
+| Animation system | `AnimationMixer` and clips throw "not available yet" | three.js |
+| Audio | none | three.js or Web Audio |
+| Controls | none in the package; three.js controls are add-ons, not core. `examples/webgpu` has its own orbit code | three.js add-ons (untested against WAMR3D objects) |
+| WebGL fallback | none: `WebGLRenderer` throws; the renderer needs WebGPU | the three.js adapter, `examples/browser/?renderer=three` |
+| Others still missing | `LineLoop`, `SkinnedMesh`, `LOD`, `MeshPhongMaterial`, `MeshPhysicalMaterial`, `MeshToonMaterial`, `MeshNormalMaterial`, `ShaderMaterial`, maps other than `map`, render-target depth textures and multiple attachments, picking sprites | three.js |
+
+### Known limitations of what was added
+
+- Sprites are not picked by `Raycaster` (three.js needs the camera for that); they return no hits.
+- Shadow casters are meshes only: lines, points and sprites never cast shadows. Each shadow map fills the top-left of its layer; samples at a map's edge can read the cleared area of a larger layer (lit).
+- A material sampling the render target it is being drawn into gets white instead (WebGPU forbids the feedback).
+- A physically based surface lit by a strong light still differs from three.js by about 1.8 of 255 (found while building `shadows_directional`: the same scene without shadows measures 1.79). It comes from the existing shading approximation, not from shadows; the shadow case uses a Lambert floor so that it tests shadows alone. Likely cause, not investigated: three.js adds a geometry-dependent roughness term WAMR3D does not have.
+- `Material` gained `rotation`, `size_attenuation`, `uses_environment` and `env_map_intensity`; `Renderable` gained `sprite` and lost `Eq` (it now holds floats); `Primitive` gained `Points`. `World.raycast` takes a trailing `pointsThreshold` (missing means 1).
+- The showcase and standalone WebGPU demo remain focused on their existing workloads rather than these added renderer features; the parity page exposes all feature-specific visual cases.
+
+### Checks run at the end of this milestone
+
+| Check | Result |
+|---|---|
+| `cargo test --workspace` | 643 pass |
+| `node engine/bindings/build.mjs` | ok, 488.3 KiB |
+| `node parity/visual/run.mjs` | 23 of 23 (11 earlier cases unchanged, 12 new) |
+| `node parity/bindings/compat-check.mjs` | 1,312 values, largest scaled error 5.4e-6, ok |
+| `tsc -p parity/bindings` (TypeScript 7.0.2) | no errors |
+
+## Benchmarks at four resolutions (2026-10-14, second run)
+
+Every browser benchmark was run at 1280×720, 1920×1080, 2560×1440 and 3840×2160, and the Node.js benchmarks once, on the current working tree (same engine build as the first run today). The raw logs are in `bench/results/2026-10-14/`; the website's data (`website/src/data/benchmarks.js`) is generated from them, not typed. These numbers replace the first run below, which is kept as history.
+
+| | |
+|---|---|
+| Hardware | Intel Core i9-10900X @ 3.70 GHz; NVIDIA GeForce RTX 2070 Super |
+| OS | Windows x64 |
+| Browser | Chrome 155.0.8059.80 (it updated itself from .40 since the first run), **headless** (`--headless=new`) with the GPU enabled: `--enable-gpu --use-angle=d3d11 --ignore-gpu-blocklist --enable-unsafe-webgpu` |
+| Backends | WAMR3D and three.js WebGPURenderer: WebGPU (Direct3D 11 adapter). three.js WebGLRenderer: WebGL 2 through ANGLE on Direct3D 11 |
+| Resolution | page viewport set exactly with `Emulation.setDeviceMetricsOverride` (new `--size=WxH` option of both scripts); canvas sizes read back from the page: 1280×720, 1920×1080, 2560×1440, 3840×2160; device pixel ratio 1 |
+| Node.js | v24.19.0 |
+| Failures | none; every configuration produced results. No headless browser was left running before or after any stage |
+
+**Correction to earlier runs.** Before this run the scripts set `--window-size=1280,720` and called that the resolution. In headless Chrome the page gets less than the window: a 3840×2160 window gave a 3824×2009 canvas, so the earlier "1280×720" results were drawn on a smaller canvas than stated.
+
+What is timed: CPU time in JavaScript with a 0.1 ms resolution. GPU time is not measured; it shows only in the frame rate, which the display loop caps at 60. All values are medians of one run per configuration.
+
+### Showcase: `node examples/showcase/check.mjs --measure --size=WxH` (plus `--counts=100000 --modes=instanced`)
+
+Medians over 4 s after a 1.5 s warm-up, one engine at a time.
+
+Separate meshes (one draw call per body). Each cell: fps / update ms / submit ms (draw calls).
+
+| bodies | engine | 1280×720 | 1920×1080 | 2560×1440 | 3840×2160 |
+|---|---|---|---|---|---|
+| 2,000 | WAMR3D batched | 60.0 / 0.5 / 2.3 (1,926) | 60.0 / 0.5 / 2.2 (1,926) | 59.9 / 0.5 / 2.3 (1,926) | 60.0 / 0.6 / 2.3 (1,926) |
+| 2,000 | WAMR3D object API | 60.0 / 0.7 / 2.4 (1,932) | 60.0 / 0.8 / 2.3 (1,932) | 60.0 / 0.6 / 2.4 (1,932) | 60.0 / 0.7 / 2.4 (1,932) |
+| 2,000 | three.js WebGPU | 58.8 / 1.1 / 15.4 (1,943) | 52.5 / 1.2 / 17.1 (1,943) | 60.0 / 0.9 / 13.6 (1,943) | 56.4 / 1.1 / 16.1 (1,943) |
+| 2,000 | three.js WebGL | 60.0 / 1.2 / 4.3 (1,958) | 60.0 / 1.5 / 4.3 (1,958) | 60.0 / 1.1 / 3.2 (1,958) | 60.0 / 1.6 / 4.5 (1,958) |
+| 10,000 | WAMR3D batched | 60.0 / 2.3 / 11.6 (9,819) | 60.0 / 2.5 / 12.2 (9,820) | 60.0 / 2.2 / 11.1 (9,818) | 60.0 / 2.4 / 11.5 (9,820) |
+| 10,000 | WAMR3D object API | 59.1 / 3.7 / 12.3 (9,849) | 60.0 / 4.0 / 12.3 (9,850) | 59.8 / 3.8 / 12.1 (9,852) | 58.8 / 3.9 / 12.3 (9,849) |
+| 10,000 | three.js WebGPU | 9.2 / 9.5 / 100.1 (9,854) | 9.5 / 6.9 / 100.5 (9,850) | 11.7 / 5.5 / 79.6 (9,848) | 9.4 / 6.3 / 99.7 (9,852) |
+| 10,000 | three.js WebGL | 36.5 / 5.2 / 21.8 (9,861) | 33.7 / 5.5 / 23.7 (9,858) | 41.9 / 4.7 / 18.6 (9,858) | 35.0 / 5.4 / 22.6 (9,861) |
+| 50,000 | WAMR3D batched | 12.3 / 16.1 / 63.7 (49,307) | 12.6 / 15.5 / 63.2 (49,309) | 15.1 / 10.9 / 54.9 (49,318) | 12.4 / 16.3 / 63.2 (49,306) |
+| 50,000 | WAMR3D object API | 11.8 / 21.8 / 61.4 (49,374) | 11.7 / 23.2 / 62.2 (49,370) | 12.7 / 18.2 / 60.1 (49,375) | 11.3 / 23.8 / 64.0 (49,377) |
+| 50,000 | three.js WebGPU | 2.0 / 25.8 / 457.2 (49,372) | 1.6 / 45.2 / 561.8 (49,374) | 2.2 / 25.2 / 429.1 (49,383) | 1.8 / 47.3 / 515.3 (49,374) |
+| 50,000 | three.js WebGL | 6.3 / 25.3 / 131.9 (49,241) | 6.3 / 26.5 / 131.8 (49,241) | 6.6 / 24.6 / 130.6 (49,237) | 6.0 / 30.3 / 133.7 (49,246) |
+
+Instanced meshes. Each cell: fps / update ms / submit ms (draw calls).
+
+| bodies | engine | 1280×720 | 1920×1080 | 2560×1440 | 3840×2160 |
+|---|---|---|---|---|---|
+| 2,000 | WAMR3D batched | 60.0 / 0.5 / 0.2 (5) | 60.0 / 0.5 / 0.2 (5) | 60.0 / 0.5 / 0.3 (5) | 60.0 / 0.6 / 0.2 (5) |
+| 2,000 | WAMR3D object API | 60.0 / 0.8 / 0.3 (5) | 58.5 / 0.9 / 0.3 (5) | 58.2 / 1.1 / 0.4 (5) | 59.9 / 0.9 / 0.3 (5) |
+| 2,000 | three.js WebGPU | 60.0 / 1.3 / 0.5 (6) | 60.2 / 1.3 / 0.6 (6) | 60.0 / 1.7 / 0.7 (6) | 60.2 / 1.3 / 0.6 (6) |
+| 2,000 | three.js WebGL | 59.7 / 1.5 / 0.2 (5) | 60.0 / 1.4 / 0.2 (5) | 60.0 / 1.7 / 0.3 (5) | 60.0 / 1.3 / 0.2 (5) |
+| 10,000 | WAMR3D batched | 59.9 / 2.5 / 0.5 (5) | 60.0 / 2.4 / 0.5 (5) | 59.7 / 2.7 / 0.6 (5) | 59.9 / 2.5 / 0.5 (5) |
+| 10,000 | WAMR3D object API | 60.0 / 4.1 / 1.0 (5) | 60.0 / 4.0 / 1.0 (5) | 60.0 / 4.4 / 1.2 (5) | 60.0 / 4.0 / 1.1 (5) |
+| 10,000 | three.js WebGPU | 60.0 / 6.6 / 1.5 (6) | 60.0 / 6.2 / 1.5 (6) | 60.0 / 7.0 / 1.5 (6) | 59.9 / 6.3 / 1.5 (6) |
+| 10,000 | three.js WebGL | 60.0 / 6.5 / 0.6 (5) | 60.0 / 6.3 / 0.6 (5) | 59.5 / 7.1 / 0.7 (5) | 60.0 / 6.3 / 0.6 (5) |
+| 50,000 | WAMR3D batched | 60.0 / 12.4 / 1.9 (5) | 60.0 / 12.0 / 1.9 (5) | 60.0 / 12.4 / 2.4 (5) | 60.0 / 12.7 / 1.9 (5) |
+| 50,000 | WAMR3D object API | 35.3 / 21.1 / 6.4 (5) | 33.2 / 22.6 / 6.8 (5) | 34.7 / 21.8 / 6.1 (5) | 32.6 / 22.8 / 6.8 (5) |
+| 50,000 | three.js WebGPU | 21.5 / 38.3 / 7.2 (6) | 21.4 / 39.1 / 7.2 (6) | 19.4 / 42.4 / 8.5 (6) | 19.5 / 42.4 / 7.9 (6) |
+| 50,000 | three.js WebGL | 23.4 / 37.8 / 4.2 (5) | 22.7 / 39.7 / 3.6 (5) | 23.3 / 38.4 / 3.9 (5) | 21.0 / 42.0 / 4.7 (5) |
+| 100,000 | WAMR3D batched | 29.2 / 29.5 / 3.8 (5) | 29.4 / 28.7 / 3.7 (5) | 32.0 / 25.9 / 3.7 (5) | 26.9 / 31.4 / 3.9 (5) |
+| 100,000 | WAMR3D object API | 16.8 / 47.0 / 11.0 (5) | 17.2 / 46.0 / 10.6 (5) | 16.0 / 47.5 / 12.4 (5) | 15.7 / 49.9 / 12.0 (5) |
+| 100,000 | three.js WebGPU | 10.4 / 75.3 / 18.1 (6) | 11.5 / 70.9 / 15.9 (6) | 11.0 / 72.4 / 17.1 (6) | 9.4 / 83.6 / 20.2 (6) |
+| 100,000 | three.js WebGL | 11.1 / 80.5 / 8.6 (5) | 12.7 / 68.2 / 9.8 (5) | 12.1 / 71.4 / 10.4 (5) | 11.0 / 75.9 / 11.3 (5) |
+
+### Comparison scene: `node examples/compare/measure.mjs --gpu --size=WxH`
+
+3 s warm-up, 8 s sample, medians, one engine per page load. Each cell: fps / CPU update ms / draw submit ms. The first three rows of each group run the same scene code; the last two draw with the three.js WebGL renderer, so only the transforms differ.
+
+| objects | engine | 1280×720 | 1920×1080 | 2560×1440 | 3840×2160 |
+|---|---|---|---|---|---|
+| 19 | three.js r186 (WebGL) | 60 / 0.0 / 0.1 | 60 / 0.0 / 0.1 | 60 / 0.0 / 0.2 | 60 / 0.0 / 0.2 |
+| 19 | three.js r186 (WebGPU) | 60 / 0.0 / 0.4 | 57 / 0.0 / 0.4 | 60 / 0.0 / 0.4 | 60 / 0.0 / 0.4 |
+| 19 | WAMR3D object API (WebGPU) | 60 / 0.0 / 0.2 | 57 / 0.0 / 0.2 | 60 / 0.1 / 0.2 | 60 / 0.1 / 0.2 |
+| 16 | WAMR3D (WebGPU) | 60 / 0.0 / 0.2 | 57 / 0.0 / 0.2 | 60 / 0.0 / 0.2 | 60 / 0.0 / 0.2 |
+| 16 | three.js r186 | 60 / 0.0 / 0.1 | 60 / 0.0 / 0.1 | 60 / 0.0 / 0.1 | 60 / 0.0 / 0.1 |
+| 16 | WAMR3D | 60 / 0.1 / 0.1 | 60 / 0.0 / 0.1 | 60 / 0.1 / 0.2 | 60 / 0.1 / 0.1 |
+| 2,007 | three.js r186 (WebGL) | 60 / 0.8 / 3.8 | 60 / 0.6 / 3.3 | 60 / 0.9 / 4.1 | 60 / 0.9 / 3.9 |
+| 2,007 | three.js r186 (WebGPU) | 60 / 0.9 / 14.8 | 60 / 0.7 / 12.3 | 60 / 0.8 / 14.0 | 60 / 0.8 / 13.9 |
+| 2,007 | WAMR3D object API (WebGPU) | 60 / 0.6 / 2.1 | 60 / 0.5 / 1.9 | 60 / 0.7 / 2.0 | 60 / 0.6 / 2.0 |
+| 2,004 | WAMR3D (WebGPU) | 60 / 0.4 / 1.9 | 60 / 0.3 / 1.8 | 60 / 0.4 / 1.9 | 60 / 0.4 / 2.1 |
+| 2,004 | three.js r186 | 60 / 1.6 / 4.2 | 60 / 0.6 / 3.2 | 60 / 1.0 / 4.6 | 60 / 1.0 / 4.3 |
+| 2,004 | WAMR3D | 60 / 0.4 / 4.3 | 60 / 0.4 / 3.4 | 60 / 0.4 / 4.0 | 60 / 0.5 / 4.8 |
+| 10,007 | three.js r186 (WebGL) | 30 / 3.8 / 20.8 | 60 / 3.6 / 18.8 | 30 / 4.7 / 20.6 | 30 / 4.2 / 20.4 |
+| 10,007 | three.js r186 (WebGPU) | 9 / 8.7 / 104.2 | 10 / 4.3 / 95.4 | 9 / 7.4 / 104.8 | 9 / 6.7 / 107.6 |
+| 10,007 | WAMR3D object API (WebGPU) | 60 / 3.7 / 10.0 | 60 / 3.1 / 9.2 | 60 / 4.0 / 9.7 | 60 / 3.5 / 9.4 |
+| 10,004 | WAMR3D (WebGPU) | 60 / 2.2 / 8.6 | 60 / 2.2 / 8.1 | 60 / 2.3 / 8.1 | 60 / 2.0 / 8.4 |
+| 10,004 | three.js r186 | 60 / 3.8 / 19.5 | 60 / 4.5 / 18.5 | 60 / 3.8 / 19.6 | 60 / 3.2 / 15.7 |
+| 10,004 | WAMR3D | 30 / 1.8 / 22.9 | 60 / 1.6 / 17.5 | 30 / 1.9 / 23.6 | 60 / 1.8 / 20.8 |
+
+### Reading it
+
+- **Resolution changed little.** From 1280×720 to 3840×2160 the frame rates and CPU times move by about as much as they vary between neighbouring configurations, with no consistent trend. These scenes are limited by CPU work (scene update and draw submission); the RTX 2070 Super is not the bottleneck at any of the four sizes. A heavier fragment workload than these scenes would be needed to show a resolution effect.
+- **Separate meshes, 10,000 bodies:** WAMR3D batched held 60 fps at every resolution; three.js ran at 33.7 to 41.9 fps (WebGL) and 9.2 to 11.7 fps (WebGPU). three.js needed 1.7 to 2.0 times (WebGL) and 7.2 to 8.7 times (WebGPU) the CPU time of WAMR3D to submit draws.
+- **Instanced, 50,000 bodies:** WAMR3D batched held 60 fps with 12.0 to 12.7 ms of update; three.js ran at 19.4 to 23.4 fps with 37.8 to 42.4 ms. At 100,000: 26.9 to 32.0 fps against 9.4 to 12.7.
+- **Same renderer, only transforms differ (comparison scene, 10,004 objects):** 1.6 to 1.9 ms for WAMR3D against 3.2 to 4.5 ms for three.js.
+- **Frame rates at a 16.7 ms boundary:** three.js WebGL at 10,007 objects (30, 60, 30, 30) and WAMR3D transforms drawn by three.js WebGL at 10,004 (30, 60, 30, 60) switch between 30 and 60 fps from one resolution to the next with no trend; their frame time sits at the edge of one display interval.
+- **Not ahead:** at 2,000 instanced bodies every engine is at 58 to 60 fps and three.js WebGL submits as fast (0.2 to 0.3 ms). At 50,000 separate meshes nobody is smooth: WAMR3D is at 12 to 15 fps, limited by its own draw submission (55 to 64 ms).
+- **Variance:** one run per configuration. Neighbouring configurations differ by up to about 20% in places (for example WAMR3D batched at 50,000 separate meshes: 15.1 fps at 2560×1440, 12.3 to 12.6 elsewhere).
+
+### Low-level API: `node bench/bench.mjs`
+
+Node.js, no GPU. 5 warm-up runs, 25 samples per workload. Start-up: WAMR3D import 3.9 ms, init (compile and instantiate 458 KiB of wasm) 23.3 ms; three.js import 187.7 ms (unbundled source modules).
+
+| workload | three.js ms | WAMR3D ms | WAMR3D/three |
+|---|---|---|---|
+| Matrix4.multiplyMatrices | 6.227 | 7.885 | 1.27x |
+| Matrix4.invert (copy + invert) | 6.694 | 9.853 | 1.47x |
+| Vector3.applyMatrix4 | 1.995 | 6.579 | 3.30x |
+| Vector3.applyQuaternion | 1.686 | 6.385 | 3.79x |
+| boundary: getter (v.x) | 1.484 | 2.384 | 1.61x |
+| boundary: call with a handle (isAlive / .visible) | 1.479 | 3.365 | 2.27x |
+| scene: update 10,000 world matrices (transforms unchanged, forced) | 1.971 | 0.595 | 0.30x |
+| scene: set 10,000 transforms + update, one call per property | 3.686 | 2.900 | 0.79x |
+| scene: set 10,000 transforms + update, one batched call | 2.694 | 1.437 | 0.53x |
+| scene: read back 10,000 world matrices into one Float32Array | 0.803 | 0.256 | 0.32x |
+| scene: create + parent + destroy 10,000 objects | 38.265 | 1.810 | 0.05x |
+| geometry: computeVertexNormals | 10.895 | 9.187 | 0.84x |
+| geometry: computeBoundingSphere | 1.191 | 2.445 | 2.05x |
+| geometry: applyMatrix4 (positions + normals) | 2.855 | 7.041 | 2.47x |
+| geometry: upload positions + index (copy into the engine) | 0.503 | 0.537 | 1.07x |
+
+Same picture as the first run: single small calls are 1.3x to 3.8x slower than three.js, batched scene work takes 0.30x to 0.53x of its time. Two rows moved between runs on the three.js side alone (update 10,000 world matrices: 1.244 to 1.971 ms; one call per property: 2.739 to 3.686 ms), so their ratios changed (0.48x to 0.30x, 1.06x to 0.79x) without any engine change; treat those two as noisy. The create/destroy row is still not an equal comparison.
+
+### Object API: `node bench/compat.mjs`
+
+Node.js, median of 21.
+
+| workload | three.js ms | WAMR3D ms | WAMR3D/three |
+|---|---|---|---|
+| math: vector chain (set, applyQuaternion, add, normalize, dot) | 2.414 | 25.054 | 10.38x |
+| math: new Vector3 per operation (allocation churn) | 0.855 | 54.089 | 63.27x |
+| math: Matrix4 compose, multiply, invert | 3.431 | 13.565 | 3.95x |
+| math: Quaternion.setFromEuler + slerp | 11.336 | 80.490 | 7.10x |
+| math: Box3.expandByPoint + Sphere.containsPoint | 0.821 | 14.754 | 17.97x |
+| math: Color.setHSL + lerp | 4.348 | 13.224 | 3.04x |
+| scene: 10,000 meshes, set rotation + position.y, updateMatrixWorld | 5.315 | 2.511 | 0.47x |
+| scene: 10,000 meshes, rotation.y += and position.x read | 4.860 | 2.145 | 0.44x |
+| scene: read matrixWorld.elements of 10,000 meshes | 0.378 | 3.983 | 10.53x |
+| scene: getWorldPosition of 10,000 meshes | 2.345 | 3.947 | 1.68x |
+| scene: object.lookAt on 10,000 meshes | 5.651 | 4.109 | 0.73x |
+| scene: create + add + remove 10,000 meshes | 33.940 | 26.692 | 0.79x |
+| picking: 100 rays against 1,000 boxes | 6.182 | 142.289 | 23.02x |
+
+### Scene-graph profile: `node examples/showcase/profile.mjs`
+
+110,009 nodes: animate 2.43 ms, `setRotations` 6.24 ms, `updateMatrixWorld` 6.52 ms, `matricesWorldPtr` 1.96 ms, total 17.15 ms.
+
+## Benchmarks rerun (2026-10-14)
+
+> Superseded by [Benchmarks at four resolutions](#benchmarks-at-four-resolutions-2026-10-14-second-run); kept as the record of the first run. Its "1280x720" was the window size; the canvas was smaller.
+
+
+Every existing benchmark was run again on the current working tree (package rebuilt with `node engine/bindings/build.mjs`, SIMD build, `wamr3d_wasm_bg.wasm` 457.8 KiB; `cargo test --workspace --release`: 639 pass). Same scripts, settings and machine as before: Windows x64, i9-10900X, RTX 2070 Super, Node.js v24.19.0, Chrome 155.0.8059.40 headless, no leftover headless browser before or after the browser runs. These numbers replaced the measurements in the milestone sections below, which are kept as history.
+
+Everything in this section was measured in this run, except the ratios marked *derived*, which are computed from the medians shown. Nothing is estimated. Browser times are timed in JavaScript with a 0.1 ms resolution; GPU time is not measured and only shows in the frame rate (display limit 60).
+
+### Showcase: `node examples/showcase/check.mjs --measure` (plus `--counts=100000 --modes=instanced`)
+
+1280x720, medians over 4 s after a 1.5 s warm-up, one engine at a time, one run. *update* = animation, transforms and world matrices on the CPU; *submit* = the renderer on the CPU.
+
+Separate meshes (one draw call per body):
+
+| bodies | engine | fps | update ms | submit ms |
+|---|---|---|---|---|
+| 2,000 | WAMR3D batched | 60.0 | 0.5 | 2.2 |
+| 2,000 | WAMR3D object API | 60.0 | 0.6 | 2.3 |
+| 2,000 | three.js WebGPU | 60.0 | 0.9 | 13.8 |
+| 2,000 | three.js WebGL | 60.0 | 1.1 | 3.3 |
+| 10,000 | WAMR3D batched | 60.0 | 2.1 | 10.5 |
+| 10,000 | WAMR3D object API | 60.0 | 3.7 | 11.1 |
+| 10,000 | three.js WebGPU | 10.7 | 5.3 | 77.0 |
+| 10,000 | three.js WebGL | 33.7 | 5.4 | 23.9 |
+| 50,000 | WAMR3D batched | 14.6 | 11.1 | 56.7 |
+| 50,000 | WAMR3D object API | 12.6 | 19.1 | 59.7 |
+| 50,000 | three.js WebGPU | 2.2 | 25.3 | 428.4 |
+| 50,000 | three.js WebGL | 7.1 | 24.4 | 115.0 |
+
+Instanced meshes (5 draw calls; 6 for three.js WebGPU):
+
+| bodies | engine | fps | update ms | submit ms |
+|---|---|---|---|---|
+| 2,000 | WAMR3D batched | 60.0 | 0.6 | 0.2 |
+| 2,000 | WAMR3D object API | 58.7 | 1.1 | 0.4 |
+| 2,000 | three.js WebGPU / WebGL | 60.0 / 60.0 | 1.7 / 1.4 | 0.6 / 0.2 |
+| 10,000 | WAMR3D batched | 60.0 | 2.6 | 0.5 |
+| 10,000 | WAMR3D object API | 60.0 | 4.5 | 1.0 |
+| 10,000 | three.js WebGPU / WebGL | 60.0 / 60.0 | 6.2 / 6.4 | 1.4 / 0.6 |
+| 50,000 | WAMR3D batched | 59.2 | 13.0 | 2.0 |
+| 50,000 | WAMR3D object API | 30.5 | 24.5 | 6.6 |
+| 50,000 | three.js WebGPU / WebGL | 21.7 / 23.6 | 38.6 / 37.7 | 6.8 / 4.0 |
+| 100,000 | WAMR3D batched | 33.2 | 24.6 | 3.7 |
+| 100,000 | WAMR3D object API | 18.2 | 42.8 | 11.1 |
+| 100,000 | three.js WebGPU / WebGL | 12.0 / 10.3 | 67.4 / 81.1 | 15.5 / 11.4 |
+
+First build of the batched engine in a page: 301 ms (341 ms for the 100,000-body scene, measured in a separate page); later builds 43 to 77 ms.
+
+Reading it (ratios *derived*):
+
+- **Separate meshes:** at 10,000 bodies WAMR3D holds 60 fps; three.js runs at 34 (WebGL) and 11 (WebGPU). WAMR3D submits draws 1.5 to 2.3 times as fast as three.js WebGL and 6.3 to 7.6 times as fast as three.js WebGPU. At 50,000 nobody is smooth; WAMR3D is at 15 fps, limited by its own draw submission (57 ms).
+- **Instanced:** the scene-graph update decides. At 50,000 bodies the batched API updates in 13.0 ms and runs at 59 fps; three.js needs 38 ms and runs at 22 to 24 fps. At 100,000: 33 fps against 10 to 12.
+- **Where WAMR3D is not ahead:** at 2,000 instanced bodies three.js WebGL submits as fast (0.2 ms both); the object API dropped slightly below 60 fps there (58.7) in this run. The object API updates 1.2 to 1.9 times more slowly than the batched API.
+
+### Comparison scene: `node examples/compare/measure.mjs --gpu`
+
+1280x720, pixel ratio 1, 3 s warm-up, 8 s sample per run, medians, one engine per page load, one run. The first three rows of each group run the same scene code; `three` and `wamr3d` are three.js and WAMR3D transforms, both drawn by the three.js WebGL renderer.
+
+| objects | engine | fps | frames | CPU update ms | draw submit ms | first frame ms |
+|---|---|---|---|---|---|---|
+| 19 / 16 | all six | 60 | 479 to 481 | 0.0 | 0.1 to 0.3 | 68 to 335 |
+| 2,007 | three.js r186, WebGL | 60 | 481 | 0.7 | 3.2 | 74 |
+| 2,007 | three.js r186, WebGPU | 60 | 462 | 0.8 | 13.6 | 293 |
+| 2,007 | WAMR3D object API | 60 | 481 | 0.6 | 1.9 | 191 |
+| 2,004 | WAMR3D batched calls | 60 | 480 | 0.4 | 1.8 | 123 |
+| 2,004 | three.js transforms + WebGL | 60 | 480 | 0.9 | 3.9 | 86 |
+| 2,004 | WAMR3D transforms + three.js WebGL | 60 | 480 | 0.5 | 4.1 | 107 |
+| 10,007 | three.js r186, WebGL | 30 | 294 | 5.1 | 21.7 | 138 |
+| 10,007 | three.js r186, WebGPU | 12 | 89 | 7.1 | 82.3 | 853 |
+| 10,007 | WAMR3D object API | 60 | 481 | 3.3 | 9.4 | 404 |
+| 10,004 | WAMR3D batched calls | 60 | 480 | 2.2 | 8.2 | 174 |
+| 10,004 | three.js transforms + WebGL | 30 | 304 | 4.7 | 20.9 | 150 |
+| 10,004 | WAMR3D transforms + three.js WebGL | 30 | 317 | 1.8 | 23.0 | 178 |
+
+WebAssembly initialisation in the page: 4.0 to 5.3 ms.
+
+- Same renderer (three.js WebGL), only the transforms differ: WAMR3D 1.8 ms against 4.7 ms at 10,004 objects, 0.5 against 0.9 ms at 2,004.
+- Same scene code at 10,007 objects: the object API updates in 3.3 ms against 5.1 ms for three.js WebGL and keeps 60 fps where three.js runs at 30 (WebGL) and 12 (WebGPU). Draw submission is about 2.3 times as fast as three.js WebGL and 8.8 times as fast as three.js WebGPU (*derived*).
+
+### Low-level API: `node bench/bench.mjs`
+
+Node.js, release build, 5 warm-up runs and 25 samples per workload. It was run twice. The first run came right after the build and was disturbed by a cold start (importing three.js took 3,036 ms instead of 179 ms, and three.js `computeVertexNormals` took 22.3 ms instead of 11.2 ms); every other ratio of the two runs agreed within 0.3x. The second run is shown.
+
+```
+start-up (one time, not included below)
+  wamr3d: import 3.9 ms, init (compile + instantiate 458 KiB of wasm) 24.4 ms
+  three:  import 179.1 ms (unbundled source modules)
+
+workload                                                              three ms  wamr3d ms  wamr3d/three
+Matrix4.multiplyMatrices                                                 6.307      7.918    1.26x
+Matrix4.invert (copy + invert)                                           6.801      9.843    1.45x
+Vector3.applyMatrix4                                                     1.952      7.276    3.73x
+Vector3.applyQuaternion                                                  1.689      6.931    4.10x
+boundary: getter (v.x)                                                   1.427      2.310    1.62x
+boundary: call with a handle (isAlive / .visible)                        1.443      3.288    2.28x
+scene: update 10,000 world matrices (transforms unchanged, forced)       1.244      0.592    0.48x
+scene: set 10,000 transforms + update, one call per property             2.739      2.906    1.06x
+scene: set 10,000 transforms + update, one batched call                  2.767      1.456    0.53x
+scene: read back 10,000 world matrices into one Float32Array             0.881      0.258    0.29x
+scene: create + parent + destroy 10,000 objects                         38.300      1.686    0.04x
+geometry: computeVertexNormals                                          11.198      9.492    0.85x
+geometry: computeBoundingSphere                                          1.186      2.499    2.11x
+geometry: applyMatrix4 (positions + normals)                             3.089      7.040    2.28x
+geometry: upload positions + index (copy into the engine)                0.502      0.538    1.07x
+```
+
+Medians; below 1 means WAMR3D was faster. Same picture as before: single small calls are 1.3x to 4.1x slower than three.js, batched scene work is 0.29x to 0.53x of its time. The create/destroy row is still not an equal comparison (three.js leaves freeing to the garbage collector, outside the timed region).
+
+### Object API: `node bench/compat.mjs`
+
+Node.js, the same three.js-style code run against `wamr3d/compat` and three.js r186, 5 warm-up runs, median of 21, one run. No GPU. Not reported before.
+
+| workload | three.js ms | WAMR3D ms | WAMR3D/three |
+|---|---|---|---|
+| math: vector chain (set, applyQuaternion, add, normalize, dot) | 2.275 | 23.673 | 10.40x |
+| math: new Vector3 per operation (allocation churn) | 0.801 | 54.277 | 67.78x |
+| math: Matrix4 compose, multiply, invert | 3.179 | 13.270 | 4.17x |
+| math: Quaternion.setFromEuler + slerp | 11.254 | 80.413 | 7.15x |
+| math: Box3.expandByPoint + Sphere.containsPoint | 0.826 | 14.612 | 17.70x |
+| math: Color.setHSL + lerp | 4.325 | 13.120 | 3.03x |
+| scene: 10,000 meshes, set rotation + position.y, updateMatrixWorld | 5.070 | 2.570 | 0.51x |
+| scene: 10,000 meshes, rotation.y += and position.x read | 5.031 | 2.432 | 0.48x |
+| scene: read matrixWorld.elements of 10,000 meshes | 0.430 | 3.972 | 9.23x |
+| scene: getWorldPosition of 10,000 meshes | 2.580 | 4.006 | 1.55x |
+| scene: object.lookAt on 10,000 meshes | 4.826 | 4.130 | 0.86x |
+| scene: create + add + remove 10,000 meshes | 33.930 | 26.988 | 0.80x |
+| picking: 100 rays against 1,000 boxes | 7.322 | 148.969 | 20.34x |
+
+The object API is about twice as fast as three.js for animating and updating a scene of 10,000 meshes, and much slower for math done in JavaScript one value at a time (3x to 68x), for reading world matrices object by object (9.2x) and for picking (20x). Use the math classes of `wamr3d/compat` for convenience, not for speed.
+
+### Scene-graph profile: `node examples/showcase/profile.mjs`
+
+Node.js, no GPU, 110,009 nodes (the 100,000-body scene), one run: animate (JavaScript) 2.42 ms, `setRotations` 6.23 ms, `updateMatrixWorld` 6.54 ms, `matricesWorldPtr` 1.99 ms, total 17.18 ms (the previous milestone measured 18.2 ms).
 
 ## Milestone: independent of the local three.js folder (2026-10-14)
 
@@ -72,6 +427,8 @@ The last three run one and the same file (`engine-library.js`); only the import 
 Panel: engine, number of bodies, separate or instanced, shape, speed, camera orbit, shading model, roughness, metalness, sun, sky light, fog and its density. Changes that alter what the scene is made of rebuild it in place; the others apply to the running scene. The header shows the active engine and configuration, frame rate, frame time, CPU update time, draw submission time, scene-graph size, draw calls and triangles. "Compare all four renderers" measures each engine in turn with the current settings and shows a table. The panel states what WAMR3D does not have yet (shadows, environment reflections, points and sprites, post-processing); none of it is used.
 
 ### Measured
+
+> Superseded by [Benchmarks rerun (2026-10-14)](#benchmarks-rerun-2026-10-14); kept as the record of this milestone.
 
 `node examples/showcase/check.mjs --measure` (plus `--counts=100000 --modes=instanced`): Chrome 155 headless, i9-10900X, RTX 2070 Super, 1280x720, medians over 4 s after a 1.5 s warm-up, one engine at a time, one run.
 
@@ -188,6 +545,8 @@ Added: instanced draws, one draw per material group, linear and squared-exponent
 11 of 11 pass in headless Chrome 155, in a visible Chrome window (`--headed`) and in headless Edge (`--browser=edge`), all on the same machine and GPU.
 
 ### 5. Performance
+
+> Superseded by [Benchmarks rerun (2026-10-14)](#benchmarks-rerun-2026-10-14); kept as the record of this milestone.
 
 `node examples/compare/measure.mjs --gpu`, Chrome 155 headless, i9-10900X, RTX 2070 Super, 1280x720, medians, one run. The first three rows of each group run the same scene code.
 
@@ -656,6 +1015,8 @@ ok
 ```
 
 ### Benchmark results
+
+> Superseded by [Benchmarks rerun (2026-10-14)](#benchmarks-rerun-2026-10-14); kept as the record of this milestone.
 
 `node bench/bench.mjs` on this machine (Node v24.19.0, Windows x64), release build, 5 warm-up runs and 25 samples per workload. One run; expect a few percent of variation between runs.
 

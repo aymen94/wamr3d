@@ -28,7 +28,7 @@ This guide shows how three.js code maps onto WAMR3D today, what does not map yet
 + await renderer.init();
 ```
 
-Available: `Scene`, `Group`, `Object3D`, `Mesh`, `PerspectiveCamera`, `OrthographicCamera`, `BufferGeometry`, `BufferAttribute` (and the `Float32`, `Uint16`, `Uint32` variants), `BoxGeometry`, `PlaneGeometry`, `SphereGeometry`, `CylinderGeometry`, `ConeGeometry`, `CircleGeometry`, `RingGeometry`, `TorusGeometry`, `Line`, `LineSegments`, `LineBasicMaterial`, `MeshBasicMaterial`, `MeshLambertMaterial`, `MeshStandardMaterial`, `Texture`, `DataTexture`, `CanvasTexture`, `TextureLoader`, `Clock`, `InstancedMesh`, `GridHelper`, `AxesHelper`, `Fog`, `FogExp2`, `AmbientLight`, `HemisphereLight`, `DirectionalLight`, `PointLight`, `SpotLight`, `Raycaster`, `WebGPURenderer`, `Vector2`, `Vector3`, `Vector4`, `Quaternion`, `Euler`, `Matrix3`, `Matrix4`, `Color`, `Box3`, `Sphere`, `Plane`, `Ray`, `Frustum`, `MathUtils`, and the constants `FrontSide`, `BackSide`, `DoubleSide`.
+Available: `Scene`, `Group`, `Object3D`, `Mesh`, `Points`, `Sprite`, `PointsMaterial`, `SpriteMaterial`, `RenderTarget` (also as `WebGLRenderTarget`), the light `shadow` objects, the tone-mapping constants, `PerspectiveCamera`, `OrthographicCamera`, `BufferGeometry`, `BufferAttribute` (and the `Float32`, `Uint16`, `Uint32` variants), `BoxGeometry`, `PlaneGeometry`, `SphereGeometry`, `CylinderGeometry`, `ConeGeometry`, `CircleGeometry`, `RingGeometry`, `TorusGeometry`, `Line`, `LineSegments`, `LineBasicMaterial`, `MeshBasicMaterial`, `MeshLambertMaterial`, `MeshStandardMaterial`, `Texture`, `DataTexture`, `CanvasTexture`, `TextureLoader`, `Clock`, `InstancedMesh`, `GridHelper`, `AxesHelper`, `Fog`, `FogExp2`, `AmbientLight`, `HemisphereLight`, `DirectionalLight`, `PointLight`, `SpotLight`, `Raycaster`, `WebGPURenderer`, `Vector2`, `Vector3`, `Vector4`, `Quaternion`, `Euler`, `Matrix3`, `Matrix4`, `Color`, `Box3`, `Sphere`, `Plane`, `Ray`, `Frustum`, `MathUtils`, and the constants `FrontSide`, `BackSide`, `DoubleSide`.
 
 Differences to watch for:
 
@@ -38,8 +38,11 @@ Differences to watch for:
 | `WebGLRenderer` | `WebGPURenderer` only; the browser must support WebGPU |
 | `MeshStandardMaterial` with environment and many maps | `color`, `map`, `roughness`, `metalness`, `side`, `transparent`, `opacity`, `depthTest`, `depthWrite` and `vertexColors` work. There are no environment reflections, so metals look dark away from the highlight. Any other parameter is stored, has no effect, and logs one warning |
 | Textures | Mipmaps, the six filters, the three wrapping modes, `repeat`, `offset`, `rotation` and `center` work. No anisotropy, and only colour maps |
-| A missing class is `undefined` | Common classes that do not exist yet (`Points`, `Sprite`, `SkinnedMesh`, `MeshPhongMaterial`, `WebGLRenderer`, ...) throw "not available yet" when constructed |
-| Any number of lights | Up to 8 `DirectionalLight`, `PointLight` and `SpotLight` together, plus all `AmbientLight` and `HemisphereLight`. No shadows. A `HemisphereLight` is treated as pointing up |
+| A missing class is `undefined` | Common classes that do not exist yet (`SkinnedMesh`, `LOD`, `MeshPhongMaterial`, `WebGLRenderer`, ...) throw "not available yet" when constructed |
+| Any number of lights | Up to 16 `DirectionalLight`, `PointLight` and `SpotLight` together, plus all `AmbientLight` and `HemisphereLight`. A `HemisphereLight` is treated as pointing up |
+| Shadows from any light | Directional and spot lights, PCF filtering, up to 4 shadow-casting lights per frame; `renderer.shadowMap.type` other than `PCFShadowMap` draws as PCF. Point lights cast no shadow |
+| `PointsMaterial.size` | Points are one pixel; `size` has no effect, as with the three.js r186 WebGPU renderer |
+| `material.toneMapped = false` | Has no effect on screen output, as with the three.js r186 WebGPU renderer: tone mapping is applied to the whole frame |
 | `Line`, `LineSegments` | Drawn one pixel wide. `Raycaster` hits them as in three.js (`params.Line.threshold`, 1 world unit by default) |
 | `InstancedMesh` | Works, drawn in one call. Instances are not culled or picked one by one |
 | `scene.fog` | `Fog` and `FogExp2` work; `material.fog = false` is ignored |
@@ -50,7 +53,7 @@ Differences to watch for:
 | Numbers are 64-bit | Stored as 32-bit floats; results agree to about `1e-6` |
 | Everything is garbage collected | Also here: engine objects are released when their JavaScript object is collected. `geometry.dispose()`, `material.dispose()` and `object.dispose()` release them at once |
 
-Speed: `position`, `rotation`, `quaternion`, `scale` and `up` are kept in JavaScript and sent to the engine in one batch, so setting them is as cheap as in three.js. In the measured scene, updating 10,000 objects one property at a time took 4.7 ms against 3.6 ms for three.js, and drawing them was about twice as fast as three.js WebGL (see `STATUS.md`). For very large scenes the batched low-level calls are faster still (2.8 ms), but do not mix them with the object API on the same objects: the object API does not see transforms written behind its back.
+Speed: `position`, `rotation`, `quaternion`, `scale` and `up` are kept in JavaScript and sent to the engine in one batch, so setting them is as cheap as in three.js. In the measured scene, updating 10,000 objects one property at a time took 3.1 ms against 3.6 ms for three.js at 1920×1080, and draw submission was about twice as fast as three.js WebGL (9.2 against 18.8 ms; see `STATUS.md`). For very large scenes the batched low-level calls are faster still (2.2 ms), but do not mix them with the object API on the same objects: the object API does not see transforms written behind its back.
 
 TypeScript: the typings are in `wamr3d/compat` (`compat.d.ts`). They need `"lib": [ "esnext", "dom" ]` in `tsconfig.json`.
 
@@ -74,6 +77,8 @@ This and the following sections describe the low-level `wamr3d` API.
 Conventions are the same as three.js: right-handed, +Y up, cameras look down −Z, column-major matrices, radians.
 
 ## Step 1: load the module
+
+Install the package from npm with `npm install wamr3d` (<https://www.npmjs.com/package/wamr3d>).
 
 ```js
 // before
@@ -334,9 +339,9 @@ Update world matrices before casting. Only meshes are picked; free the result wi
 
 Keep using three.js for these:
 
-- **Rendering:** environment maps and every map other than `map`, more than 8 lights, area lights, shadows, tone mapping, render targets, post-processing, lines wider than one pixel, a WebGL fallback.
+- **Rendering:** environment maps and reflections (partly built, not usable yet), every map other than `map`, more than 16 lights, area lights, point-light shadows, shadow types other than PCF, scene background textures, post-processing, render-target depth textures and multiple attachments, lines wider than one pixel, a WebGL fallback.
 - **Object API:** every class not listed under [The object API](#the-object-api), including controls and every helper other than `GridHelper` and `AxesHelper`.
-- **Objects:** `LineLoop`, `Points`, `Sprite`, `SkinnedMesh`, `LOD`; picking single instances of an `InstancedMesh`.
+- **Objects:** `LineLoop`, `SkinnedMesh`, `LOD`; picking single instances of an `InstancedMesh`; picking sprites.
 - **Math from JavaScript:** `Triangle`, `Line3`, `Spherical`, `Cylindrical`. They exist in the Rust crates but have no JavaScript binding.
 - **Geometry:** shapes other than box, plane, sphere, cylinder, cone, circle, ring and torus; integer attributes from JavaScript; morph targets; interleaved buffers.
 - **Everything else:** loaders, the animation system (`AnimationMixer`, clips, tracks), audio, controls, helpers, random helpers and UUIDs.

@@ -363,3 +363,14 @@ The project owner is removing the local copy of three.js r186. WAMR3D was made i
 - **Tests read committed data:** Rust parity fixtures (`parity/math`, `parity/core`, `parity/objects`), visual reference images (`parity/visual/reference`), and now the object API values (`parity/bindings/compat-expected.json`, 1,312 values recorded from three.js with `compat-check.mjs --generate`).
 - **Scripts that genuinely need three.js** import the npm package, pinned exactly in the root `package.json` (`"three": "0.186.1"`): the three fixture generators, `compat-check.mjs --generate`, `parity/bindings/check.mjs` (live comparison of the low-level API), `bench/bench.mjs`. `npm install` fetches it into `node_modules/` (ignored by git). The package's `src/` was compared with the removed folder (`diff -r`: no difference), and regenerating every fixture from it changed no value.
 - No CDN or npm dependency was added to WAMR3D itself.
+
+### D38. Shadows, tone mapping, points, sprites, render targets, environment (2026-10-14)
+
+Each follows the behaviour of the three.js r186 WebGPU renderer, read from its source and checked with visual cases (STATUS.md, milestone "renderer features"):
+
+- **Tone mapping in an output pass.** r186 draws the frame into a half-float target and tone-maps it in a full-screen pass, so blending happens first, the background is tone-mapped and `material.toneMapped` has no effect on screen output. WAMR3D does the same (`rgba16float`, `OUTPUT_SHADER`) only when tone mapping is on; without it the scene is still drawn straight into the sRGB canvas, which matched before. Render targets are never tone-mapped.
+- **Shadows.** One `depth32float` texture array, one layer per shadow-casting light (at most 4), sized to the largest map; each map fills the top-left of its layer. PCF exactly as r186 `PCFShadowFilter` (5 Vogel-disk taps rotated by interleaved gradient noise, bilinear comparison). The shadow camera is built in Rust; a directional light's camera stands at target + direction because the renderer receives directional lights as directions. Point-light (cube) shadows are not done.
+- **Points are one pixel.** r186's WebGPU renderer draws `Points` with the point-list topology and ignores `size`; WAMR3D matches rather than inventing sized points.
+- **Sprites** are a flag on the renderable (`Renderable.sprite`, the centre) and two material settings; the vertex shader lays the quad along the camera's right and up vectors, which the frame now carries (frame header grew by 8 floats; lights start at float 48).
+- **Render targets** are drawn without flipping, as r186 WebGPU does; pipelines are keyed by target format and sample count.
+- **Environment (incomplete).** The PMREM port keeps three.js's cube-UV layout, level sizes and passes so that results can be compared texel for texel; the sampling direction is y-flipped as r186 `PMREMNode` does. The object API is not wired yet.
