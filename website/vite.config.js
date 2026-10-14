@@ -37,15 +37,14 @@ const projectFiles = () => ({
 	}
 });
 
-export default defineConfig(({ command }) => ({
+export default defineConfig({
 	base: './',
 	plugins: [tailwindcss(), prerender(), projectFiles()],
-	define: command === 'serve' ? {
-		'import.meta.env.WAMR3D_DEV_PACKAGE': JSON.stringify('/dist/wamr3d/compat.js')
-	} : {},
+	// Pre-bundling would move the package's JS away from its .wasm file, which it locates through import.meta.url.
+	optimizeDeps: { exclude: ['wamr3d'] },
 	server: { fs: { allow: [projectRoot] } },
 	build: {
 		outDir: 'dist',
 		emptyOutDir: true
 	}
-}));
+});

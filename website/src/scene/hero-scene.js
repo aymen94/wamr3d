@@ -12,10 +12,7 @@ export async function startHeroScene(canvas, report = () => {}) {
 
   let W;
   try {
-    const packageUrl = import.meta.env.DEV
-      ? import.meta.env.WAMR3D_DEV_PACKAGE
-      : new URL(/* @vite-ignore */ '../dist/wamr3d/compat.js', import.meta.url).href;
-    W = await import(/* @vite-ignore */ packageUrl);
+    W = await import('wamr3d/compat');
     await W.init();
   } catch (error) {
     console.info('WAMR3D could not be loaded.', error);
