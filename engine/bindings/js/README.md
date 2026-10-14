@@ -123,4 +123,4 @@ Typings ship with the package (`index.d.ts`, `compat.d.ts`). Set `"lib": [ "esne
 
 ## License
 
-MIT license; see [THIRD_PARTY.md](https://github.com/aymen94/wamr3d/blob/main/THIRD_PARTY.md).
+MIT license; third-party license notices are included with the project documentation.

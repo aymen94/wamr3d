@@ -49,11 +49,11 @@ Renaming any of our folders is a decision, so record it in `DECISIONS.md`.
 ## 2. Ground Rules (every agent)
 
 1. **Port behavior, not syntax.** Match Three.js semantics first: defaults, method meaning, edge cases. Optimize only after parity passes.
-2. **Comment only what the code cannot say.** No comments that cite or point to the original source file or function; attribution lives in `THIRD_PARTY.md`. Comment non-obvious behavior, invariants, ownership or safety constraints, and subtle numerical decisions. Do not restate the code.
+2. **Comment only what the code cannot say.** No comments that cite or point to the original source file or function. Comment non-obvious behavior, invariants, ownership or safety constraints, and subtle numerical decisions. Do not restate the code.
 3. **Do not invent API.** If Three.js does not define it, do not add it silently. Log it in `STATUS.md`.
 4. **Do not edit other phases' code** except to fix a compile error. Log any such edit in `STATUS.md`.
 5. **Think about the Wasm boundary from the start.** Data that will cross to JS must be contiguous and typed (`f32`, `u32`), with no hidden pointers.
-6. **Keep attribution.** Three.js is MIT-licensed. Its license notice and the list of derived code live in `THIRD_PARTY.md`, not in per-file headers. Never remove a legally required notice.
+6. **Keep attribution.** Three.js is MIT-licensed. Preserve applicable license notices and attribution for derived code. Never remove a legally required notice.
 7. **Done means done.** A task is complete when the code compiles (native and `wasm32`), the relevant tests pass, `DECISIONS.md` has entries for any deviations, and `STATUS.md` is updated. "It compiles" is not done.
 
 ---

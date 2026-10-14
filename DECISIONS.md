@@ -110,7 +110,7 @@ The math sources import from `src/constants.js` and `src/utils.js` (section 2). 
 These values were read with a `grep` of `src/constants.js`, which is outside the Phase 1 source folder (AGENTS.md 1.3). Logged in STATUS.md under "Needs decision".
 
 ### D14. Licence notice in derived files
-Every file derived from three.js starts with: the source file it derives from, `Copyright © 2010-2026 three.js authors`, and `MIT License; full text in THIRD_PARTY.md`. The full licence text is in `THIRD_PARTY.md` only, not repeated in each file.
+Every file derived from three.js starts with: the source file it derives from, `Copyright © 2010-2026 three.js authors`, and an MIT license notice. The full licence text is maintained centrally rather than repeated in each file.
 
 
 ## 4. Phase 1 approvals (2026-10-13)
@@ -128,7 +128,7 @@ The project owner approved the Phase 1 approach. These are now settled:
 | A7 | Rust API shape | Explicit arguments, return values instead of `target`, and the naming rules of D4 are approved and apply to later phases. The JS-facing API is made familiar in the bindings. |
 
 ### D15. Comment and attribution policy (supersedes D14)
-Source files carry no comments that cite or point to the three.js file or function they derive from, and no per-file attribution header. Attribution and the full MIT licence text are in `THIRD_PARTY.md`, which also lists the derived directories. Comments are for non-obvious behaviour, invariants, ownership or safety constraints and subtle numerical decisions. `AGENTS.md` ground rules 2 and 6 were rewritten to match.
+Source files carry no comments that cite or point to the three.js file or function they derive from, and no per-file attribution header. Attribution and the full MIT licence text are maintained centrally, along with a list of derived directories. Comments are for non-obvious behaviour, invariants, ownership or safety constraints and subtle numerical decisions. `AGENTS.md` ground rules 2 and 6 were rewritten to match.
 
 Direction: the engine is Rust compiled to WebAssembly. three.js is the behavioural reference only. JavaScript is limited to the host and integration layer; core state and computation live in Rust.
 

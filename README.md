@@ -238,4 +238,4 @@ Help is welcome, especially on the renderer (textures, physically based shading,
 
 ## License
 
-Inspired by three.js; see [`THIRD_PARTY.md`](THIRD_PARTY.md).
+This project is MIT licensed.

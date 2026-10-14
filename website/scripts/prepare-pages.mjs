@@ -27,7 +27,7 @@ try {
 
 await copyWebsiteAsset('images/favicon.ico', 'images/favicon.ico');
 for (const asset of ['favicon.ico', 'favicon-16x16.png', 'favicon-32x32.png', 'apple-touch-icon.png', 'android-chrome-192x192.png', 'android-chrome-512x512.png', 'logo.png', 'site.webmanifest']) await copy(asset, asset);
-for (const document of ['README.md', 'MIGRATION.md', 'STATUS.md', 'DECISIONS.md', 'THIRD_PARTY.md']) await copy(document, `project-docs/${document}`);
+for (const document of ['README.md', 'MIGRATION.md', 'STATUS.md', 'DECISIONS.md']) await copy(document, `project-docs/${document}`);
 await fs.cp(path.join(projectRoot, 'examples'), path.join(outputRoot, 'examples'), { recursive: true });
 await fs.cp(path.join(projectRoot, 'parity', 'visual'), path.join(outputRoot, 'parity', 'visual'), { recursive: true, filter: (source) => path.basename(source) !== 'out' });
 await fs.cp(wasmPackage, path.join(outputRoot, 'dist', 'wamr3d'), { recursive: true });
