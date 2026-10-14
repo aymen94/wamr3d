@@ -18,11 +18,11 @@ const copyWebsiteAsset = async (from, to) => {
   await fs.copyFile(source, destination);
 };
 
-const wasmPackage = path.join(projectRoot, 'dist', 'wamr3d');
+const wasmPackage = path.join(websiteRoot, 'node_modules', 'wamr3d');
 try {
   await fs.access(path.join(wasmPackage, 'wamr3d_wasm_bg.wasm'));
 } catch (error) {
-  throw new Error('Wasm package not found. Build it first with `node engine/bindings/build.mjs`.', { cause: error });
+  throw new Error('The wamr3d package is not installed. Run `npm ci` in website/.', { cause: error });
 }
 
 await copyWebsiteAsset('images/favicon.ico', 'images/favicon.ico');
