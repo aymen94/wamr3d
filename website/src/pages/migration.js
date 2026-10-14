@@ -22,7 +22,7 @@ const differences = [
 ];
 
 const missing = [
-  ['Rendering', 'Environment reflections are partly built but not usable; maps other than <code>map</code>; more than 16 lights; area lights; point-light shadows; shadow modes other than PCF; scene background textures; post-processing; render-target depth textures and multiple attachments; lines wider than one pixel; a WebGL fallback.'],
+  ['Rendering', 'Environment maps through <code>scene.environment</code> and <code>envMap</code> (the low-level <code>setEnvironment</code> works); maps other than <code>map</code>; more than 16 lights; area lights; point-light shadows; shadow modes other than PCF; scene background textures; post-processing; render-target depth textures and multiple attachments; lines wider than one pixel; a WebGL fallback.'],
   ['Objects and materials', '<code>LineLoop</code>, <code>SkinnedMesh</code>, <code>LOD</code>, <code>MeshPhongMaterial</code>, <code>MeshPhysicalMaterial</code>, <code>MeshToonMaterial</code>, <code>MeshNormalMaterial</code>, <code>ShaderMaterial</code>; picking sprites or individual instances of an <code>InstancedMesh</code>.'],
   ['Everything else', 'Loaders other than <code>TextureLoader</code>, the animation system, audio, controls, and helpers other than <code>GridHelper</code> and <code>AxesHelper</code>.']
 ];

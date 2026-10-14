@@ -1,8 +1,8 @@
 # wamr3d
 
-A 3D engine in Rust and WebAssembly with its own WebGPU renderer. The engine provides scene graph, transforms, cameras, geometry processing, culling and draw ordering; drive it from JavaScript through three.js-style classes or batched low-level calls. The object API keeps user-facing transforms in JavaScript and synchronizes them with the engine in batches.
+A fast WebAssembly 3D engine with a Rust core, its own WebGPU renderer and a three.js-style API. The engine provides scene graph, transforms, cameras, geometry processing, culling and draw ordering; drive it from JavaScript through three.js-style classes or batched low-level calls. The object API keeps user-facing transforms in JavaScript and synchronizes them with the engine in batches.
 
-Behaviour is checked against three.js r186. The engine is **unfinished**: environment reflections are partly built but not usable; point-light shadows, area lights, post-processing, scene background textures, most loaders, animation, audio, controls and a WebGL fallback are not available. See [Not available yet](https://github.com/aymen94/wamr3d/blob/main/MIGRATION.md#not-available-yet).
+Behaviour is checked against three.js r186, value by value and pixel by pixel. Environment reflections are available through the low-level `setEnvironment`, not yet through `scene.environment` or `envMap`. Point-light shadows, area lights, post-processing, scene background textures, most loaders, animation, audio, controls and a WebGL fallback are not available. See [Not available yet](https://github.com/aymen94/wamr3d/blob/main/MIGRATION.md#not-available-yet).
 
 ## Install
 

@@ -52,7 +52,7 @@ function hero() {
           <span class="text-gradient animate-shine block">Compiled to WebAssembly.</span>
         </h1>
         <p class="mt-7 max-w-xl text-lg leading-relaxed text-slate-300 sm:text-xl">
-          WAMR3D is a WebAssembly 3D rendering engine with a Rust core and its own WebGPU renderer. Its object API follows three.js, so moving supported code over starts with a single import.
+          WAMR3D is a fast 3D engine for the web: a Rust core compiled to WebAssembly, its own WebGPU renderer, and classes that read like three.js. Change the import, call <code class="font-mono text-brand-cyan">init()</code>, switch to WebGPU, and keep the code you know.
         </p>
         <div class="mt-9 flex flex-wrap items-center gap-3">
           ${button('#install', 'Get started')}
@@ -82,7 +82,7 @@ function migrationPreview() {
   return `<section id="migration-preview" class="relative px-6 py-20">
     <div class="mx-auto grid max-w-6xl grid-cols-1 items-center gap-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
       <div>
-        ${sectionHead({ label: 'Migration path', title: 'Start from three.js.<br><span class="text-gradient">Change one import.</span>', intro: 'The object API mirrors three.js classes, properties and chaining. A test runs one script against both libraries and compares every number.' })}
+        ${sectionHead({ label: 'Migration path', title: 'Start from three.js.<br><span class="text-gradient">Change the import.</span>', intro: 'Scene, meshes, lights, shadows, materials and math keep their three.js names, properties and chaining. A parity script runs the same code on both libraries and compares every number.' })}
         <ol class="space-y-5">
           ${steps.map(([title, body], i) => `<li class="flex gap-4" data-reveal style="--reveal-delay:${i * 80}ms"><span class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-violet/30 to-brand-cyan/20 font-mono text-sm text-white ring-1 ring-white/10">0${i + 1}</span><div><h3 class="font-semibold text-white">${title}</h3><p class="mt-1 text-sm leading-relaxed text-slate-400">${body}</p></div></li>`).join('')}
         </ol>
@@ -105,12 +105,12 @@ function features() {
     <div class="mx-auto max-w-6xl">
       ${sectionHead({ label: 'What it is', title: 'A native core.<br><span class="text-gradient">A familiar surface.</span>', intro: 'Scene graph, transforms, cameras, geometry processing, culling and draw ordering run inside a WebAssembly module. You drive it from JavaScript through three.js-style classes or batched calls.' })}
       <div class="grid gap-5 md:grid-cols-6">
-        ${card('md:col-span-4', 'Rust → WebAssembly', 'The scene lives in engine memory.', 'Objects are created and destroyed explicitly in WebAssembly memory, so the engine adds no garbage-collector pauses. Generational handles mean a handle to a destroyed object can never reach a different one.', chips(['scene graph', 'world matrices', 'frustum culling', 'draw ordering', 'raycasting', 'SIMD build']))}
+        ${card('md:col-span-4', 'Rust → WebAssembly', 'The heavy lifting runs native.', 'Set transforms as cheaply as in three.js: the object API batches every change into the Rust engine once per frame. When you need more, the low-level API gives you handles, explicit disposal and zero-copy typed-array views of geometry and world matrices.', chips(['scene graph', 'world matrices', 'frustum culling', 'draw ordering', 'raycasting', 'batched updates']))}
         ${card('md:col-span-2', 'WebGPU', 'Its own renderer.', 'Not a wrapper around three.js. Meshes, lines, points, sprites and instanced meshes; basic, Lambert and standard materials; colour textures, fog, up to 16 lights, PCF shadows, tone mapping, render targets and 4× MSAA.')}
         ${card('md:col-span-2', 'Object API', 'Code that reads like three.js.', 'Scene, Group, Mesh, InstancedMesh, Points, Sprite, render targets, cameras, eight shapes, six materials, textures, five light types, shadows, tone mapping, Raycaster, Clock and the math types.')}
         ${card('md:col-span-2', 'Batched API', 'One call, thousands of objects.', 'Handles and batched calls such as <code class="font-mono text-slate-200">setRotations</code>; read world matrices and geometry through typed-array views over engine memory, with no copy.')}
         ${card('md:col-span-2', 'Parity', 'Checked against.', 'Over 7,600 reference cases generated from the three.js source are replayed against the Rust code. All 23 renderer cases are compared with stored three.js images.')}
-        ${card('md:col-span-6', 'Honest scope', 'What is not there yet.', 'WAMR3D is young and unfinished. Keep three.js for these until they land:', `<ul class="mt-5 grid gap-x-8 gap-y-2 text-sm text-slate-300 sm:grid-cols-2 lg:grid-cols-3">${['Environment reflections (not wired up)', 'Point-light shadows and area lights', 'Post-processing and scene background textures', 'Most loaders, animation, audio and controls', 'Shadow modes other than PCF', 'A WebGL fallback'].map((item) => `<li class="flex items-center gap-2"><span class="text-slate-400">${icon('cross')}</span>${item}</li>`).join('')}</ul>`)}
+        ${card('md:col-span-6', 'Roadmap', 'Coming next.', 'Everything above ships today. These are still on the way; keep three.js for them for now:', `<ul class="mt-5 grid gap-x-8 gap-y-2 text-sm text-slate-300 sm:grid-cols-2 lg:grid-cols-3">${['Environment maps in the object API', 'Point-light shadows and area lights', 'Post-processing and scene background textures', 'Most loaders, animation, audio and controls', 'Shadow modes other than PCF', 'A WebGL fallback'].map((item) => `<li class="flex items-center gap-2"><span class="text-slate-400">${icon('cross')}</span>${item}</li>`).join('')}</ul>`)}
       </div>
     </div>
   </section>`;
@@ -157,7 +157,7 @@ function liveDemo() {
         <div class="gradient-border relative aspect-[16/10] overflow-hidden rounded-3xl bg-ink-900" data-reveal data-demo>
           <div class="grid-backdrop absolute inset-0 flex flex-col items-center justify-center gap-5 p-8 text-center" data-demo-poster>
             <p class="font-mono text-[11px] uppercase tracking-[0.2em] text-brand-cyan">WAMR3D · WebGPU</p>
-            <p class="max-w-sm font-display text-2xl font-semibold text-white">Physically based materials, textures, lights, fog, orbit controls and picking.</p>
+            <p class="max-w-sm font-display text-2xl font-semibold text-white">Physically based materials, textures, lights, fog, interactive camera movement and picking.</p>
             <button type="button" data-demo-start class="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-ink-950 transition hover:bg-brand-cyan">
               <svg viewBox="0 0 20 20" class="size-4" fill="currentColor" aria-hidden="true"><path d="M6 4.5v11l9-5.5Z"/></svg>Start the live demo
             </button>
@@ -200,7 +200,7 @@ function closing() {
       <div class="pointer-events-none absolute inset-x-0 -top-32 mx-auto h-64 max-w-xl rounded-full bg-gradient-to-r from-brand-violet/40 via-brand-blue/40 to-brand-cyan/40 blur-3xl"></div>
       ${eyebrow('Open source · MIT')}
       <h2 class="relative font-display text-3xl font-semibold tracking-tight text-white sm:text-5xl">Bring your scene.<br><span class="text-gradient">Measure it yourself.</span></h2>
-      <p class="relative mx-auto mt-5 max-w-xl text-lg text-slate-400">Try a supported three.js scene with one import changed, then batch the hot paths when your scene grows.</p>
+      <p class="relative mx-auto mt-5 max-w-xl text-lg text-slate-400">Run your three.js scene on WAMR3D's WebGPU renderer, compare the numbers, then batch the hot paths as your scene grows.</p>
       <div class="relative mt-9 flex flex-wrap justify-center gap-3">${button('#install', 'Get started')}${button('https://github.com/aymen94/wamr3d', 'Star on GitHub', 'secondary', true)}</div>
     </div>
   </section>`;

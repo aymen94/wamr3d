@@ -17,6 +17,13 @@
   --animate-float: float 9s ease-in-out infinite;
   --animate-shine: shine 6s linear infinite;
   --animate-pulse-dot: pulse-dot 2s ease-in-out infinite;
+  --animate-scroll-dot: scroll-dot 1.8s ease-in-out infinite;
+
+  @keyframes scroll-dot {
+    0% { opacity: 0; transform: translate(-50%, 0); }
+    30% { opacity: 1; }
+    100% { opacity: 0; transform: translate(-50%, 18px); }
+  }
 
   @keyframes float {
     0%, 100% { transform: translateY(0); }

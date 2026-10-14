@@ -2,7 +2,7 @@
 
 This guide shows how three.js code maps onto WAMR3D today, what does not map yet, and how to move a project over one piece at a time.
 
-**Read this first.** There are two ways in. The **object API** (`wamr3d/compat`) has classes, properties and chaining like three.js and draws with WAMR3D's own WebGPU renderer; start there. The **low-level API** (`wamr3d`) is handle-based and batched; the rest of this guide from "What changes in your code" onwards describes it, and you reach for it when thousands of objects change every frame. Both are incomplete: check [Not available yet](#not-available-yet) first. Behaviour matches three.js r186, checked by parity tests.
+**Read this first.** There are two ways in. The **object API** (`wamr3d/compat`) has classes, properties and chaining like three.js and draws with WAMR3D's own WebGPU renderer; start there. The **low-level API** (`wamr3d`) is handle-based and batched; the rest of this guide from "What changes in your code" onwards describes it, and you reach for it when thousands of objects change every frame. Check [Not available yet](#not-available-yet) for the classes that are still missing. Behaviour matches three.js r186, checked by parity tests.
 
 ## Contents
 
@@ -36,7 +36,7 @@ Differences to watch for:
 |---|---|
 | Works without setup | `await init()` once before creating anything, and `await renderer.init()` before the first `render` (`setAnimationLoop` waits for you) |
 | `WebGLRenderer` | `WebGPURenderer` only; the browser must support WebGPU |
-| `MeshStandardMaterial` with environment and many maps | `color`, `map`, `roughness`, `metalness`, `side`, `transparent`, `opacity`, `depthTest`, `depthWrite` and `vertexColors` work. There are no environment reflections, so metals look dark away from the highlight. Any other parameter is stored, has no effect, and logs one warning |
+| `MeshStandardMaterial` with environment and many maps | `color`, `map`, `roughness`, `metalness`, `side`, `transparent`, `opacity`, `depthTest`, `depthWrite` and `vertexColors` work. The object API does not read `envMap` or `scene.environment` yet, so metals look dark away from the highlight (the low-level `setEnvironment` provides reflections). Any other parameter is stored, has no effect, and logs one warning |
 | Textures | Mipmaps, the six filters, the three wrapping modes, `repeat`, `offset`, `rotation` and `center` work. No anisotropy, and only colour maps |
 | A missing class is `undefined` | Common classes that do not exist yet (`SkinnedMesh`, `LOD`, `MeshPhongMaterial`, `WebGLRenderer`, ...) throw "not available yet" when constructed |
 | Any number of lights | Up to 16 `DirectionalLight`, `PointLight` and `SpotLight` together, plus all `AmbientLight` and `HemisphereLight`. A `HemisphereLight` is treated as pointing up |
@@ -339,7 +339,7 @@ Update world matrices before casting. Only meshes are picked; free the result wi
 
 Keep using three.js for these:
 
-- **Rendering:** environment maps and reflections (partly built, not usable yet), every map other than `map`, more than 16 lights, area lights, point-light shadows, shadow types other than PCF, scene background textures, post-processing, render-target depth textures and multiple attachments, lines wider than one pixel, a WebGL fallback.
+- **Rendering:** environment maps through the object API (`scene.environment`, `envMap`; the low-level `setEnvironment` works), every map other than `map`, more than 16 lights, area lights, point-light shadows, shadow types other than PCF, scene background textures, post-processing, render-target depth textures and multiple attachments, lines wider than one pixel, a WebGL fallback.
 - **Object API:** every class not listed under [The object API](#the-object-api), including controls and every helper other than `GridHelper` and `AxesHelper`.
 - **Objects:** `LineLoop`, `SkinnedMesh`, `LOD`; picking single instances of an `InstancedMesh`; picking sprites.
 - **Math from JavaScript:** `Triangle`, `Line3`, `Spherical`, `Cylindrical`. They exist in the Rust crates but have no JavaScript binding.

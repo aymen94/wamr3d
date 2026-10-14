@@ -2,18 +2,18 @@
 
 # WAMR3D
 
-**A 3D engine in Rust and WebAssembly with its own WebGPU renderer and a three.js-style API.**
+**A fast WebAssembly 3D engine for the web: a Rust core, its own WebGPU renderer and an API that reads like three.js.**
 
 WAMR3D provides a WebAssembly scene graph, transforms, cameras, geometry processing, culling and draw ordering, plus a separate WebGPU renderer. Drive it from JavaScript through classes that follow three.js conventions or through batched calls for large scenes. The object API keeps user-facing transforms in JavaScript and synchronizes them with the engine in batches. Behaviour is checked against three.js r186 value by value and pixel by pixel.
 
-It is an enthusiast project with no runtime dependencies. It is also unfinished: **the renderer is young** (meshes, lines, points, sprites and instanced meshes; basic, Lambert and standard materials; colour textures; up to 16 directional, point and spot lights; directional and spot shadows with PCF; tone mapping; render targets; transparency; and fog). Environment reflections are partly built but not usable; point-light shadows, area lights, post-processing and a WebGL fallback are not available. Read [Status](#status) before you plan around it.
+It has no runtime dependencies and ships a complete WebGPU render path: meshes, lines, points, sprites and instanced meshes; basic, Lambert and standard materials; colour textures; up to 16 directional, point and spot lights; directional and spot shadows with PCF; tone mapping; render targets; transparency; and fog. Environment reflections (prefiltered, image-based lighting) are available through the low-level API (`setEnvironment`); the object API does not read `scene.environment` or `envMap` yet. Point-light shadows, area lights, post-processing and a WebGL fallback are not part of it yet; see [Status](#status) for the full list.
 
 ## Why try it
 
 - **Faster scene updates where it counts.** Updating 10,000 animated objects (rotations, world matrices, camera) took a median 1.6 ms in WAMR3D against 4.5 ms in three.js at 1920×1080, in Chrome on the same machine with the same scene and the same renderer. At 2,000 objects it was 0.4 ms against 0.6 ms.
 - **Same results as three.js.** Over 7,600 reference cases generated from the three.js r186 source are replayed against the Rust code. Individual operations agree to about one part in a million.
-- **No garbage-collector pauses from the engine.** Objects live in WebAssembly memory and are created and destroyed explicitly. A handle to a destroyed object can never reach a different one.
-- **Zero-copy vertex data.** Read and write geometry attributes through typed-array views straight over engine memory.
+- **Explicit low-level ownership.** The handle-based API stores objects in WebAssembly memory and uses explicit destruction; stale handles cannot refer to a different object. The three.js-style object API keeps transforms in JavaScript and releases engine objects when their JavaScript objects are collected.
+- **Zero-copy low-level geometry access.** Read and write geometry attributes through typed-array views straight over engine memory. The compatibility API exposes copies for mutable attribute arrays.
 - **Its own WebGPU renderer.** In the showcase scene with 10,000 separate animated meshes at 1920×1080, WAMR3D held 60 fps (12.2 ms of draw submission per frame); three.js r186 ran at 34 fps with its WebGL renderer (23.7 ms) and 9.5 fps with its WebGPU renderer (100.5 ms). With 50,000 instanced bodies in a four-level scene graph, WAMR3D held 60 fps (12.0 ms of scene update) against 21 to 23 fps for three.js (39 to 40 ms). Measured at 1280×720, 1920×1080, 2560×1440 and 3840×2160 with similar results at each; one run per resolution on one machine. This snapshot predates the latest renderer-feature additions and does not measure their performance. See [`STATUS.md`](STATUS.md) for the full tables and their limits.
 - **Small and free.** The current SIMD WebAssembly module is about 488 KiB. Nothing to pay, nothing else to install at run time.
 
@@ -159,7 +159,7 @@ This writes the importable package to `dist/wamr3d/`: `index.js`, the generated 
 
 ## Things to know before you write code
 
-These apply to the low-level `wamr3d` API. The object API in `wamr3d/compat` has defaults and chaining and releases engine objects when they are garbage collected.
+These apply to the low-level `wamr3d` API. The object API in `wamr3d/compat` has defaults and chaining, keeps transforms in JavaScript and synchronizes them with the engine in batches, and releases engine objects when their JavaScript objects are collected. The low-level API uses handles and explicit disposal.
 
 - Right-handed, +Y up, cameras look down −Z, column-major matrices, radians. Same as three.js.
 - Objects, geometries and materials are handles (`bigint`). Math values (`Vector3`, `Quaternion`, `Matrix4`), `Timer` and `World` are classes; call `.free()` on them when you are done.
@@ -184,12 +184,12 @@ The full typed API is in `dist/wamr3d/wamr3d_wasm.d.ts` after a build. A Node.js
 | Lines | `Line` and `LineSegments`, one pixel wide; raycasting uses `Raycaster.params.Line.threshold`. |
 | Instancing, material arrays, fog, hand-set matrices | Done. |
 | Points, sprites, render targets, tone mapping, shadows (directional and spot) | Done, each compared with three.js r186 images. Points are one pixel, as in three.js r186's WebGPU renderer. |
-| Environment reflections | Partly built (prefiltering and shading in the renderer), not connected to `scene.environment` or `envMap` yet, so not usable. |
+| Environment reflections | Prefiltering (three.js PMREM) and image-based lighting in the renderer, available through `setEnvironment` / `setMaterialEnvironment` in the low-level API. Not yet read from `scene.environment` or `envMap` by the object API, and not yet in the visual suite. |
 | **Renderer** (WebGPU) | Implemented but incomplete: meshes, lines, points, sprites and instanced meshes; basic, Lambert and standard materials; colour maps, fog, up to 16 directional/point/spot lights, PCF shadows for up to four directional/spot lights, tone mapping, render targets, geometry groups, frustum culling, draw ranges and 4× MSAA. All 23 visual cases are compared with stored three.js WebGPU images. See [STATUS](STATUS.md) for limitations. |
 | Object API (`wamr3d/compat`: classes, properties, chaining) | Scene, group, mesh, instanced mesh, lines, points, sprites, render targets, grid and axes helpers, cameras, eight shapes, six materials (basic, Lambert, standard, line, points, sprite), textures, five light types, shadows, tone mapping, fog, raycaster, clock, renderer and math. Typings are compiled with TypeScript. Unsupported classes throw a clear "not available yet" error. |
-| Still incomplete | Environment reflections are not wired to the object API; point-light shadows, area lights, post-processing, scene background textures, non-colour maps, render-target depth textures and multiple attachments, and WebGL fallback are unavailable. Loaders other than `TextureLoader`, animation, audio and controls are not implemented. |
+| Not yet available | `scene.environment` and `envMap` in the object API; point-light shadows, area lights, post-processing, scene background textures, non-colour maps, render-target depth textures and multiple attachments, and WebGL fallback are unavailable. Loaders other than `TextureLoader`, animation, audio and controls are not implemented. |
 
-Verified so far in Node.js v24 and headless Chrome. Not yet tried in Firefox, Safari or with a bundler.
+Verified in Node.js v24 and headless Chrome, and bundled with Vite for the project website. Not yet tried in Firefox or Safari.
 
 ## Tests and measurements
 

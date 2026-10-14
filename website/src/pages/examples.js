@@ -1,7 +1,7 @@
 import { icon, pageIntro, repoFile, shell } from '../components/ui.js';
 
 const demos = [
-  { href: './examples/webgpu/', tag: 'WAMR3D only', title: 'WebGPU demo', body: 'A rotating scene with physically based materials, colour textures, lighting, fog, orbit controls and picking. No three.js on the page.', source: 'examples/webgpu/main.js', art: 'from-brand-violet/50 via-brand-blue/30 to-transparent' },
+  { href: './examples/webgpu/', tag: 'WAMR3D only', title: 'WebGPU demo', body: 'A rotating scene with physically based materials, colour textures, lighting, fog, interactive camera movement and picking. No three.js on the page.', source: 'examples/webgpu/main.js', art: 'from-brand-violet/50 via-brand-blue/30 to-transparent' },
   { href: './examples/showcase/', tag: 'Up to 100,000 bodies', title: 'Showcase', body: 'A four-level scene graph of spinning belts. Change the body count, instancing, shading, lights and fog, switch between WAMR3D and three.js, and compare live timings.', source: 'examples/showcase/main.js', art: 'from-brand-cyan/40 via-brand-blue/30 to-transparent' },
   { href: './examples/compare/', tag: 'Side by side', title: 'Engine comparison', body: 'The same scene on WAMR3D and three.js with timing overlays. Run one engine at a time for measurement.', source: 'examples/compare/run.js', art: 'from-brand-blue/50 via-brand-violet/30 to-transparent' },
   { href: './examples/browser/', tag: 'Low-level API', title: 'Browser demo', body: 'The handle-based API driving a scene in the browser, with an optional transform check against three.js.', source: 'examples/browser/main.js', art: 'from-brand-violet/40 via-brand-cyan/20 to-transparent' },
