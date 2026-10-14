@@ -1,38 +1,30 @@
-# -----------------------------
 # Rust / Cargo
-# -----------------------------
 /target/
 **/*.rs.bk
 
-# -----------------------------
 # WebAssembly (wasm-pack)
-# -----------------------------
 /pkg/
 
-# -----------------------------
 # Node.js / JavaScript
-# -----------------------------
 node_modules/
 npm-debug.log
 yarn-debug.log
 yarn-error.log
 pnpm-debug.log
 
-# -----------------------------
 # Build Outputs & Caches
-# -----------------------------
 /dist/
 /website/dist/
 /build/
 /three.js-r186/
 .parcel-cache/
 
-# -----------------------------
 # Environment & OS
-# -----------------------------
 .env
 .env.local
 .DS_Store
 Thumbs.db
+
 # Visual parity output
 /parity/visual/out/
+
