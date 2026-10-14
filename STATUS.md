@@ -424,7 +424,7 @@ Four engines draw the same scene description (`scene.js`), chosen in the panel w
 
 The last three run one and the same file (`engine-library.js`); only the import and the renderer differ. three.js never draws a WAMR3D scene.
 
-Panel: engine, number of bodies, separate or instanced, shape, speed, camera orbit, shading model, roughness, metalness, sun, sky light, fog and its density. Changes that alter what the scene is made of rebuild it in place; the others apply to the running scene. The header shows the active engine and configuration, frame rate, frame time, CPU update time, draw submission time, scene-graph size, draw calls and triangles. "Compare all four renderers" measures each engine in turn with the current settings and shows a table. The panel states what WAMR3D does not have yet (shadows, environment reflections, points and sprites, post-processing); none of it is used.
+Panel: engine, number of bodies, separate or instanced, shape, speed, camera orbit, shading model, roughness, metalness, sun, sky light, fog and its density. Changes that alter what the scene is made of rebuild it in place; the others apply to the running scene. The header shows the active engine and configuration, frame rate, frame time, CPU update time, draw submission time, scene-graph size, draw calls and triangles. "Compare all four renderers" measures each engine in turn with the current settings and shows a table. The panel lists what the scene does not use: shadows, points, sprites, tone mapping and render targets (implemented in WAMR3D) and environment reflections and post-processing passes (not usable yet).
 
 ### Measured
 

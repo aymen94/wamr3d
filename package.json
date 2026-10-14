@@ -8,7 +8,6 @@
     "webgpu",
     "webassembly",
     "wasm",
-    "rust",
     "three.js"
   ],
   "scripts": {
