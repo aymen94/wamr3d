@@ -1,7 +1,6 @@
 import './styles.css';
 import { routes } from './pages/index.js';
-import { barText, barWidth, chartTableBody, chartValues, counts, scalingRows } from './components/charts.js';
-import { engines } from './data/benchmarks.js';
+import { chartBody, counts } from './components/charts.js';
 import { icon } from './components/ui.js';
 
 const app = document.querySelector('#app');
@@ -109,19 +108,12 @@ function bindChart(chart) {
       b.setAttribute('aria-checked', String(Number(b.dataset.chartCount) === count));
       b.disabled = !counts[mode].includes(Number(b.dataset.chartCount));
     });
-    for (const { metric, values, max } of chartValues(resolution, mode, count)) {
-      engines.forEach((engine, i) => {
-        const id = `${engine.id}-${metric.key}`;
-        const text = `${engine.label}: ${values[i] === null ? 'not measured' : `${values[i].toFixed(metric.digits)} ${metric.unit}`}`;
-        const bar = chart.querySelector(`[data-bar="${id}"]`);
-        bar.style.width = barWidth(values[i], max);
-        bar.dataset.tip = text;
-        bar.setAttribute('aria-label', text);
-        chart.querySelector(`[data-value="${id}"]`).textContent = barText(values[i], metric);
-      });
-    }
-    chart.querySelector('[data-chart-table]').innerHTML = chartTableBody(resolution, mode, count);
-    chart.querySelector('[data-scaling-rows]').innerHTML = scalingRows(mode, count);
+    const body = chart.querySelector('[data-chart-body]');
+    body.innerHTML = chartBody(resolution, mode, count);
+    // Grow the new bars from zero so a change of setting animates.
+    const bars = [...body.querySelectorAll('[data-bar]')];
+    bars.forEach((bar) => { bar.style.width = '0px'; });
+    requestAnimationFrame(() => requestAnimationFrame(() => bars.forEach((bar) => { bar.style.width = bar.dataset.w; })));
   };
   chart.addEventListener('click', (event) => {
     const resolution = event.target.closest('[data-chart-resolution]')?.dataset.chartResolution;

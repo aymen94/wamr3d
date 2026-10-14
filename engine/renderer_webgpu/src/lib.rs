@@ -3,7 +3,7 @@
 //! This crate decides *what* is drawn and with *which data*: it culls against the
 //! camera frustum, orders the draws, chooses each draw's pipeline state, packs the
 //! uniform buffers and owns the shader source. Issuing the GPU calls is left to a small
-//! host layer, because WebGPU is a browser API (DECISIONS.md D24).
+//! host layer, because WebGPU is a browser API (DECISIONS.md D32).
 //!
 //! Scope so far: meshes, lines, points and sprites; unlit, diffuse or roughness/metalness shading; a
 //! colour texture with a uv transform; vertex colours; alpha blending; up to

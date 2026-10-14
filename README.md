@@ -137,9 +137,9 @@ npm run build --prefix website
 npm run preview --prefix website
 ```
 
-The site is plain JavaScript styled with Tailwind CSS. Its animated backdrop is drawn by WAMR3D itself (`website/src/scene/hero-scene.js`, WebGPU only; browsers without WebGPU get a static backdrop, and three.js is never loaded). Benchmark figures in `website/src/data/benchmarks.js` are a checked-in projection of the latest measurements and their raw logs in `bench/results/`; the method is described on the benchmarks page and in the Measurements section of `STATUS.md`. Update the data and documentation together when new results are measured. The demos, the parity page and the package are served from the repository root in development and copied into `website/dist` by `website/scripts/prepare-pages.mjs`.
+The site is plain JavaScript styled with Tailwind CSS. Its animated backdrop is drawn by WAMR3D itself (`website/src/scene/hero-scene.js`, WebGPU only; browsers without WebGPU get a static backdrop, and three.js is never loaded). Benchmark figures in `website/src/data/benchmarks.js` are generated from the raw logs of a run in `bench/results/<date>/` with `node website/scripts/benchmark-data.mjs bench/results/<date>`; the commands and the method are on the benchmarks page. The demos, the parity page and the package are served from the repository root in development and copied into `website/dist` by `website/scripts/prepare-pages.mjs`.
 
-The GitHub Actions workflow in `.github/workflows/pages.yml` builds the package and deploys `website/dist` to GitHub Pages. Its benchmark figures are the recorded 2026-10-14 run; that snapshot predates the renderer-feature milestone below, and does not measure the performance of the newly added effects. Set the repository's Pages source to **GitHub Actions**.
+`wrangler.jsonc` at the root serves `website/dist` as static assets on Cloudflare.
 
 ## Build
 

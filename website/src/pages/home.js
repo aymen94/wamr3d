@@ -122,7 +122,7 @@ function features() {
 function performance() {
   const sep = showcase[HEADLINE].objects[10000], inst = showcase[HEADLINE].instanced[50000];
   const res = HEADLINE.replace('x', '×');
-  const mathRatios = lowLevel.filter(([name]) => /^(Matrix4|Vector3)\./.test(name)).map((row) => row[3]);
+  const mathSlowdown = lowLevel.filter(([name]) => /^(Matrix4|Vector3)\./.test(name)).map(([, three, wamr]) => wamr / three);
   const stat = (value, unit, label, detail) => `<div class="glass gradient-border rounded-3xl p-7" data-reveal>
     <p class="font-display text-5xl font-semibold tracking-tight text-white">${value}<span class="ml-1 text-2xl text-slate-400">${unit}</span></p>
     <p class="mt-3 font-semibold text-slate-200">${label}</p>
@@ -130,17 +130,16 @@ function performance() {
   </div>`;
   return `<section id="performance" class="relative px-6 py-20">
     <div class="mx-auto max-w-6xl">
-      ${sectionHead({ label: 'Measured, not promised', title: 'Batch the work.<br><span class="text-gradient">See the difference.</span>', intro: 'The same scene, four renderers, one engine at a time. These are medians from a single run on one machine; open the showcase to measure yours.' })}
+      ${sectionHead({ label: 'Measured, not promised', title: 'Batch the work.<br><span class="text-gradient">See the difference.</span>', intro: 'The same scene, four renderers, one engine at a time. Medians from a single run on one machine; higher is better in every figure here. Open the showcase to measure yours.' })}
       <div class="mb-8 grid gap-5 md:grid-cols-3">
         ${stat(sep.batched.fps.toFixed(0), 'fps', `10,000 separate meshes at ${res}`, `WAMR3D batched. three.js ran at ${sep.webgl.fps.toFixed(1)} fps with WebGL and ${sep.webgpu.fps.toFixed(1)} fps with WebGPU.`)}
-        ${stat(inst.batched.update.toFixed(1), 'ms', `Scene update, 50,000 instanced bodies at ${res}`, `WAMR3D batched API (${inst.batched.fps.toFixed(1)} fps), against ${inst.webgpu.update.toFixed(1)} ms (WebGPU, ${inst.webgpu.fps.toFixed(1)} fps) and ${inst.webgl.update.toFixed(1)} ms (WebGL, ${inst.webgl.fps.toFixed(1)} fps) for three.js.`)}
-        ${stat((sep.webgl.submit / sep.batched.submit).toFixed(1), '×', 'Draw submission speed against three.js WebGL', `10,000 meshes at ${res}: ${sep.batched.submit.toFixed(1)} ms against ${sep.webgl.submit.toFixed(1)} ms of CPU time. Ratio computed from the measured medians.`)}
+        ${stat(inst.batched.fps.toFixed(0), 'fps', `50,000 instanced bodies at ${res}`, `WAMR3D batched. three.js ran at ${inst.webgl.fps.toFixed(1)} fps with WebGL and ${inst.webgpu.fps.toFixed(1)} fps with WebGPU; its scene update took ${inst.webgl.update.toFixed(0)} to ${inst.webgpu.update.toFixed(0)} ms against ${inst.batched.update.toFixed(1)} ms.`)}
+        ${stat((sep.webgl.submit / sep.batched.submit).toFixed(1), '× faster', 'Draw submission than three.js WebGL', `10,000 separate meshes at ${res}: ${sep.batched.submit.toFixed(1)} ms of CPU time per frame against ${sep.webgl.submit.toFixed(1)} ms. Computed from the measured medians.`)}
       </div>
       <div data-reveal>${showcaseChart('objects', 10000, HEADLINE)}</div>
-      <p class="mt-5 text-sm leading-relaxed text-slate-400" data-reveal>These benchmark runs predate the shadow, tone mapping, points, sprite and render-target features listed in <a class="text-brand-cyan hover:text-white" href="${repoFile('STATUS.md')}" target="_blank" rel="noreferrer">STATUS.md</a>; they measure the showcase workloads, not the performance of the newly added effects.</p>
       <div class="mt-8 grid grid-cols-1 gap-5 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-        <p class="text-sm leading-relaxed text-slate-400" data-reveal><strong class="text-slate-200">Where it is slower:</strong> calls that do very little work, such as a single vector operation or one property at a time, cost more than plain JavaScript because crossing into WebAssembly has a fixed cost. ${mathRatios.length ? `Single math calls measured ${Math.min(...mathRatios).toFixed(1)}× to ${Math.max(...mathRatios).toFixed(1)}× slower than three.js.` : ''} GPU time is not measured; it only shows in the frame rate.</p>
-        <p class="font-mono text-[11px] leading-relaxed text-slate-400 md:text-right" data-reveal>${meta.cpu}, ${meta.gpu.replace(/ \(0x.*$/, '')}, ${meta.chrome} headless, ${meta.os}.<br>Measured ${meta.date} at 1280×720 to 3840×2160. Raw logs: <a class="text-brand-cyan hover:text-white" href="${repoFile('bench/results/2026-10-14')}" target="_blank" rel="noreferrer">bench/results/2026-10-14</a>.</p>
+        <p class="text-sm leading-relaxed text-slate-400" data-reveal><strong class="text-slate-200">Where it is slower:</strong> calls that do very little work, such as a single vector operation or one property at a time, cost more than plain JavaScript because crossing into WebAssembly has a fixed cost. ${mathSlowdown.length ? `Single math calls measured ${Math.min(...mathSlowdown).toFixed(1)}× to ${Math.max(...mathSlowdown).toFixed(1)}× slower than three.js.` : ''} GPU time is not measured; it only shows in the frame rate.</p>
+        <p class="font-mono text-[11px] leading-relaxed text-slate-400 md:text-right" data-reveal>${meta.cpu}, ${meta.gpu.replace(/ \(0x.*$/, '')}, ${meta.chrome} headless, ${meta.os}.<br>Measured ${meta.date} at 1280×720 to 3840×2160. Raw logs: <a class="text-brand-cyan hover:text-white" href="${repoFile(meta.dir)}" target="_blank" rel="noreferrer">${meta.dir}</a>.</p>
       </div>
       <div class="mt-8" data-reveal>${button('#/benchmarks', 'All benchmark results', 'secondary')}</div>
     </div>
@@ -164,11 +163,11 @@ function liveDemo() {
             <button type="button" data-demo-start class="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-ink-950 transition hover:bg-brand-cyan">
               <svg viewBox="0 0 20 20" class="size-4" fill="currentColor" aria-hidden="true"><path d="M6 4.5v11l9-5.5Z"/></svg>Play the game
             </button>
-            <a href="./examples/ports/crossy-road/" class="text-xs text-slate-400 underline-offset-4 hover:text-white hover:underline">or open it full screen</a>
+            <a href="./examples/ports/crossy-road/" target="_blank" rel="noreferrer" class="text-xs text-slate-400 underline-offset-4 hover:text-white hover:underline">or open it full screen</a>
           </div>
         </div>
         <div class="flex flex-col gap-4">
-          ${others.map(([href, title, body], i) => `<a href="${href}" class="glass group flex flex-1 flex-col justify-between rounded-3xl p-6 transition hover:-translate-y-0.5 hover:bg-white/[0.07]" data-reveal style="--reveal-delay:${i * 80}ms"><div><h3 class="flex items-center justify-between font-display text-lg font-semibold text-white">${title}<span class="text-slate-400 transition group-hover:text-brand-cyan">${icon('external')}</span></h3><p class="mt-2 text-sm leading-relaxed text-slate-400">${body}</p></div></a>`).join('')}
+          ${others.map(([href, title, body], i) => `<a href="${href}" target="_blank" rel="noreferrer" class="glass group flex flex-1 flex-col justify-between rounded-3xl p-6 transition hover:-translate-y-0.5 hover:bg-white/[0.07]" data-reveal style="--reveal-delay:${i * 80}ms"><div><h3 class="flex items-center justify-between font-display text-lg font-semibold text-white">${title}<span class="text-slate-400 transition group-hover:text-brand-cyan">${icon('external')}</span></h3><p class="mt-2 text-sm leading-relaxed text-slate-400">${body}</p></div></a>`).join('')}
         </div>
       </div>
       <p class="mt-5 text-sm text-slate-400">The demos need a browser with WebGPU, such as current Chrome or Edge.</p>

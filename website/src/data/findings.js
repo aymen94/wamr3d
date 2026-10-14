@@ -18,13 +18,14 @@ function showcaseFindings() {
   if (sep.length) {
     const fps = (e) => range(sep.map((r) => get(r, 'objects', 10000, e).fps));
     const ratio = (e) => range(sep.map((r) => get(r, 'objects', 10000, e).submit / get(r, 'objects', 10000, 'batched').submit));
-    out.push(['Separate meshes, 10,000 bodies.', `Across ${sep.map(res).join(', ')}: WAMR3D batched ran at ${fps('batched')} fps, three.js at ${fps('webgl')} (WebGL) and ${fps('webgpu')} (WebGPU). three.js needed ${ratio('webgl')}× (WebGL) and ${ratio('webgpu')}× (WebGPU) the CPU time of WAMR3D to submit draws.`]);
+    out.push(['Separate meshes, 10,000 bodies.', `Across ${sep.map(res).join(', ')}: WAMR3D batched ran at ${fps('batched')} fps, three.js at ${fps('webgl')} (WebGL) and ${fps('webgpu')} (WebGPU). WAMR3D submitted draws ${ratio('webgl')}× faster than three.js WebGL and ${ratio('webgpu')}× faster than three.js WebGPU.`]);
   }
 
   const inst = measured('instanced', 50000);
   if (inst.length) {
     const f = (e, k) => range(inst.map((r) => get(r, 'instanced', 50000, e)[k]));
-    out.push(['Instanced, 50,000 bodies.', `The scene-graph update decides. WAMR3D batched: ${f('batched', 'update')} ms update, ${f('batched', 'fps')} fps. three.js: ${f('webgpu', 'update')} ms (WebGPU) and ${f('webgl', 'update')} ms (WebGL), ${f('webgpu', 'fps')} and ${f('webgl', 'fps')} fps.`]);
+    const speed = (e) => range(inst.map((r) => get(r, 'instanced', 50000, e).update / get(r, 'instanced', 50000, 'batched').update));
+    out.push(['Instanced, 50,000 bodies.', `With five draw calls the scene-graph update decides. WAMR3D batched ran at ${f('batched', 'fps')} fps, three.js at ${f('webgpu', 'fps')} (WebGPU) and ${f('webgl', 'fps')} (WebGL); WAMR3D updated the scene ${speed('webgpu')}× and ${speed('webgl')}× faster (${f('batched', 'update')} ms against ${f('webgpu', 'update')} and ${f('webgl', 'update')} ms).`]);
   }
 
   const all = resolutions.filter((r) => get(r, 'instanced', 2000, 'batched') && get(r, 'instanced', 2000, 'webgl'));
@@ -49,7 +50,7 @@ function compareFindings() {
     const find = (objects, engine) => rows.find((x) => x.objects === objects && x.engine === engine);
     const three = find(10004, 'three'), wamr = find(10004, 'wamr3d'), api = find(10007, 'api'), webgl = find(10007, 'three-webgl'), webgpu = find(10007, 'three-webgpu');
     const parts = [];
-    if (three && wamr) parts.push(`same three.js WebGL renderer, only the transforms differ: ${wamr.update.toFixed(1)} ms for WAMR3D against ${three.update.toFixed(1)} ms for three.js at 10,004 objects`);
+    if (three && wamr) parts.push(`same three.js WebGL renderer, only the transforms differ: WAMR3D updated 10,004 objects ${(three.update / wamr.update).toFixed(1)}× faster (${wamr.update.toFixed(1)} ms against ${three.update.toFixed(1)} ms)`);
     if (api && webgl && webgpu) parts.push(`same scene code at 10,007 objects: WAMR3D object API ${api.fps} fps, three.js ${webgl.fps} fps (WebGL) and ${webgpu.fps} fps (WebGPU)`);
     if (parts.length) out.push(`<strong class="text-slate-200">${res(r)}:</strong> ${parts.join('; ')}.`);
   }

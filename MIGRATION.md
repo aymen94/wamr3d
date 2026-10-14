@@ -2,17 +2,14 @@
 
 This guide shows how three.js code maps onto WAMR3D today, what does not map yet, and how to move a project over one piece at a time.
 
-**Read this first.** There are two ways in. The **object API** (`wamr3d/compat`) has classes, properties and chaining like three.js and draws with WAMR3D's own WebGPU renderer; start there. The **low-level API** (`wamr3d`) is handle-based and batched; the rest of this guide from "What changes in your code" onwards describes it, and you reach for it when thousands of objects change every frame. Check [Not available yet](#not-available-yet) for the classes that are still missing. Behaviour matches three.js r186, checked by parity tests.
+There are two ways in. The **object API** (`wamr3d/compat`) has classes, properties and chaining like three.js and draws with WAMR3D's own WebGPU renderer; start there. The **low-level API** (`wamr3d`) is handle-based and batched; reach for it when thousands of objects change every frame. Check [Not available yet](#not-available-yet) for what is still missing. Behaviour matches three.js r186, checked by parity tests.
 
 ## Contents
 
 - [The object API](#the-object-api)
-- [What changes in your code](#what-changes-in-your-code)
-- [Step 1: load the module](#step-1-load-the-module)
-- [Step 2: move the scene graph](#step-2-move-the-scene-graph)
-- [Step 3: keep three.js drawing through an adapter](#step-3-keep-threejs-drawing-through-an-adapter)
-- [Step 4: make the frame loop fast](#step-4-make-the-frame-loop-fast)
-- [API mapping](#api-mapping)
+- [The low-level API](#the-low-level-api)
+- [Batching the frame loop](#batching-the-frame-loop)
+- [Low-level API mapping](#low-level-api-mapping)
 - [Not available yet](#not-available-yet)
 - [Checklist](#checklist)
 
@@ -87,9 +84,9 @@ const scene = new THREE.Scene(); // build the scene after the choice
 
 Because the object API follows three.js names, the rest of the code is the same for both libraries, as long as it uses only classes that WAMR3D supports. `three` is then a dependency of your application; WAMR3D itself never loads it. Pass your own `canvas`: a failed WAMR3D start leaves it without a context, so three.js can still use it. Code written for the low-level API (`wamr3d`) has no such fallback.
 
-## What changes in your code
+## The low-level API
 
-This and the following sections describe the low-level `wamr3d` API.
+This and the following sections describe `wamr3d`, the handle-based API.
 
 | three.js | WAMR3D | Why |
 |---|---|---|
@@ -104,9 +101,9 @@ This and the following sections describe the low-level `wamr3d` API.
 
 Conventions are the same as three.js: right-handed, +Y up, cameras look down −Z, column-major matrices, radians.
 
-## Step 1: load the module
+### Loading the module
 
-Install the package from npm with `npm install wamr3d` (<https://www.npmjs.com/package/wamr3d>).
+Install the package with `npm install wamr3d` (<https://www.npmjs.com/package/wamr3d>).
 
 ```js
 // before
@@ -119,7 +116,7 @@ await init(); // once, before anything else
 
 `init()` fetches the `.wasm` file that sits next to the module (or reads it from disk under Node.js). Pass a URL, `Response`, `ArrayBuffer` or `WebAssembly.Module` to load it from somewhere else. In a browser the page must be served over HTTP.
 
-## Step 2: move the scene graph
+### The scene graph
 
 ```js
 // three.js
@@ -204,34 +201,7 @@ const sphere = world.computeBoundingSphere(custom);     // [cx, cy, cz, radius]
 const normals = world.getAttribute(custom, 'normal');   // a copy
 ```
 
-## Step 3: keep three.js drawing through an adapter
-
-If you need something the WAMR3D renderer does not draw yet (see [Not available yet](#not-available-yet)), or a WebGL renderer, let three.js draw what WAMR3D computed. Turn off three.js's own matrix updates and write the engine's matrices into the meshes.
-
-```js
-// one-time setup
-threeScene.matrixWorldAutoUpdate = false;
-mesh.matrixAutoUpdate = false;
-mesh.matrixWorldAutoUpdate = false;
-threeCamera.matrixAutoUpdate = false;
-threeCamera.matrixWorldAutoUpdate = false;
-
-// every frame
-world.updateMatrixWorld(scene, false);
-const matrices = world.matricesWorld(handles); // 16 numbers per object, one call
-
-meshes.forEach((mesh, i) => mesh.matrixWorld.fromArray(matrices, i * 16));
-threeCamera.matrixWorld.fromArray(world.matrixWorld(camera));
-threeCamera.matrixWorldInverse.fromArray(world.matrixWorldInverse(camera));
-threeCamera.projectionMatrix.fromArray(world.projectionMatrix(camera));
-threeCamera.projectionMatrixInverse.fromArray(world.projectionMatrixInverse(camera));
-
-renderer.render(threeScene, threeCamera);
-```
-
-Lights and helpers that never move need one `updateMatrixWorld(true)` after you place them, because automatic updates are off. A complete working version is in [`examples/browser/render-adapter.js`](examples/browser/render-adapter.js).
-
-## Step 4: make the frame loop fast
+## Batching the frame loop
 
 Every call from JavaScript into WebAssembly has a fixed cost, and a `bigint` handle argument adds to it. A call that does little work is slower than the same line in three.js. A call that does a lot of work is faster. So batch.
 
@@ -268,9 +238,9 @@ world.markAttributeNeedsUpdate(geometry, 'position');
 
 A view stops working when the module's memory grows, which any engine call that allocates can cause. Create it right before you use it; do not keep it across frames.
 
-Measured results for these patterns are in [`STATUS.md`](STATUS.md).
+Measured results for these patterns are on the website's benchmarks page; the raw logs are in [`bench/results/`](bench/results/).
 
-## API mapping
+## Low-level API mapping
 
 ### Math
 
@@ -376,9 +346,8 @@ Keep using three.js for these:
 
 ## Checklist
 
-1. Build the package and confirm `await init()` works in your app.
-2. Create a `World` and mirror your scene graph into it. Keep a table from handle to three.js mesh.
-3. Switch off three.js matrix updates for mirrored objects and write WAMR3D's matrices into them each frame.
-4. Move per-frame transform code to the batched calls.
-5. Compare against your old code path for a few frames, as [`examples/browser/reference-check.js`](examples/browser/reference-check.js) does, before deleting it.
-6. Free what you create: `.free()` on math values, `destroy` on objects, `dispose*` on geometries and materials.
+1. `npm install wamr3d`, replace the `three` import with `wamr3d/compat`, and `await init()` once.
+2. Replace `WebGLRenderer` with `WebGPURenderer` and `await renderer.init()` before the first frame. Decide what browsers without WebGPU get ([Browsers without WebGPU](#browsers-without-webgpu)).
+3. Run the app. Classes that do not exist yet throw "not available yet" when constructed; compare the rest with [Not available yet](#not-available-yet).
+4. Compare a few frames against the three.js version of your page.
+5. If thousands of objects change every frame, move that loop to the batched low-level calls ([Batching the frame loop](#batching-the-frame-loop)) and measure. Do not mix the two APIs on the same objects.

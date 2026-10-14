@@ -56,11 +56,11 @@ function card(demo, i) {
     ? `<img src="${demo.image}" alt="" loading="lazy" width="640" height="360" class="absolute inset-0 size-full object-cover transition duration-700 group-hover:scale-105"><div class="absolute inset-0 bg-gradient-to-t from-ink-950/85 via-ink-950/10 to-transparent"></div>`
     : `<div class="absolute inset-0 bg-gradient-to-br ${demo.art}"></div>`;
   const credit = demo.credit ? `<p class="mt-3 text-xs text-slate-400">Original by <a href="${demo.original}" target="_blank" rel="noreferrer" class="pointer-events-auto relative z-10 text-slate-300 underline-offset-4 hover:text-white hover:underline">${demo.credit}</a></p>` : '';
-  const compare = demo.compare ? `<a href="${demo.compare}" class="pointer-events-auto inline-flex items-center gap-1 text-slate-400 transition hover:text-white">On three.js ${icon('arrow')}</a>` : '';
+  const compare = demo.compare ? `<a href="${demo.compare}" target="_blank" rel="noreferrer" class="pointer-events-auto inline-flex items-center gap-1 text-slate-400 transition hover:text-white">On three.js ${icon('arrow')}</a>` : '';
   return `<article class="glass gradient-border group relative flex flex-col overflow-hidden rounded-3xl transition duration-500 hover:-translate-y-1" data-reveal style="--reveal-delay:${(i % 3) * 70}ms">
     <div class="grid-backdrop relative aspect-[16/9] overflow-hidden">${art}<span class="absolute bottom-4 left-5 font-mono text-[11px] uppercase tracking-[0.2em] text-white/90">${demo.tag}</span></div>
     <div class="flex flex-1 flex-col p-6">
-      <h3 class="font-display text-xl font-semibold text-white"><a href="${demo.href}" class="after:absolute after:inset-0">${demo.title}</a></h3>
+      <h3 class="font-display text-xl font-semibold text-white"><a href="${demo.href}" target="_blank" rel="noreferrer" class="after:absolute after:inset-0">${demo.title}</a></h3>
       <p class="mt-2 flex-1 text-sm leading-relaxed text-slate-400">${demo.body}</p>
       ${credit}
       <div class="pointer-events-none relative z-10 mt-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-sm">
