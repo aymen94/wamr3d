@@ -241,7 +241,7 @@ AGENTS.md runs the phases in order, with bindings last. The owner asked for an i
 
 - **Crate:** `engine/bindings`, named `wamr3d`, a thin shell over `wamr-math` and `wamr-core` with no state or computation of its own. `#![forbid(unsafe_code)]`.
 - **Tooling:** `wasm-bindgen` pinned to `=0.2.129` (the CLI must match), output `--target web`, assembled into `dist/wamr3d` by `engine/bindings/build.mjs`. A hand-written `index.js` adds `init()` (loads the .wasm from disk under Node.js, fetches it in a browser) and `attributeView()`.
-- **Handles are `bigint`** (the `u64` of section 5.3). Correct and simple, but the slowest argument type to pass; the benchmark in STATUS.md shows the cost. Batch calls (`createObjects`, `addMany`, `setTransforms`, `matricesWorld`) exist for that reason.
+- **Handles are `bigint`** (the `u64` of section 5.3). Correct and simple, but the slowest argument type to pass; the benchmark logs in `bench/results/` show the cost. Batch calls (`createObjects`, `addMany`, `setTransforms`, `matricesWorld`) exist for that reason.
 - **JS methods return nothing**, so they do not chain, and JS objects must be `free()`d. A chaining, garbage-collected facade is Phase 5 proper.
 - **Zero-copy views** are built in JS from `attributePtr` / `attributeLength` over the module's memory, which keeps `unsafe` out of the Rust side. They die when memory grows.
 - **`World::update_matrix_world` and `update_world_matrix` moved into Phase 2** (they were left to Phase 3 in D17): a scene graph without world matrices could not be tried out. Phase 3 still owns the dirty-subtree counter test of its exit criteria, `attach`, `lookAt` and the world-space queries.
@@ -272,7 +272,7 @@ The class-based API lives beside the handle-based one instead of replacing it. `
 - Engine objects, geometries and materials are released when their wrapper is garbage collected (`FinalizationRegistry`), or at once with `dispose()`. A wrapper stays reachable while its parent's `children` holds it, so nothing in a live scene is released.
 - Material colours are sent to the engine when drawing, because they are plain values that code mutates in place.
 
-Known cost: one engine call per property access, so per-object property animation of thousands of objects is slower than the batched calls and slower than three.js (STATUS.md).
+Known cost: one engine call per property access, so per-object property animation of thousands of objects is slower than the batched calls and slower than three.js (`bench/results/`).
 
 ### D26. Materials in the engine; textures as ids
 `Material` now holds what the renderer needs: `shading` (diffuse, unlit, standard), `roughness`, `metalness` and `map`. `map` is a `u32` id, 0 for none: images are browser objects (`ImageBitmap`, canvas) that cannot live in WebAssembly memory, so the object API keeps the image and its sampling settings and the WebGPU host resolves the id when drawing. `src/textures/` is out of scope in AGENTS.md section 1.4 and was not read; the texture classes in the object API follow the public behaviour only (defaults for `flipY`, filters, wrapping and colour space), checked by the image comparison.
@@ -366,7 +366,7 @@ The project owner is removing the local copy of three.js r186. WAMR3D was made i
 
 ### D38. Shadows, tone mapping, points, sprites, render targets, environment (2026-10-14)
 
-Each follows the behaviour of the three.js r186 WebGPU renderer, read from its source and checked with visual cases (STATUS.md, milestone "renderer features"):
+Each follows the behaviour of the three.js r186 WebGPU renderer, read from its source and checked with visual cases (`parity/visual/cases.js`):
 
 - **Tone mapping in an output pass.** r186 draws the frame into a half-float target and tone-maps it in a full-screen pass, so blending happens first, the background is tone-mapped and `material.toneMapped` has no effect on screen output. WAMR3D does the same (`rgba16float`, `OUTPUT_SHADER`) only when tone mapping is on; without it the scene is still drawn straight into the sRGB canvas, which matched before. Render targets are never tone-mapped.
 - **Shadows.** One `depth32float` texture array, one layer per shadow-casting light (at most 4), sized to the largest map; each map fills the top-left of its layer. PCF exactly as r186 `PCFShadowFilter` (5 Vogel-disk taps rotated by interleaved gradient noise, bilinear comparison). The shadow camera is built in Rust; a directional light's camera stands at target + direction because the renderer receives directional lights as directions. Point-light (cube) shadows are not done.

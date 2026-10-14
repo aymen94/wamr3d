@@ -1,4 +1,4 @@
-import { button, codeBlock, eyebrow, icon, installChip, repoFile, sectionHead, shell } from '../components/ui.js';
+import { button, codeBlock, eyebrow, icon, installChip, miniCube, repoFile, sectionHead, shell } from '../components/ui.js';
 import { showcaseChart } from '../components/charts.js';
 import { lowLevel, meta, showcase } from '../data/benchmarks.js';
 
@@ -67,8 +67,11 @@ function hero() {
     <p data-scene-hint class="pointer-events-none absolute bottom-8 right-6 hidden max-w-xs text-right font-mono text-[11px] leading-relaxed text-slate-400 lg:block">
       Live scene drawn by WAMR3D. Move the pointer to bend the field,<br>hover the cube, click anywhere empty to send a ripple.
     </p>
-    <a href="#migration-preview" class="absolute bottom-8 left-1/2 hidden -translate-x-1/2 flex-col items-center gap-2 text-slate-400 transition hover:text-white sm:flex" aria-label="Scroll to content">
-      <span class="h-10 w-px bg-gradient-to-b from-transparent via-slate-500 to-transparent"></span>
+    <a href="#migration-preview" class="group absolute bottom-8 left-1/2 hidden -translate-x-1/2 flex-col items-center gap-2 text-slate-400 transition hover:text-white sm:flex" aria-label="Scroll to content">
+      ${miniCube}
+      <span class="relative h-10 w-px bg-gradient-to-b from-transparent via-slate-500 to-transparent">
+        <span class="absolute left-1/2 top-0 size-1.5 animate-scroll-dot rounded-full bg-brand-cyan"></span>
+      </span>
     </a>
   </section>`;
 }
@@ -110,7 +113,7 @@ function features() {
         ${card('md:col-span-2', 'Object API', 'Code that reads like three.js.', 'Scene, Group, Mesh, InstancedMesh, Points, Sprite, render targets, cameras, eight shapes, six materials, textures, five light types, shadows, tone mapping, Raycaster, Clock and the math types.')}
         ${card('md:col-span-2', 'Batched API', 'One call, thousands of objects.', 'Handles and batched calls such as <code class="font-mono text-slate-200">setRotations</code>; read world matrices and geometry through typed-array views over engine memory, with no copy.')}
         ${card('md:col-span-2', 'Parity', 'Checked against.', 'Over 7,600 reference cases generated from the three.js source are replayed against the Rust code. All 23 renderer cases are compared with stored three.js images.')}
-        ${card('md:col-span-6', 'Roadmap', 'Coming next.', 'Everything above ships today. These are still on the way; keep three.js for them for now:', `<ul class="mt-5 grid gap-x-8 gap-y-2 text-sm text-slate-300 sm:grid-cols-2 lg:grid-cols-3">${['Environment maps in the object API', 'Point-light shadows and area lights', 'Post-processing and scene background textures', 'Most loaders, animation, audio and controls', 'Shadow modes other than PCF', 'A WebGL fallback'].map((item) => `<li class="flex items-center gap-2"><span class="text-slate-400">${icon('cross')}</span>${item}</li>`).join('')}</ul>`)}
+        ${card('md:col-span-6', 'Roadmap', 'Coming next.', 'Everything above ships today. These are still on the way; keep three.js for them for now:', `<ul class="mt-5 grid gap-x-8 gap-y-2 text-sm text-slate-300 sm:grid-cols-2 lg:grid-cols-3">${['Environment maps in the object API', 'Normal, roughness and other texture maps', 'Point-light shadows and area lights', 'Phong, Physical, Toon and Shader materials', 'Post-processing and scene background textures', 'Shadow modes other than PCF', 'Most loaders, animation, audio and controls', 'Lines and points wider than one pixel', 'A WebGL fallback'].map((item) => `<li class="flex items-center gap-2"><span class="text-slate-400">${icon('cross')}</span>${item}</li>`).join('')}</ul>`)}
       </div>
     </div>
   </section>`;
@@ -134,10 +137,10 @@ function performance() {
         ${stat((sep.webgl.submit / sep.batched.submit).toFixed(1), '×', 'Draw submission speed against three.js WebGL', `10,000 meshes at ${res}: ${sep.batched.submit.toFixed(1)} ms against ${sep.webgl.submit.toFixed(1)} ms of CPU time. Ratio computed from the measured medians.`)}
       </div>
       <div data-reveal>${showcaseChart('objects', 10000, HEADLINE)}</div>
-      <p class="mt-5 text-sm leading-relaxed text-slate-400" data-reveal>These benchmark runs predate the renderer-feature milestone documented in <a class="text-brand-cyan hover:text-white" href="${repoFile('STATUS.md')}" target="_blank" rel="noreferrer">STATUS.md</a>; they measure the showcase workloads, not the performance of the newly added effects.</p>
+      <p class="mt-5 text-sm leading-relaxed text-slate-400" data-reveal>These benchmark runs predate the shadow, tone mapping, points, sprite and render-target features listed in <a class="text-brand-cyan hover:text-white" href="${repoFile('STATUS.md')}" target="_blank" rel="noreferrer">STATUS.md</a>; they measure the showcase workloads, not the performance of the newly added effects.</p>
       <div class="mt-8 grid grid-cols-1 gap-5 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         <p class="text-sm leading-relaxed text-slate-400" data-reveal><strong class="text-slate-200">Where it is slower:</strong> calls that do very little work, such as a single vector operation or one property at a time, cost more than plain JavaScript because crossing into WebAssembly has a fixed cost. ${mathRatios.length ? `Single math calls measured ${Math.min(...mathRatios).toFixed(1)}× to ${Math.max(...mathRatios).toFixed(1)}× slower than three.js.` : ''} GPU time is not measured; it only shows in the frame rate.</p>
-        <p class="font-mono text-[11px] leading-relaxed text-slate-400 md:text-right" data-reveal>${meta.cpu}, ${meta.gpu.replace(/ \(0x.*$/, '')}, ${meta.chrome} headless, ${meta.os}.<br>Measured ${meta.date} at 1280×720 to 3840×2160. Source: <a class="text-brand-cyan hover:text-white" href="${repoFile('STATUS.md')}" target="_blank" rel="noreferrer">STATUS.md</a>.</p>
+        <p class="font-mono text-[11px] leading-relaxed text-slate-400 md:text-right" data-reveal>${meta.cpu}, ${meta.gpu.replace(/ \(0x.*$/, '')}, ${meta.chrome} headless, ${meta.os}.<br>Measured ${meta.date} at 1280×720 to 3840×2160. Raw logs: <a class="text-brand-cyan hover:text-white" href="${repoFile('bench/results/2026-10-14')}" target="_blank" rel="noreferrer">bench/results/2026-10-14</a>.</p>
       </div>
       <div class="mt-8" data-reveal>${button('#/benchmarks', 'All benchmark results', 'secondary')}</div>
     </div>

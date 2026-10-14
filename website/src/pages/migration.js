@@ -11,6 +11,7 @@ const diff = `- import * as THREE from 'three';
 const differences = [
   ['Works without setup', '<code>await init()</code> once, and <code>await renderer.init()</code> before the first <code>render</code> (<code>setAnimationLoop</code> waits for you)'],
   ['<code>WebGLRenderer</code>', '<code>WebGPURenderer</code> only'],
+  ['<code>WebGPURenderer</code> falls back to WebGL 2', 'No fallback yet: <code>renderer.init()</code> rejects without WebGPU. <a class="text-brand-cyan hover:text-white" href="#/docs#no-webgpu">Pick the library at start-up</a> to keep three.js as the fallback'],
   ['<code>MeshStandardMaterial</code> with environment and many maps', '<code>color</code>, <code>map</code>, <code>roughness</code>, <code>metalness</code>, <code>side</code>, <code>transparent</code>, <code>opacity</code>, <code>depthTest</code>, <code>depthWrite</code>, <code>vertexColors</code>. Unsupported parameters are stored, have no effect and log one warning'],
   ['A missing class is <code>undefined</code>', 'Unsupported classes (<code>LineLoop</code>, <code>SkinnedMesh</code>, <code>LOD</code>, <code>MeshPhongMaterial</code>, <code>WebGLRenderer</code>, …) throw “not available yet”'],
   ['Any number of lights', 'Up to 16 directional, point and spot lights combined, plus ambient and hemisphere lights. Directional and spot lights support PCF shadows; point-light shadows are not available'],
@@ -29,7 +30,7 @@ const missing = [
 
 const steps = [
   ['Install and change the import', 'Install <code>wamr3d</code> from npm, import <code>wamr3d/compat</code> where you imported <code>three</code>, and initialise the module once.'],
-  ['Swap the renderer', 'Create a <code>WebGPURenderer</code> and await <code>renderer.init()</code>. Your scene, camera, meshes and animation loop stay as they are for supported classes.'],
+  ['Swap the renderer', 'Create a <code>WebGPURenderer</code> and await <code>renderer.init()</code>. Your scene, camera, meshes and animation loop stay as they are for supported classes. For browsers without WebGPU, keep three.js as a fallback chosen at start-up.'],
   ['Check what you depend on', 'Compare your imports with the list below. Unsupported constructors throw, so a missing feature shows up on the first run.'],
   ['Batch the hot paths', 'When a scene grows to thousands of moving objects, move the per-frame updates to the batched low-level API and measure.']
 ];

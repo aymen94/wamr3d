@@ -87,7 +87,7 @@ node bench/compat.mjs`, { title: 'terminal', language: 'sh' })}</div>
         <div class="space-y-4 text-slate-400" data-reveal>
           <p>Or open the <a class="text-brand-cyan hover:text-white" href="./examples/showcase/">live showcase</a> and press “Compare all four renderers” to measure your own browser, display and GPU.</p>
           <p>Close other headless browsers before measuring: leftover processes once made every engine 20–50% slower. The raw logs of this run are in <a class="text-brand-cyan hover:text-white" href="${repoFile('bench/results/2026-10-14')}" target="_blank" rel="noreferrer">bench/results/2026-10-14</a>.</p>
-          <div class="flex flex-wrap gap-3">${button('./examples/showcase/', 'Open the showcase')}${button(repoFile('STATUS.md'), 'Full results in STATUS.md', 'secondary', true)}</div>
+          <div class="flex flex-wrap gap-3">${button('./examples/showcase/', 'Open the showcase')}${button(repoFile('bench/results/2026-10-14'), 'Raw logs of this run', 'secondary', true)}</div>
         </div>
       </div>
     </section>

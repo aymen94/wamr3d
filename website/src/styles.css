@@ -48,7 +48,8 @@
     --color-series-4: #c98500;
     --code-keyword: #c792ff; --code-string: #7ee7c7; --code-comment: #6b7394; --code-number: #ffb86b;
     --code-removed: #ff8b8b; --code-added: #8bffb7;
-    --logo-face: #e8ecff;
+    --scrollbar-thumb: #2a3156;
+    --scrollbar-thumb-hover: #3d4a85;
   }
 
   /* Light theme: the same utilities, with the colour tokens they read redefined. "white" is
@@ -75,9 +76,18 @@
     --color-series-4: #eda100;
     --code-keyword: #7c3aed; --code-string: #047857; --code-comment: #6b7280; --code-number: #b45309;
     --code-removed: #b42318; --code-added: #067647;
-    --logo-face: #1c2140;
+    --scrollbar-thumb: #c3cadb;
+    --scrollbar-thumb-hover: #9aa5bf;
   }
-  html { scroll-behavior: smooth; -webkit-tap-highlight-color: transparent; }
+  html { scroll-behavior: smooth; -webkit-tap-highlight-color: transparent; scrollbar-gutter: stable; }
+  /* Themed scrollbars. The gutter stays reserved so short and long routes do not shift the layout. */
+  * { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
+  @supports not (scrollbar-color: auto) {
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border: 2px solid transparent; border-radius: 999px; background-clip: padding-box; }
+    ::-webkit-scrollbar-thumb:hover { background-color: var(--scrollbar-thumb-hover); }
+  }
   body { background: var(--color-ink-950); }
   ::selection { background: color-mix(in oklab, var(--color-brand-cyan) 35%, transparent); color: var(--color-white); }
   :focus-visible { outline: 2px solid var(--color-brand-cyan); outline-offset: 3px; border-radius: 6px; }
@@ -122,12 +132,31 @@
   .code-token-number { color: var(--code-number); }
   .code-token-removed { color: var(--code-removed); background: color-mix(in oklab, var(--code-removed) 10%, transparent); display: block; }
   .code-token-added { color: var(--code-added); background: color-mix(in oklab, var(--code-added) 10%, transparent); display: block; }
-  .logo-face { fill: var(--logo-face); }
   /* Keeps text readable over the 3D scene: solid on small screens, a left-hand fade on wide ones. */
   .scene-scrim { background: color-mix(in oklab, var(--color-ink-950) 50%, transparent); }
   @media (min-width: 64rem) {
     .scene-scrim { background: linear-gradient(90deg, color-mix(in oklab, var(--color-ink-950) 88%, transparent) 0%, color-mix(in oklab, var(--color-ink-950) 55%, transparent) 38%, transparent 62%); }
   }
+}
+
+/* Mini brand cube of the logo and the scroll hint, drawn with CSS 3D transforms. */
+.mini-cube { position: relative; width: 30px; height: 30px; perspective: 160px; }
+.mini-cube-spin { position: absolute; inset: 0; transform-style: preserve-3d; animation: mini-cube-spin 10s linear infinite; }
+.group:hover .mini-cube-spin { animation-duration: 3s; }
+.mini-cube-box { position: absolute; left: 50%; top: 50%; width: var(--b); height: var(--b); margin: calc(var(--b) / -2) 0 0 calc(var(--b) / -2); transform-style: preserve-3d; }
+.mini-cube-box > i { position: absolute; inset: 0; border: 1px solid var(--edge); background: var(--fill, transparent); }
+.mini-cube-box > i:nth-child(1) { transform: translateZ(calc(var(--b) / 2)); }
+.mini-cube-box > i:nth-child(2) { transform: rotateY(180deg) translateZ(calc(var(--b) / 2)); }
+.mini-cube-box > i:nth-child(3) { transform: rotateY(90deg) translateZ(calc(var(--b) / 2)); }
+.mini-cube-box > i:nth-child(4) { transform: rotateY(-90deg) translateZ(calc(var(--b) / 2)); }
+.mini-cube-box > i:nth-child(5) { transform: rotateX(90deg) translateZ(calc(var(--b) / 2)); }
+.mini-cube-box > i:nth-child(6) { transform: rotateX(-90deg) translateZ(calc(var(--b) / 2)); }
+.mini-cube-box.is-frame { --b: 26px; --edge: color-mix(in oklab, var(--color-brand-violet) 55%, transparent); }
+.mini-cube-box.is-edge { --b: 19px; --edge: color-mix(in oklab, var(--color-brand-cyan) 90%, transparent); }
+.mini-cube-box.is-core { --b: 13px; --edge: color-mix(in oklab, var(--color-brand-blue) 70%, transparent); --fill: color-mix(in oklab, var(--color-ink-700) 85%, transparent); }
+@keyframes mini-cube-spin {
+  from { transform: rotateX(-24deg) rotateY(0deg) rotateZ(8deg); }
+  to { transform: rotateX(-24deg) rotateY(360deg) rotateZ(8deg); }
 }
 
 /* Scroll reveal: content is visible without JavaScript; the script opts elements in. */

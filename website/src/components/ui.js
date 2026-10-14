@@ -7,14 +7,12 @@ export const repoFile = (path) => `${REPO}/blob/main/${path}`;
 
 const escape = (text) => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 
-let logoId = 0;
-export function logoMark(className = 'size-8') {
-  const id = `wamr-mark-${logoId++}`;
-  return `<svg class="${className}" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a259ff"/><stop offset=".5" stop-color="#3d5afe"/><stop offset="1" stop-color="#22e4ff"/></linearGradient></defs><path d="M16 2.5 28.5 9.3 16 16.1 3.5 9.3Z" fill="none" stroke="url(#${id})" stroke-width="2.4" stroke-linejoin="round"/><path d="M17.4 18.4 28.5 12.3v11.4l-11.1 6.1Z" fill="url(#${id})"/><path class="logo-face" d="M3.5 12.3 14.6 18.4v11.4L3.5 23.7Z" opacity=".92"/></svg>`;
-}
+// The background's brand cube in miniature: a dark core inside a cyan frame and a violet frame.
+const cubeFaces = '<i></i>'.repeat(6);
+export const miniCube = `<span class="mini-cube" aria-hidden="true"><span class="mini-cube-spin"><span class="mini-cube-box is-frame">${cubeFaces}</span><span class="mini-cube-box is-edge">${cubeFaces}</span><span class="mini-cube-box is-core">${cubeFaces}</span></span></span>`;
 
 export function wordmark() {
-  return `<a href="#/" class="group flex items-center gap-2.5 rounded-lg" aria-label="WAMR3D home">${logoMark('size-8 transition-transform duration-500 group-hover:rotate-[8deg]')}<span class="font-display text-lg font-bold tracking-tight text-white">WAMR<span class="text-gradient">3D</span></span></a>`;
+  return `<a href="#/" class="group flex items-center gap-2.5 rounded-lg" aria-label="WAMR3D home">${miniCube}<span class="font-display text-lg font-bold tracking-tight text-white">WAMR<span class="text-gradient">3D</span></span></a>`;
 }
 
 const icons = {

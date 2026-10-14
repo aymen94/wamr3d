@@ -14,10 +14,10 @@ It has no runtime dependencies and ships a complete WebGPU render path: meshes, 
 - **Same results as three.js.** Over 7,600 reference cases generated from the three.js r186 source are replayed against the Rust code. Individual operations agree to about one part in a million.
 - **Explicit low-level ownership.** The handle-based API stores objects in WebAssembly memory and uses explicit destruction; stale handles cannot refer to a different object. The three.js-style object API keeps transforms in JavaScript and releases engine objects when their JavaScript objects are collected.
 - **Zero-copy low-level geometry access.** Read and write geometry attributes through typed-array views straight over engine memory. The compatibility API exposes copies for mutable attribute arrays.
-- **Its own WebGPU renderer.** In the showcase scene with 10,000 separate animated meshes at 1920×1080, WAMR3D held 60 fps (12.2 ms of draw submission per frame); three.js r186 ran at 34 fps with its WebGL renderer (23.7 ms) and 9.5 fps with its WebGPU renderer (100.5 ms). With 50,000 instanced bodies in a four-level scene graph, WAMR3D held 60 fps (12.0 ms of scene update) against 21 to 23 fps for three.js (39 to 40 ms). Measured at 1280×720, 1920×1080, 2560×1440 and 3840×2160 with similar results at each; one run per resolution on one machine. This snapshot predates the latest renderer-feature additions and does not measure their performance. See [`STATUS.md`](STATUS.md) for the full tables and their limits.
+- **Its own WebGPU renderer.** In the showcase scene with 10,000 separate animated meshes at 1920×1080, WAMR3D held 60 fps (12.2 ms of draw submission per frame); three.js r186 ran at 34 fps with its WebGL renderer (23.7 ms) and 9.5 fps with its WebGPU renderer (100.5 ms). With 50,000 instanced bodies in a four-level scene graph, WAMR3D held 60 fps (12.0 ms of scene update) against 21 to 23 fps for three.js (39 to 40 ms). Measured at 1280×720, 1920×1080, 2560×1440 and 3840×2160 with similar results at each; one run per resolution on one machine. This snapshot predates the latest renderer-feature additions and does not measure their performance. The raw logs are in [`bench/results/2026-10-14/`](bench/results/2026-10-14/); the tables are on the website's benchmarks page.
 - **Small and free.** The current SIMD WebAssembly module is about 488 KiB. Nothing to pay, nothing else to install at run time.
 
-What it is not: a complete replacement for three.js. Calls that do very little work (a single vector operation, one property at a time) are *slower* than plain JavaScript, because crossing into WebAssembly has a fixed cost. WAMR3D wins when you batch. The numbers for both cases are in [`STATUS.md`](STATUS.md).
+What it is not: a complete replacement for three.js. Calls that do very little work (a single vector operation, one property at a time) are *slower* than plain JavaScript, because crossing into WebAssembly has a fixed cost. WAMR3D wins when you batch. The numbers for both cases are in [`bench/results/2026-10-14/`](bench/results/2026-10-14/).
 
 ## Install
 
@@ -136,7 +136,7 @@ npm run build --prefix website
 npm run preview --prefix website
 ```
 
-The site is plain JavaScript styled with Tailwind CSS. Its animated backdrop is drawn by WAMR3D itself (`website/src/scene/hero-scene.js`, WebGPU only; browsers without WebGPU get a static backdrop, and three.js is never loaded). Benchmark figures in `website/src/data/benchmarks.js` are a checked-in projection of the latest measurements and their raw logs in `bench/results/`; the methodology and full tables are in `STATUS.md`. Update the data and documentation together when new results are measured. The demos, the parity page and the package are served from the repository root in development and copied into `website/dist` by `website/scripts/prepare-pages.mjs`.
+The site is plain JavaScript styled with Tailwind CSS. Its animated backdrop is drawn by WAMR3D itself (`website/src/scene/hero-scene.js`, WebGPU only; browsers without WebGPU get a static backdrop, and three.js is never loaded). Benchmark figures in `website/src/data/benchmarks.js` are a checked-in projection of the latest measurements and their raw logs in `bench/results/`; the method is described on the benchmarks page and in the Measurements section of `STATUS.md`. Update the data and documentation together when new results are measured. The demos, the parity page and the package are served from the repository root in development and copied into `website/dist` by `website/scripts/prepare-pages.mjs`.
 
 The GitHub Actions workflow in `.github/workflows/pages.yml` builds the package and deploys `website/dist` to GitHub Pages. Its benchmark figures are the recorded 2026-10-14 run; that snapshot predates the renderer-feature milestone below, and does not measure the performance of the newly added effects. Set the repository's Pages source to **GitHub Actions**.
 
@@ -173,23 +173,18 @@ The full typed API is in `dist/wamr3d/wamr3d_wasm.d.ts` after a build. A Node.js
 
 ## Status
 
-| Area | State |
+| Area | Unfinished or missing |
 |---|---|
-| Math (vectors, matrices, quaternions, Euler angles, colours, boxes, spheres, planes, rays, frustums) | Done and exposed to JavaScript. `Triangle`, `Line3`, `Spherical` and `Cylindrical` are Rust-only for now. |
-| Scene graph (objects, hierarchy, transforms, world matrices, `lookAt`, `attach`, world-space queries, events) | Done and exposed. |
-| Cameras (perspective, orthographic, zoom, view offset) | Done and exposed. |
-| Picking (rays against meshes, from a camera or free) and object cloning | Done and exposed. |
-| Geometry (attributes, index, normals, tangents, bounds, transforms) | Done for float data. |
-| Built-in shapes | Box, plane, sphere, cylinder, cone, circle, ring, torus. |
-| Lines | `Line` and `LineSegments`, one pixel wide; raycasting uses `Raycaster.params.Line.threshold`. |
-| Instancing, material arrays, fog, hand-set matrices | Done. |
-| Points, sprites, render targets, tone mapping, shadows (directional and spot) | Done, each compared with three.js r186 images. Points are one pixel, as in three.js r186's WebGPU renderer. |
-| Environment reflections | Prefiltering (three.js PMREM) and image-based lighting in the renderer, available through `setEnvironment` / `setMaterialEnvironment` in the low-level API. Not yet read from `scene.environment` or `envMap` by the object API, and not yet in the visual suite. |
-| **Renderer** (WebGPU) | Implemented but incomplete: meshes, lines, points, sprites and instanced meshes; basic, Lambert and standard materials; colour maps, fog, up to 16 directional/point/spot lights, PCF shadows for up to four directional/spot lights, tone mapping, render targets, geometry groups, frustum culling, draw ranges and 4× MSAA. All 23 visual cases are compared with stored three.js WebGPU images. See [STATUS](STATUS.md) for limitations. |
-| Object API (`wamr3d/compat`: classes, properties, chaining) | Scene, group, mesh, instanced mesh, lines, points, sprites, render targets, grid and axes helpers, cameras, eight shapes, six materials (basic, Lambert, standard, line, points, sprite), textures, five light types, shadows, tone mapping, fog, raycaster, clock, renderer and math. Typings are compiled with TypeScript. Unsupported classes throw a clear "not available yet" error. |
-| Not yet available | `scene.environment` and `envMap` in the object API; point-light shadows, area lights, post-processing, scene background textures, non-colour maps, render-target depth textures and multiple attachments, and WebGL fallback are unavailable. Loaders other than `TextureLoader`, animation, audio and controls are not implemented. |
+| Math | `Triangle`, `Line3`, `Spherical` and `Cylindrical` exist in Rust but have no JavaScript binding. Random helpers and UUIDs are missing. |
+| Geometry | Float attributes only from JavaScript; no integer attributes, morph targets or interleaved buffers. Shapes other than box, plane, sphere, cylinder, cone, circle, ring and torus are missing. |
+| Objects | `LineLoop`, `SkinnedMesh` and `LOD` are missing. Sprites and single instances of an `InstancedMesh` are not picked. |
+| Materials | Only basic, Lambert, standard, line, points and sprite materials; no Phong, Physical, Toon, Normal or Shader material. Only the colour `map`; no normal, roughness, metalness or other maps. |
+| Environment reflections | In progress: available through `setEnvironment` / `setMaterialEnvironment` in the low-level API, not yet read from `scene.environment` or `envMap` by the object API, and not yet in the visual suite. |
+| Renderer (WebGPU) | No point-light shadows, area lights, shadow modes other than PCF, scene background textures, post-processing, render-target depth textures or multiple attachments. Lines and points are one pixel wide. A strong-light comparison still differs by about 1.8/255. |
+| Browsers | No WebGL fallback: without WebGPU, `renderer.init()` rejects (see [Browsers without WebGPU](MIGRATION.md#browsers-without-webgpu)). Not yet tried in Firefox or Safari. |
+| Everything else | Loaders other than `TextureLoader`, animation, audio, controls, and helpers other than `GridHelper` and `AxesHelper`. |
 
-Verified in Node.js v24 and headless Chrome, and bundled with Vite for the project website. Not yet tried in Firefox or Safari.
+Verified in Node.js v24 and headless Chrome, and bundled with Vite for the project website.
 
 ## Tests and measurements
 
@@ -212,7 +207,7 @@ node examples/compare/measure.mjs --gpu                 # the scene comparison i
 npm run build --prefix website                          # build the publication site after building the package
 ```
 
-three.js r186 is the reference and is not part of this repository. Nothing in `engine/`, `dist/` or the primary examples needs it: the parity tests read committed fixtures and reference images. It is only fetched on request: the comparison pages load the pinned r186 builds from a CDN when a three.js engine or the reference check is selected, and `npm install` fetches `three@0.186.1` for the scripts that regenerate fixtures or compare live (`npm run reference:fixtures`, `reference:api`, `reference:bench`). Measured results, with the environment and method, are in [`STATUS.md`](STATUS.md).
+three.js r186 is the reference and is not part of this repository. Nothing in `engine/`, `dist/` or the primary examples needs it: the parity tests read committed fixtures and reference images. It is only fetched on request: the comparison pages load the pinned r186 builds from a CDN when a three.js engine or the reference check is selected, and `npm install` fetches `three@0.186.1` for the scripts that regenerate fixtures or compare live (`npm run reference:fixtures`, `reference:api`, `reference:bench`). Measured results, with the environment and method, are in [`bench/results/`](bench/results/) and on the website's benchmarks page.
 
 ## Repository layout
 
@@ -225,7 +220,7 @@ three.js r186 is the reference and is not part of this repository. Nothing in `e
 | `engine/bindings` | crate `wamr3d`: the JavaScript API, the object API (`js/compat.js`), the WebGPU host (`js/webgpu.js`), the build script |
 | `examples/` | `showcase` (large scene, four engines, live timings), `basic` (Node.js), `webgpu` (object API demo), `browser` (low-level API demo), `threejs` (baseline), `compare` (side by side) |
 | `bench/`, `parity/` | benchmark, reference fixtures and end-to-end checks |
-| `MIGRATION.md`, `DECISIONS.md`, `STATUS.md` | migration guide, design decisions, progress and results |
+| `MIGRATION.md`, `DECISIONS.md`, `STATUS.md` | migration guide, design decisions, current state and open work |
 
 ## Contributing
 
@@ -234,7 +229,7 @@ Help is welcome, especially on the renderer (textures, physically based shading,
 1. **Behaviour is checked, not assumed.** New engine code comes with a parity fixture generated from the three.js r186 source (see `parity/*/gen/`) and a test that replays it.
 2. **Speed is measured, not claimed.** If a change is meant to be faster, add or run a benchmark and report the numbers, including the cases where it is slower.
 
-`DECISIONS.md` explains why things are the way they are (32-bit storage with 64-bit arithmetic, generational handles, the ownership rules). `STATUS.md` lists what is done and what is next.
+`DECISIONS.md` explains why things are the way they are (32-bit storage with 64-bit arithmetic, generational handles, the ownership rules). `STATUS.md` lists what is unfinished.
 
 ## License
 

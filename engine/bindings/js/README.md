@@ -99,6 +99,7 @@ Differences to watch for:
 | Shadows from any light | Directional and spot lights support PCF shadows, up to 4 shadow-casting lights per frame. Point-light shadows are not available; other shadow-map types draw as PCF |
 | `PointsMaterial.size` | Points are one pixel; `size` has no effect, as in three.js r186's WebGPU renderer |
 | Screen tone mapping and `material.toneMapped` | The supported tone-mapping modes apply to the whole screen frame; `material.toneMapped` has no effect on screen output |
+| `WebGPURenderer` falls back to WebGL 2 | No fallback: `renderer.init()` rejects without WebGPU. Choose the library at start-up ([MIGRATION.md](https://github.com/aymen94/wamr3d/blob/main/MIGRATION.md#browsers-without-webgpu)) |
 | A missing class is `undefined` | Unsupported classes (`LineLoop`, `SkinnedMesh`, `LOD`, `MeshPhongMaterial`, `WebGLRenderer`, ...) throw "not available yet" |
 | `object.matrix.elements[ 12 ] = 5` | `matrixWorld`, `matrix.elements`, `box.min` and similar are copies. Use `position`, `rotation`, `scale` or the value's methods |
 | `attribute.array` is the data | Set `attribute.needsUpdate = true` after changing it, as in three.js |
@@ -118,7 +119,7 @@ Typings ship with the package (`index.d.ts`, `compat.d.ts`). Set `"lib": [ "esne
 
 - npm: <https://www.npmjs.com/package/wamr3d>
 - Repository and examples: <https://github.com/aymen94/wamr3d>
-- Status and measurements: [STATUS.md](https://github.com/aymen94/wamr3d/blob/main/STATUS.md)
+- Unfinished work and measurements: [STATUS.md](https://github.com/aymen94/wamr3d/blob/main/STATUS.md)
 - Design decisions: [DECISIONS.md](https://github.com/aymen94/wamr3d/blob/main/DECISIONS.md)
 
 ## License

@@ -36,6 +36,7 @@ Differences to watch for:
 |---|---|
 | Works without setup | `await init()` once before creating anything, and `await renderer.init()` before the first `render` (`setAnimationLoop` waits for you) |
 | `WebGLRenderer` | `WebGPURenderer` only; the browser must support WebGPU |
+| `WebGPURenderer` falls back to WebGL 2 when WebGPU is missing | No fallback: `renderer.init()` rejects. Choose the library at start-up, see [Browsers without WebGPU](#browsers-without-webgpu) |
 | `MeshStandardMaterial` with environment and many maps | `color`, `map`, `roughness`, `metalness`, `side`, `transparent`, `opacity`, `depthTest`, `depthWrite` and `vertexColors` work. The object API does not read `envMap` or `scene.environment` yet, so metals look dark away from the highlight (the low-level `setEnvironment` provides reflections). Any other parameter is stored, has no effect, and logs one warning |
 | Textures | Mipmaps, the six filters, the three wrapping modes, `repeat`, `offset`, `rotation` and `center` work. No anisotropy, and only colour maps |
 | A missing class is `undefined` | Common classes that do not exist yet (`SkinnedMesh`, `LOD`, `MeshPhongMaterial`, `WebGLRenderer`, ...) throw "not available yet" when constructed |
@@ -53,11 +54,38 @@ Differences to watch for:
 | Numbers are 64-bit | Stored as 32-bit floats; results agree to about `1e-6` |
 | Everything is garbage collected | Also here: engine objects are released when their JavaScript object is collected. `geometry.dispose()`, `material.dispose()` and `object.dispose()` release them at once |
 
-Speed: `position`, `rotation`, `quaternion`, `scale` and `up` are kept in JavaScript and sent to the engine in one batch, so setting them is as cheap as in three.js. In the measured scene, updating 10,000 objects one property at a time took 3.1 ms against 3.6 ms for three.js at 1920×1080, and draw submission was about twice as fast as three.js WebGL (9.2 against 18.8 ms; see `STATUS.md`). For very large scenes the batched low-level calls are faster still (2.2 ms), but do not mix them with the object API on the same objects: the object API does not see transforms written behind its back.
+Speed: `position`, `rotation`, `quaternion`, `scale` and `up` are kept in JavaScript and sent to the engine in one batch, so setting them is as cheap as in three.js. In the measured scene, updating 10,000 objects one property at a time took 3.1 ms against 3.6 ms for three.js at 1920×1080, and draw submission was about twice as fast as three.js WebGL (9.2 against 18.8 ms; raw logs in `bench/results/2026-10-14/`). For very large scenes the batched low-level calls are faster still (2.2 ms), but do not mix them with the object API on the same objects: the object API does not see transforms written behind its back.
 
 TypeScript: the typings are in `wamr3d/compat` (`compat.d.ts`). They need `"lib": [ "esnext", "dom" ]` in `tsconfig.json`.
 
 A complete page is [`examples/webgpu/main.js`](examples/webgpu/main.js), and [`parity/bindings/compat-check.mjs`](parity/bindings/compat-check.mjs) is a script that runs unchanged on both libraries.
+
+### Browsers without WebGPU
+
+WAMR3D has no WebGL renderer yet. Without WebGPU, or without a usable GPU adapter, `renderer.init()` rejects with `WAMR3D: WebGPU is not available in this browser` or `WAMR3D: no WebGPU adapter found`. three.js r186's `WebGPURenderer` switches to WebGL 2 by itself in that case, so an application that must run everywhere picks the library before it builds the scene:
+
+```js
+async function createRenderer( canvas ) {
+  try {
+    const WAMR3D = await import( 'wamr3d/compat' );
+    await WAMR3D.init();
+    const renderer = new WAMR3D.WebGPURenderer( { canvas, antialias: true } );
+    await renderer.init(); // rejects when the browser has no WebGPU
+    return { THREE: WAMR3D, renderer };
+  } catch ( error ) {
+    console.warn( `${ error.message }: drawing with three.js` );
+    const THREE = await import( 'three/webgpu' ); // switches to WebGL 2 by itself
+    const renderer = new THREE.WebGPURenderer( { canvas, antialias: true } );
+    await renderer.init();
+    return { THREE, renderer };
+  }
+}
+
+const { THREE, renderer } = await createRenderer( canvas );
+const scene = new THREE.Scene(); // build the scene after the choice
+```
+
+Because the object API follows three.js names, the rest of the code is the same for both libraries, as long as it uses only classes that WAMR3D supports. `three` is then a dependency of your application; WAMR3D itself never loads it. Pass your own `canvas`: a failed WAMR3D start leaves it without a context, so three.js can still use it. Code written for the low-level API (`wamr3d`) has no such fallback.
 
 ## What changes in your code
 
@@ -178,7 +206,7 @@ const normals = world.getAttribute(custom, 'normal');   // a copy
 
 ## Step 3: keep three.js drawing through an adapter
 
-If you need something the WAMR3D renderer does not draw yet (textures, physically based materials, lines), let three.js draw what WAMR3D computed. Turn off three.js's own matrix updates and write the engine's matrices into the meshes.
+If you need something the WAMR3D renderer does not draw yet (see [Not available yet](#not-available-yet)), or a WebGL renderer, let three.js draw what WAMR3D computed. Turn off three.js's own matrix updates and write the engine's matrices into the meshes.
 
 ```js
 // one-time setup
