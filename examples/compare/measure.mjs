@@ -17,6 +17,7 @@ const BASE = 'http://localhost:8080/examples/';
 const WARMUP_MS = 3000, SAMPLE_MS = 8000;
 const option = ( name ) => process.argv.find( ( a ) => a.startsWith( `--${name}=` ) )?.split( '=' )[ 1 ].split( ',' );
 const gpu = process.argv.includes( '--gpu' );
+const [ WIDTH, HEIGHT ] = ( option( 'size' )?.[ 0 ] ?? '1280x720' ).split( 'x' ).map( Number );
 const COUNTS = option( 'counts' )?.map( Number ) ?? [ 12, 2000, 10000 ];
 const ENGINES = option( 'engines' ) ?? ( gpu ? [ 'three-webgl', 'three-webgpu', 'api', 'native', 'three', 'wamr3d' ] : [ 'three', 'wamr3d' ] );
 const port = 9400 + Math.floor( Math.random() * 500 );
@@ -30,7 +31,7 @@ const browser = [
 if ( ! browser ) throw new Error( 'no Chrome or Edge found' );
 
 const profile = fs.mkdtempSync( path.join( os.tmpdir(), 'wamr3d-measure-' ) );
-const flags = [ '--headless=new', '--no-first-run', `--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, '--window-size=1280,720', '--disable-background-timer-throttling', '--disable-renderer-backgrounding' ];
+const flags = [ '--headless=new', '--no-first-run', `--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, `--window-size=${WIDTH},${HEIGHT}`, '--disable-background-timer-throttling', '--disable-renderer-backgrounding' ];
 flags.push( ...( gpu ? [ '--enable-gpu', '--use-angle=d3d11', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu' ] : [ '--enable-unsafe-swiftshader' ] ) );
 const child = spawn( browser, [ ...flags, 'about:blank' ], { stdio: 'ignore' } );
 const sleep = ( ms ) => new Promise( ( resolve ) => setTimeout( resolve, ms ) );
@@ -72,7 +73,9 @@ try {
 	const evaluate = async ( expression ) => JSON.parse( ( await send( 'Runtime.evaluate', { expression: `JSON.stringify(${expression})`, returnByValue: true } ) ).result.value ?? 'null' );
 
 	const rows = [];
-	let environment = '';
+	// The window size includes space the page does not get; fix the page's viewport exactly.
+	await send( 'Emulation.setDeviceMetricsOverride', { width: WIDTH, height: HEIGHT, deviceScaleFactor: 1, mobile: false } );
+	let environment = '', canvasSize = '?';
 
 	for ( const satellites of COUNTS ) for ( const engine of ENGINES ) {
 
@@ -95,6 +98,7 @@ try {
 		const stats = await evaluate( '( ( { frame, update, render, firstFrameMs, wasmInitMs, objects, gpu, name } ) => ( { frame, update, render, firstFrameMs, wasmInitMs, objects, gpu, name } ) )( window.__stats )' );
 
 		environment = stats.gpu;
+		canvasSize = await evaluate( '( ( c ) => c ? `${c.width}x${c.height}` : "?" )( document.querySelector( "canvas" ) )' );
 		rows.push( { engine, name: stats.name, objects: stats.objects, frames: stats.frame.length, frame: summary( stats.frame ), update: summary( stats.update ), render: summary( stats.render ), firstFrameMs: stats.firstFrameMs, wasmInitMs: stats.wasmInitMs } );
 
 	}
@@ -104,7 +108,7 @@ try {
 	console.log( `GPU: ${environment}` );
 	console.log( 'three-webgl, three-webgpu: three.js r186 with its own renderer. api: WAMR3D object API and WebGPU renderer. These three run the same scene code.' );
 	console.log( 'native: WAMR3D batched calls and WebGPU renderer. three, wamr3d: three.js and WAMR3D transforms, both drawn by the three.js WebGL renderer (with a grid).' );
-	console.log( `canvas 1280x720, pixel ratio 1, warm-up ${WARMUP_MS / 1000} s, sample ${SAMPLE_MS / 1000} s per run, one engine per page load` );
+	console.log( `window ${WIDTH}x${HEIGHT}, canvas ${canvasSize}, pixel ratio 1, warm-up ${WARMUP_MS / 1000} s, sample ${SAMPLE_MS / 1000} s per run, one engine per page load` );
 	console.log( '' );
 	console.log( 'objects  engine         frames   frame ms (median / p95)   fps   CPU update ms (median / p95)   draw submit ms (median)   first frame ms   wasm init ms' );
 	const f = ( x, digits = 2 ) => x.toFixed( digits );

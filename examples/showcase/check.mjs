@@ -15,6 +15,7 @@ import path from 'node:path';
 const BASE = 'http://localhost:8080/examples/showcase/';
 const option = ( name, fallback ) => process.argv.find( ( a ) => a.startsWith( `--${name}=` ) )?.split( '=' )[ 1 ] ?? fallback;
 const measure = process.argv.includes( '--measure' );
+const [ WIDTH, HEIGHT ] = option( 'size', '1280x720' ).split( 'x' ).map( Number );
 const port = 9400 + Math.floor( Math.random() * 500 );
 const browser = [
 	'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -25,7 +26,7 @@ const browser = [
 if ( ! browser ) throw new Error( 'no Chrome or Edge found' );
 
 const profile = fs.mkdtempSync( path.join( os.tmpdir(), 'wamr3d-showcase-' ) );
-const child = spawn( browser, [ '--headless=new', '--no-first-run', '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu', '--use-angle=d3d11', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', `--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, '--window-size=1280,720', 'about:blank' ], { stdio: 'ignore' } );
+const child = spawn( browser, [ '--headless=new', '--no-first-run', '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu', '--use-angle=d3d11', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', `--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, `--window-size=${WIDTH},${HEIGHT}`, 'about:blank' ], { stdio: 'ignore' } );
 const sleep = ( ms ) => new Promise( ( resolve ) => setTimeout( resolve, ms ) );
 let failed = false;
 
@@ -59,6 +60,8 @@ try {
 	} );
 	const evaluate = async ( expression ) => JSON.parse( ( await send( 'Runtime.evaluate', { expression: `JSON.stringify(${expression})`, returnByValue: true } ) ).result.value ?? 'null' );
 	await send( 'Runtime.enable' );
+	// The window size includes space the page does not get; fix the page's viewport exactly.
+	await send( 'Emulation.setDeviceMetricsOverride', { width: WIDTH, height: HEIGHT, deviceScaleFactor: 1, mobile: false } );
 
 	if ( measure ) {
 
@@ -66,7 +69,7 @@ try {
 		await send( 'Page.navigate', { url: `${BASE}?bench=${counts}&modes=${modes}${engines ? `&engines=${engines}` : ''}` } );
 		let printed = 0;
 
-		console.log( `${( await send( 'Browser.getVersion' ) ).product}, ${os.cpus()[ 0 ].model.trim()}; 1280x720; medians over 4 s after a 1.5 s warm-up; one engine at a time` );
+		console.log( `${( await send( 'Browser.getVersion' ) ).product}, ${os.cpus()[ 0 ].model.trim()}; window ${WIDTH}x${HEIGHT}; medians over 4 s after a 1.5 s warm-up; one engine at a time` );
 		console.log( 'update = animation, transforms and world matrices on the CPU; submit = the renderer on the CPU. GPU time is not measured; it only shows in fps (display limit 60).' );
 		console.log( '\nbodies   drawn as    renderer                           fps   frame ms   update ms   submit ms   draw calls   build ms' );
 
@@ -86,6 +89,7 @@ try {
 			if ( state.done ) break;
 
 		}
+		console.log( `canvas ${await evaluate( '( ( c ) => c && c.width + "x" + c.height )( document.querySelector( "#stage canvas" ) )' )}, device pixel ratio ${await evaluate( 'devicePixelRatio' )}` );
 
 	} else {
 
