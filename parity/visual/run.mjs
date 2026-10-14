@@ -3,6 +3,7 @@
 //   node examples/browser/serve.mjs        (in another terminal)
 //   node parity/visual/run.mjs             draw each case with WAMR3D, compare with reference/<case>.png
 //   node parity/visual/run.mjs --generate  draw each case with three.js r186 and store reference/<case>.png
+//   --cases=a,b limits either mode to those cases
 //   --headed opens a visible browser window instead of a headless one; --browser=edge uses Edge.
 //
 // Differences and the WAMR3D images go to parity/visual/out/. Needs a GPU that the
@@ -65,7 +66,8 @@ try {
 	const out = path.join( here, 'out' );
 	fs.mkdirSync( generate ? path.join( here, 'reference' ) : out, { recursive: true } );
 
-	for ( const name of Object.keys( CASES ) ) {
+	const only = process.argv.find( ( a ) => a.startsWith( '--cases=' ) )?.slice( 8 ).split( ',' );
+	for ( const name of Object.keys( CASES ).filter( ( n ) => ! only || only.includes( n ) ) ) {
 
 		await send( 'Page.navigate', { url: `${BASE}?case=${name}${generate ? '&mode=generate' : ''}` } );
 		let state = null;

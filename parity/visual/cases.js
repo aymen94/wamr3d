@@ -218,9 +218,251 @@ export const CASES = {
 
 		return { scene, camera };
 
-	}
+	},
+
+	// Bright physically based spheres through a tone-mapping operator: one case per
+	// operator, each with an exposure other than 1.
+	tonemapping_aces( L ) {
+
+		return toneMapped( L, L.ACESFilmicToneMapping, 1.4 );
+
+	},
+
+	tonemapping_agx( L ) {
+
+		return toneMapped( L, L.AgXToneMapping, 1.2 );
+
+	},
+
+	tonemapping_neutral( L ) {
+
+		return toneMapped( L, L.NeutralToneMapping, 1.6 );
+
+	},
+
+	tonemapping_linear( L ) {
+
+		return toneMapped( L, L.LinearToneMapping, 0.8 );
+
+	},
+
+	tonemapping_reinhard( L ) {
+
+		return toneMapped( L, L.ReinhardToneMapping, 1.5 );
+
+	},
+
+	tonemapping_cineon( L ) {
+
+		return toneMapped( L, L.CineonToneMapping, 1.1 );
+
+	},
+
+	// A directional light's shadow: casters (one double-sided), a receiver, a shadow
+	// camera narrowed from the default, and a shadow intensity below 1.
+	shadows_directional( L ) {
+
+		const { scene, camera } = stage( L, 0, 3.4, 5.2 );
+		// A Lambert floor: the same scene with a physically based floor differs from three.js
+		// by about 1.8 of 255 without shadows (STATUS.md), which would hide what is tested here.
+		const floor = new L.Mesh( new L.PlaneGeometry( 8, 8 ), new L.MeshLambertMaterial( { color: 0xd8d4cc } ) );
+		floor.rotation.x = - Math.PI / 2;
+		floor.position.y = - 0.8;
+		floor.receiveShadow = true;
+		const box = new L.Mesh( new L.BoxGeometry( 1, 1, 1 ), new L.MeshStandardMaterial( { color: 0x4f8cff, roughness: 0.5 } ) );
+		box.position.set( - 1, - 0.2, 0 );
+		box.rotation.y = 0.5;
+		box.castShadow = box.receiveShadow = true;
+		const ball = new L.Mesh( new L.SphereGeometry( 0.6, 32, 16 ), new L.MeshStandardMaterial( { color: 0xd85a3a, roughness: 0.4 } ) );
+		ball.position.set( 1, 0.1, 0.3 );
+		ball.castShadow = true;
+		const card = new L.Mesh( new L.PlaneGeometry( 0.8, 1.2 ), new L.MeshStandardMaterial( { color: 0x6fd08c, side: L.DoubleSide } ) );
+		card.position.set( 0.1, 0, - 1.2 );
+		card.rotation.y = 0.7;
+		card.castShadow = true;
+
+		const sun = new L.DirectionalLight( 0xffffff, 3 );
+		sun.position.set( 2.5, 5, 2 );
+		sun.castShadow = true;
+		sun.shadow.mapSize.set( 1024, 1024 );
+		sun.shadow.camera.left = sun.shadow.camera.bottom = - 4;
+		sun.shadow.camera.right = sun.shadow.camera.top = 4;
+		sun.shadow.camera.far = 20;
+		sun.shadow.camera.updateProjectionMatrix();
+		sun.shadow.intensity = 0.85;
+		sun.shadow.bias = - 0.0005;
+		scene.add( floor, box, ball, card, sun, new L.HemisphereLight( 0xbfd4ff, 0x30281e, 0.6 ) );
+		return { scene, camera, setup( renderer ) {
+
+			renderer.shadowMap.enabled = true;
+
+		} };
+
+	},
+
+	// A spot light's shadow: perspective shadow camera from the cone, a non-zero radius.
+	shadows_spot( L ) {
+
+		const { scene, camera } = stage( L, 0, 3, 5 );
+		const floor = new L.Mesh( new L.PlaneGeometry( 8, 8 ), new L.MeshLambertMaterial( { color: 0xcfcfcf } ) );
+		floor.rotation.x = - Math.PI / 2;
+		floor.position.y = - 0.8;
+		floor.receiveShadow = true;
+		const pillar = new L.Mesh( new L.CylinderGeometry( 0.3, 0.3, 1.6, 24 ), new L.MeshLambertMaterial( { color: 0xffb454 } ) );
+		pillar.castShadow = true;
+		const spot = new L.SpotLight( 0xffffff, 40, 0, Math.PI / 5, 0.3, 2 );
+		spot.position.set( - 2, 3.5, 1 );
+		spot.castShadow = true;
+		spot.shadow.mapSize.set( 1024, 1024 );
+		spot.shadow.radius = 2;
+		spot.shadow.bias = - 0.0008;
+		scene.add( floor, pillar, spot, spot.target, new L.AmbientLight( 0xffffff, 0.2 ) );
+		return { scene, camera, setup( renderer ) {
+
+			renderer.shadowMap.enabled = true;
+
+		} };
+
+	},
+
+	// A grid of points with vertex colours, seen in perspective: one pixel each.
+	points( L ) {
+
+		const { scene, camera } = stage( L, 0.6, 1.4, 3.2 );
+		const positions = [], colors = [];
+
+		for ( let i = 0; i < 120; i ++ ) for ( let j = 0; j < 100; j ++ ) {
+
+			const x = ( i / 119 - 0.5 ) * 4, z = ( j / 99 - 0.5 ) * 3;
+			positions.push( x, Math.sin( x * 2 ) * Math.cos( z * 2 ) * 0.4, z );
+			colors.push( i / 119, 0.4 + 0.6 * j / 99, 1 - i / 119 );
+
+		}
+
+		const geometry = new L.BufferGeometry();
+		geometry.setAttribute( 'position', new L.Float32BufferAttribute( positions, 3 ) );
+		geometry.setAttribute( 'color', new L.Float32BufferAttribute( colors, 3 ) );
+		scene.add( new L.Points( geometry, new L.PointsMaterial( { vertexColors: true } ) ) );
+		return { scene, camera };
+
+	},
+
+	// Sprites: scale, a map, a centre other than the middle, rotation, a sprite whose
+	// size does not change with distance, and a translucent one.
+	sprites( L ) {
+
+		const { scene, camera } = stage( L, 0.4, 0.8, 4 );
+		const map = pattern( L );
+		const items = [
+			[ { map }, [ - 1.4, 0.4, 0 ], [ 1, 1 ] ],
+			[ { color: 0x4f8cff, rotation: 0.6 }, [ 0, 0.5, - 1 ], [ 1.2, 0.6 ] ],
+			[ { color: 0xffb454, sizeAttenuation: false }, [ 1.3, - 0.4, - 2 ], [ 0.12, 0.12 ] ],
+			[ { color: 0xff6b9d, opacity: 0.5 }, [ 0.4, - 0.3, 0.6 ], [ 0.9, 0.9 ] ],
+			[ { map, rotation: - 0.4 }, [ - 0.4, - 0.8, - 0.5 ], [ 0.8, 0.5 ] ]
+		];
+
+		items.forEach( ( [ parameters, position, scale ], i ) => {
+
+			const sprite = new L.Sprite( new L.SpriteMaterial( parameters ) );
+			sprite.position.set( ...position );
+			sprite.scale.set( scale[ 0 ], scale[ 1 ], 1 );
+			if ( i === 4 ) sprite.center.set( 0, 1 );
+			scene.add( sprite );
+
+		} );
+
+		return { scene, camera };
+
+	},
+
+	// A scene drawn into a render target, then shown on a plane as its map. The inner
+	// scene is asymmetric so that a flipped texture would fail.
+	render_target( L ) {
+
+		const { scene, camera } = stage( L, 0, 0.3, 3.4 );
+		const target = new L.RenderTarget( 256, 256 );
+
+		const inner = new L.Scene();
+		inner.background = new L.Color( 0x203040 );
+		const innerCamera = new L.PerspectiveCamera( 45, 1, 0.1, 20 );
+		innerCamera.position.set( 0, 0, 4 );
+		const marker = new L.Mesh( new L.BoxGeometry( 0.8, 0.8, 0.8 ), new L.MeshBasicMaterial( { color: 0xff5a3a } ) );
+		marker.position.set( - 0.9, 0.9, 0 );
+		const bar = new L.Mesh( new L.BoxGeometry( 2.4, 0.3, 0.3 ), new L.MeshBasicMaterial( { color: 0x6fd08c } ) );
+		bar.position.set( 0.3, - 0.9, 0 );
+		bar.rotation.z = 0.3;
+		const ball = new L.Mesh( new L.SphereGeometry( 0.5, 32, 16 ), new L.MeshBasicMaterial( { color: 0x4f8cff } ) );
+		ball.position.set( 0.9, 0.5, - 0.5 );
+		inner.add( marker, bar, ball );
+
+		const screen = new L.Mesh( new L.PlaneGeometry( 2, 2 ), new L.MeshBasicMaterial( { map: target.texture } ) );
+		screen.position.x = - 0.9;
+		screen.rotation.y = 0.25;
+		const plain = new L.Mesh( new L.PlaneGeometry( 1, 1 ), new L.MeshBasicMaterial( { color: 0xffb454 } ) );
+		plain.position.set( 1.4, 0, 0 );
+		scene.add( screen, plain );
+
+		return { scene, camera, setup( renderer ) {
+
+			renderer.setRenderTarget( target );
+			renderer.render( inner, innerCamera );
+			renderer.setRenderTarget( null );
+
+		} };
+
+	},
+
+	// Twelve coloured point lights on a floor: more than the eight the renderer used to take.
+	lights_many( L ) {
+
+		const { scene, camera } = stage( L, 0, 4.2, 5.2 );
+		const floor = new L.Mesh( new L.PlaneGeometry( 8, 8 ), new L.MeshStandardMaterial( { color: 0xd0d0d0, roughness: 0.7 } ) );
+		floor.rotation.x = - Math.PI / 2;
+		scene.add( floor );
+
+		for ( let i = 0; i < 12; i ++ ) {
+
+			const angle = i / 12 * Math.PI * 2, color = new L.Color().setHSL( i / 12, 0.9, 0.5 );
+			const light = new L.PointLight( color, 3, 3.5, 2 );
+			light.position.set( Math.cos( angle ) * 2.6, 0.5, Math.sin( angle ) * 2.6 );
+			scene.add( light );
+
+		}
+
+		return { scene, camera };
+
+	},
 
 };
+
+function toneMapped( L, toneMapping, exposure ) {
+
+	const { scene, camera } = stage( L, 0, 0.4, 5 );
+	const sun = new L.DirectionalLight( 0xffffff, 6 );
+	sun.position.set( 2, 3, 4 );
+	scene.add( sun, new L.HemisphereLight( 0xbfd4ff, 0x30281e, 1.5 ) );
+
+	[ [ 0xff5a3a, 0.3, 0 ], [ 0xf0f0f0, 0.6, 0 ], [ 0x3a8cff, 0.25, 0.8 ] ].forEach( ( [ color, roughness, metalness ], i ) => {
+
+		const ball = new L.Mesh( new L.SphereGeometry( 0.8, 48, 24 ), new L.MeshStandardMaterial( { color, roughness, metalness } ) );
+		ball.position.x = ( i - 1 ) * 1.8;
+		scene.add( ball );
+
+	} );
+
+	// A material that opts out keeps its colour: an unlit bar across the bottom.
+	const bar = new L.Mesh( new L.BoxGeometry( 5, 0.3, 0.3 ), new L.MeshBasicMaterial( { color: 0xffffff, toneMapped: false } ) );
+	bar.position.y = - 1.2;
+	scene.add( bar );
+
+	return { scene, camera, setup( renderer ) {
+
+		renderer.toneMapping = toneMapping;
+		renderer.toneMappingExposure = exposure;
+
+	} };
+
+}
 
 // Appended cases: fog, instancing, material arrays, hand-set matrices and the helpers.
 Object.assign( CASES, {

@@ -14,11 +14,12 @@
 	canvas, img { border: 1px solid #2c3038; }
 	figure { display: inline-block; margin: 0 8px 8px 0; }
 	a { color: #7fb0ff; }
+	#cases { display: flex; flex-wrap: wrap; gap: 0.45rem 1rem; margin-bottom: 1rem; }
 </style>
 </head>
 <body>
 <h1 id="result">rendering…</h1>
-<p><a href="?case=cube">cube</a> · <a href="?case=sphere">lit sphere</a> · <a href="?case=plane">textured plane</a> · <a href="?case=triangle">triangle</a></p>
+<nav id="cases" aria-label="Visual parity cases"></nav>
 <figure><canvas id="actual"></canvas><figcaption id="actual-label">WAMR3D, WebGPU</figcaption></figure>
 <figure><canvas id="expected"></canvas><figcaption>stored three.js r186 reference</figcaption></figure>
 <figure><canvas id="difference"></canvas><figcaption>difference × 8</figcaption></figure>
@@ -32,6 +33,14 @@ const params = new URLSearchParams( location.search );
 const name = params.get( 'case' ) || 'cube', generate = params.get( 'mode' ) === 'generate';
 const result = window.__visual = { ready: false, error: null, case: name };
 const $ = ( id ) => document.getElementById( id );
+for ( const caseName of Object.keys( CASES ) ) {
+
+	const link = document.createElement( 'a' );
+	link.href = `?case=${ encodeURIComponent( caseName ) }`;
+	link.textContent = caseName;
+	$( 'cases' ).append( link );
+
+}
 for ( const canvas of document.querySelectorAll( 'canvas' ) ) Object.assign( canvas, { width: WIDTH, height: HEIGHT } );
 
 function pixels( source ) {
@@ -49,11 +58,12 @@ try {
 	if ( generate ) {
 
 		const THREE = await import( REFERENCE_URL );
-		const { scene, camera } = CASES[ name ]( THREE );
+		const { scene, camera, setup } = CASES[ name ]( THREE );
 		const renderer = new THREE.WebGPURenderer( { canvas: $( 'actual' ), antialias: true } );
 		await renderer.init();
 		if ( ! renderer.backend.isWebGPUBackend ) throw new Error( 'the reference renderer fell back to WebGL' );
 		renderer.setSize( WIDTH, HEIGHT, false );
+		await setup?.( renderer );
 		renderer.render( scene, camera );
 		$( 'actual-label' ).textContent = 'three.js r186, WebGPU';
 		result.png = $( 'actual' ).toDataURL( 'image/png' );
@@ -63,10 +73,11 @@ try {
 
 		const WAMR3D = await import( '../../dist/wamr3d/compat.js' );
 		await WAMR3D.init();
-		const { scene, camera, probes = [] } = CASES[ name ]( WAMR3D );
+		const { scene, camera, setup, probes = [] } = CASES[ name ]( WAMR3D );
 		const renderer = new WAMR3D.WebGPURenderer( { canvas: $( 'actual' ), antialias: true } );
 		await renderer.init();
 		renderer.setSize( WIDTH, HEIGHT, false );
+		await setup?.( renderer );
 		renderer.render( scene, camera );
 		const actual = pixels( $( 'actual' ) );
 
