@@ -1,0 +1,11 @@
+Chrome/155.0.8059.80, Intel(R) Core(TM) i9-10900X CPU @ 3.70GHz; window 1280x720; medians over 4 s after a 1.5 s warm-up; one engine at a time
+update = animation, transforms and world matrices on the CPU; submit = the renderer on the CPU. GPU time is not measured; it only shows in fps (display limit 60).
+
+bodies   drawn as    renderer                           fps   frame ms   update ms   submit ms   draw calls   build ms
+100000   instanced   WAMR3D · batched API              29.6       33.4       27.00        5.30            5        372
+100000   instanced   WAMR3D · object API               14.8       66.7       50.80       13.50            5        469
+100000   instanced   WAMR3D · batched API · WebGL      32.7       33.3       27.00        2.80            5        148
+100000   instanced   WAMR3D · object API · WebGL        8.7      116.7      104.40        9.80            5        370
+100000   instanced   three.js · WebGPU                 10.2      100.0       78.90       18.90            6        562
+100000   instanced   three.js · WebGL                   9.7      100.1       89.50       13.00            5        623
+canvas 1280x720, device pixel ratio 1

@@ -1,6 +1,6 @@
 // Parity fixture generator for Phase 2 (engine/core).
 //
-// Imports the real three.js r186 modules from three@0.186.1 src (never build/) and
+// Imports the real three.js modules from the pinned `three` package's src (never build/) and
 // writes parity/core/core.json. Same conventions as parity/math/gen/generate.mjs:
 // seeded, deterministic, float inputs rounded to f32 before three.js sees them, and
 // every expected value produced by three.js.

@@ -1,9 +1,9 @@
 // Runs one application-style script against the WAMR3D object API and compares every
-// number it produces with what three.js r186 produced for the same script.
+// number it produces with what three.js produced for the same script.
 //
 //   node engine/bindings/build.mjs
 //   node parity/bindings/compat-check.mjs             compare with the stored values (no three.js needed)
-//   node parity/bindings/compat-check.mjs --generate  run the script on three.js r186 and store its values
+//   node parity/bindings/compat-check.mjs --generate  run the script on three.js and store its values
 //
 // --generate needs the pinned reference: `npm install` at the repository root.
 
@@ -225,6 +225,101 @@ function scenario( L ) {
 	copy.removeFromParent();
 	put( 'removal', [ scene.children.length, arm.children.length, cube.parent === null ? 1 : 0, copy.parent === null ? 1 : 0, cube.visible ? 1 : 0, cube.layers.mask ] );
 
+	// colour spaces
+	const tint = new L.Color().setRGB( 0.5, 0.25, 0.75, L.SRGBColorSpace ), plain = new L.Color().setHex( 0x336699, L.LinearSRGBColorSpace );
+	const tintHSL = tint.getHSL( {}, L.SRGBColorSpace ), tintRGB = tint.getRGB( { r: 0, g: 0, b: 0 }, L.SRGBColorSpace );
+	put( 'colour spaces', [ tint.r, tint.g, tint.b, plain.r, plain.g, plain.b, plain.getHex( L.LinearSRGBColorSpace ), tint.getHex(), tintHSL.h, tintHSL.s, tintHSL.l, tintRGB.r, tintRGB.g, tintRGB.b, new L.Color().setStyle( 'rgb(255, 128, 0)', L.LinearSRGBColorSpace ).g, new L.Color().setHSL( 0.3, 0.5, 0.4, L.SRGBColorSpace ).b, plain.getHexString( L.LinearSRGBColorSpace ).length ] );
+
+	// triangles, segments, spherical and cylindrical coordinates
+	const tri = new L.Triangle( new L.Vector3( 0, 0, 0 ), new L.Vector3( 2, 0, 0 ), new L.Vector3( 0, 3, 1 ) );
+	const weights = tri.getBarycoord( new L.Vector3( 0.5, 0.5, 0.1 ), new L.Vector3() );
+	const seg = new L.Line3( new L.Vector3( - 1, 0, 0 ), new L.Vector3( 3, 2, 1 ) );
+	const sph = new L.Spherical().setFromVector3( new L.Vector3( 1, 2, - 2 ) ), cyl = new L.Cylindrical().setFromVector3( new L.Vector3( 1, 2, - 2 ) );
+	const uvAt = tri.getInterpolation( new L.Vector3( 0.5, 0.5, 0.1 ), new L.Vector2( 0, 0 ), new L.Vector2( 1, 0 ), new L.Vector2( 0, 1 ), new L.Vector2() );
+	put( 'more math', [
+		tri.getArea(), ...tri.getNormal( new L.Vector3() ).toArray(), ...tri.getMidpoint( new L.Vector3() ).toArray(), ...weights.toArray(), tri.containsPoint( new L.Vector3( 0.2, 0.2, 0.1 ) ),
+		...tri.closestPointToPoint( new L.Vector3( 3, 3, 3 ), new L.Vector3() ).toArray(), ...L.Triangle.getNormal( tri.a, tri.b, tri.c, new L.Vector3() ).toArray(), ...uvAt.toArray(),
+		seg.distance(), ...seg.at( 0.25, new L.Vector3() ).toArray(), seg.closestPointToPointParameter( new L.Vector3( 1, 1, 1 ), true ), ...seg.closestPointToPoint( new L.Vector3( 5, 0, 0 ), true, new L.Vector3() ).toArray(),
+		sph.radius, sph.phi, sph.theta, cyl.radius, cyl.theta, cyl.y, ...new L.Vector3().setFromSpherical( sph ).toArray(), ...new L.Vector3().setFromCylindrical( cyl ).toArray()
+	] );
+
+	// bounds of objects
+	const bounds = new L.Box3().setFromObject( cube ), exact = new L.Box3().setFromObject( cube, true );
+	many.computeBoundingBox();
+	put( 'object bounds', [ ...bounds.min.toArray(), ...bounds.max.toArray(), ...exact.min.toArray(), ...exact.max.toArray(), ...many.boundingBox.min.toArray(), ...many.boundingBox.max.toArray(), new L.Box3().setFromObject( new L.Group() ).isEmpty() ] );
+
+	// geometry copies and points
+	const cloned = cube.geometry.clone(), ring = new L.TorusGeometry( 1, 0.3, 5, 9 ).clone();
+	const fromPoints = new L.BufferGeometry().setFromPoints( [ new L.Vector3( 0, 0, 0 ), new L.Vector2( 1, 2 ), new L.Vector3( 3, 4, 5 ) ] );
+	fromPoints.setDrawRange( 1, Infinity );
+	const copied = new L.BufferGeometry().copy( fromPoints );
+	put( 'geometry copies', [ cloned.attributes.position.count, cloned.index.count, cloned.groups.length, ...cloned.attributes.position.array.slice( 0, 9 ), ...cloned.boundingBox.max.toArray(), ring.type.length, ring.parameters.tube, ring.attributes.position.count, ...copied.attributes.position.array, copied.drawRange.start, copied.drawRange.count ] );
+
+	// normalized and interleaved attributes
+	const bytes = new L.BufferAttribute( new Uint8Array( [ 0, 128, 255, 64 ] ), 2, true ), signed = new L.Int16BufferAttribute( [ - 32767, 16384, 0, 32767 ], 2, true );
+	signed.setX( 1, - 0.5 );
+	const packed = new L.InterleavedBuffer( new Float32Array( [ 0, 1, 2, 9, 9, 3, 4, 5, 9, 9, 6, 7, 8, 9, 9 ] ), 5 );
+	const inner = new L.InterleavedBufferAttribute( packed, 3, 0 ), extra = new L.InterleavedBufferAttribute( packed, 2, 3 );
+	inner.setY( 2, 70 );
+	const holder = new L.BufferGeometry().setAttribute( 'position', inner ).setAttribute( 'uv', extra );
+	holder.computeBoundingBox();
+	put( 'attributes', [ bytes.getX( 0 ), bytes.getY( 0 ), bytes.getX( 1 ), bytes.getY( 1 ), signed.getX( 0 ), signed.getX( 1 ), signed.array[ 2 ], signed.getY( 1 ), inner.count, inner.getY( 2 ), extra.getX( 1 ), ...holder.boundingBox.min.toArray(), ...holder.boundingBox.max.toArray(), inner.clone().array.length ] );
+
+	// materials and scene environment settings
+	const phong = new L.MeshPhongMaterial( { color: 0x123456, emissive: 0x220000, shininess: 12 } ), toon = new L.MeshToonMaterial(), physical = new L.MeshPhysicalMaterial( { roughness: 0.3, reflectivity: 0.4 } );
+	const standardCopy = new L.MeshStandardMaterial( { emissive: 0x00ff00, emissiveIntensity: 2, envMapIntensity: 0.5 } ).clone();
+	put( 'materials', [
+		...phong.specular.toArray(), phong.shininess, ...phong.emissive.toArray(), phong.emissiveIntensity, ...toon.emissive.toArray(), toon.gradientMap === null, new L.MeshNormalMaterial().isMeshNormalMaterial,
+		physical.isMeshStandardMaterial, physical.roughness, physical.ior, physical.reflectivity, physical.clearcoat, ...standardCopy.emissive.toArray(), standardCopy.emissiveIntensity, standardCopy.envMapIntensity, standardCopy.envMap === null,
+		scene.environment === null, scene.environmentIntensity, scene.backgroundBlurriness, scene.backgroundIntensity, scene.environmentRotation.order.length, L.EquirectangularReflectionMapping, new L.Texture().mapping
+	] );
+
+	// line loops, levels of detail, instances and sprites
+	const loop = new L.LineLoop( triangle ), open = new L.Line( triangle );
+	const loopPicker = new L.Raycaster( new L.Vector3( 1, 1.5, 5 ), new L.Vector3( 0, 0, - 1 ) );
+	loopPicker.params.Line.threshold = 0.3;
+	const loopHits = loopPicker.intersectObject( loop ), openHits = loopPicker.intersectObject( open );
+
+	const levels = new L.LOD(), near = new L.Object3D(), far = new L.Object3D();
+	levels.addLevel( near, 0 ).addLevel( far, 10, 0.1 );
+	levels.position.set( 0, 0, - 20 );
+	levels.updateMatrixWorld();
+	levels.update( camera );
+
+	const instanceHits = [ ...new L.Raycaster( new L.Vector3( 1, 2, 10 ), new L.Vector3( 0, 0, - 1 ) ).intersectObject( many ), ...new L.Raycaster( new L.Vector3( 0.1, 0.2, 10 ), new L.Vector3( 0, 0, - 1 ) ).intersectObject( many ) ];
+
+	const eye = new L.PerspectiveCamera( 60, 1, 0.1, 100 ), sprite = new L.Sprite();
+	sprite.position.set( 0.4, 0.2, - 5 );
+	sprite.scale.set( 2, 1, 1 );
+	sprite.updateMatrixWorld();
+	eye.updateMatrixWorld();
+	const spritePicker = new L.Raycaster(), spriteHits = [];
+
+	for ( const [ x, y ] of [ [ 0.05, 0.03 ], [ 0.2, 0.12 ], [ 0.9, 0.9 ] ] ) {
+
+		spritePicker.setFromCamera( new L.Vector2( x, y ), eye );
+		const hits = spritePicker.intersectObject( sprite );
+		spriteHits.push( hits.length, ...hits.flatMap( ( hit ) => [ hit.distance, ...hit.point.toArray(), ...hit.uv.toArray(), hit.object === sprite ] ) );
+
+	}
+
+	put( 'loops levels instances sprites', [
+		loop.isLine, loop.isLineLoop, loop.type.length, loopHits.length, ...loopHits.flatMap( ( hit ) => [ hit.distance, hit.index ] ), openHits.length,
+		levels.getCurrentLevel(), near.visible, far.visible, levels.getObjectForDistance( 5 ) === near, levels.levels.length,
+		instanceHits.length, ...instanceHits.flatMap( ( hit ) => [ hit.distance, hit.instanceId, hit.object === many, hit.faceIndex ] ),
+		...spriteHits, new L.Object3D().uuid.length, new L.MeshBasicMaterial().uuid.length
+	] );
+
+	// texture maps and the alpha test
+	const bumpy = new L.MeshStandardMaterial( { normalMap: new L.Texture(), normalScale: new L.Vector2( 0.5, - 1 ), aoMapIntensity: 0.25, alphaTest: 0.4 } ), plainLambert = new L.MeshLambertMaterial();
+	const copiedMaps = bumpy.clone();
+	put( 'texture maps', [
+		bumpy.normalMap.isTexture, bumpy.normalScale.x, bumpy.normalScale.y, bumpy.aoMapIntensity, bumpy.alphaTest, bumpy.roughnessMap === null, bumpy.metalnessMap === null, bumpy.emissiveMap === null, bumpy.alphaMap === null, bumpy.aoMap === null,
+		plainLambert.normalMap === null, plainLambert.normalScale.x, plainLambert.aoMapIntensity, plainLambert.alphaTest, new L.MeshBasicMaterial().aoMapIntensity, new L.MeshBasicMaterial().alphaMap === null, new L.MeshNormalMaterial().normalScale.y,
+		copiedMaps.normalMap === bumpy.normalMap, copiedMaps.normalScale.y, copiedMaps.alphaTest
+	] );
+
+
 	return out;
 
 }
@@ -239,7 +334,7 @@ if ( generate ) {
 	expected = scenario( T );
 	const lines = expected.map( ( [ label, values ] ) => JSON.stringify( [ label, values.map( encode ) ] ) );
 	fs.writeFileSync( EXPECTED, `{"reference":"three@0.186.1","generator":"parity/bindings/compat-check.mjs --generate","groups":[\n${lines.join( ',\n' )}\n]}\n` );
-	console.log( `stored ${expected.length} groups from three.js r186 in ${EXPECTED}` );
+	console.log( `stored ${expected.length} groups from three.js in ${EXPECTED}` );
 
 } else {
 
@@ -270,7 +365,7 @@ expected.forEach( ( [ label, want ], i ) => {
 
 } );
 
-console.log( `${values} values against three.js r186${generate ? '' : ' (stored)'}, largest scaled error ${worst.toExponential( 3 )} (tolerance ${TOLERANCE})` );
+console.log( `${values} values against three.js${generate ? '' : ' (stored)'}, largest scaled error ${worst.toExponential( 3 )} (tolerance ${TOLERANCE})` );
 
 if ( failures.length > 0 ) {
 

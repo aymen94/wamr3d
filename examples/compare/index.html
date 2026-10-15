@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WAMR3D vs three.js r186</title>
+<title>WAMR3D vs three.js</title>
 <link rel="icon" href="../../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="32x32" href="../../favicon-32x32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="../../favicon-16x16.png">
@@ -21,13 +21,16 @@
 </style>
 </head>
 <body>
-<h1>WAMR3D vs three.js r186: the same scene</h1>
+<h1>WAMR3D vs three.js: the same scene</h1>
 <p>
 	Compare:
 	<select id="mode">
 		<option value="api,three-webgpu">each engine with its own WebGPU renderer, same scene code</option>
 		<option value="api,three-webgl">WAMR3D (WebGPU) against three.js (WebGL), same scene code</option>
 		<option value="native,three-webgpu">WAMR3D batched calls against three.js (WebGPU)</option>
+		<option value="api-webgl,three-webgl">each engine on WebGL 2, same scene code</option>
+		<option value="native-webgl,three-webgl">WAMR3D batched calls (WebGL 2) against three.js (WebGL)</option>
+		<option value="api,api-webgl">WAMR3D on WebGPU against WAMR3D on WebGL 2</option>
 		<option value="wamr3d,three">transforms only: both drawn by the three.js WebGL renderer</option>
 	</select>
 	Small cubes:
@@ -44,7 +47,7 @@
 </p>
 <div class="row">
 	<div><iframe id="left" title="WAMR3D"></iframe></div>
-	<div><iframe id="right" title="three.js r186"></iframe></div>
+	<div><iframe id="right" title="three.js"></iframe></div>
 </div>
 <script>
 	const select = document.getElementById( 'satellites' ), mode = document.getElementById( 'mode' );

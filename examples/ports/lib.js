@@ -1,12 +1,14 @@
 // Shared by the ported examples. Each port was written for three.js; here it receives
 // the library from `loadLibrary()` instead of `import * as THREE from 'three'`, so the
-// same code runs on WAMR3D (the default) or, with `?engine=three`, on three.js r186
+// same code runs on WAMR3D (the default) or, with `?engine=three`, on three.js
 // loaded from a CDN for comparison. WAMR3D never loads three.js.
 
 import { THREE_VERSION, loadThreeWebGPU } from '../three-reference.js';
 
 const params = new URLSearchParams( location.search );
 export const engine = params.get( 'engine' ) === 'three' ? 'three' : 'wamr3d';
+// On WAMR3D, `?backend=webgl` or `?backend=webgpu` pins the renderer's backend (default: auto).
+export const backend = [ 'webgl', 'webgpu' ].includes( params.get( 'backend' ) ) ? params.get( 'backend' ) : null;
 
 // Read by `check.mjs`.
 const state = window.__port = { engine, ready: false, frames: 0, error: null };
@@ -50,14 +52,14 @@ function fail( error ) {
 window.addEventListener( 'error', ( event ) => fail( event.error ?? event.message ) );
 window.addEventListener( 'unhandledrejection', ( event ) => fail( event.reason ) );
 
-/** The library the port runs on: `wamr3d/compat` after `init()`, or three.js r186. */
+/** The library the port runs on: `wamr3d/compat` after `init()`, or three.js. */
 export async function loadLibrary() {
 
 	const element = panel();
 	const other = new URL( location.href );
 	if ( engine === 'three' ) other.searchParams.delete( 'engine' );
 	else other.searchParams.set( 'engine', 'three' );
-	element.innerHTML = `<div class="engine-head"><strong>${engine === 'three' ? `three.js r${THREE_VERSION.split( '.' )[ 1 ]}` : 'WAMR3D'}</strong> · WebGPU · <a href="${other.href}">run on ${engine === 'three' ? 'WAMR3D' : 'three.js'} instead</a></div>`
+	element.innerHTML = `<div class="engine-head"><strong>${engine === 'three' ? 'three.js' : 'WAMR3D'}</strong> · ${engine === 'three' ? 'WebGPU' : backend === 'webgl' ? 'WebGL 2' : backend === 'webgpu' ? 'WebGPU' : 'WebGPU or WebGL 2'} · <a href="${other.href}">run on ${engine === 'three' ? 'WAMR3D' : 'three.js'} instead</a></div>`
 		+ '<dl class="metrics">'
 		+ row( 'Frame rate', 'fps' ) + row( 'Frame interval', 'interval' )
 		+ row( 'CPU per frame', 'frame' ) + row( 'CPU in render()', 'render' )
@@ -78,9 +80,9 @@ function measured( library ) {
 
 	class WebGPURenderer extends library.WebGPURenderer {
 
-		constructor( ...args ) {
+		constructor( parameters = {} ) {
 
-			super( ...args );
+			super( engine === 'wamr3d' && backend ? { ...parameters, backend } : parameters );
 			metrics.renderer = this;
 
 		}

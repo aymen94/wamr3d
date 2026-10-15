@@ -1,5 +1,5 @@
-// The optional three.js reference for the comparison pages, pinned to r186 and loaded
-// from a CDN. WAMR3D itself never imports this file: only the comparison engines, the
+// The optional three.js reference for the comparison pages, pinned to one release and
+// loaded from a CDN. WAMR3D itself never imports this file: only the comparison engines, the
 // reference adapter and the reference checks do, and only when they are selected.
 //
 // Both entry points import `./three.core.js` next to them, so they share one core.

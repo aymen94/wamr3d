@@ -1,4 +1,4 @@
-// three.js example "webgl_interactive_cubes" (r186), MIT License, © three.js authors.
+// three.js example "webgl_interactive_cubes", MIT License, © three.js authors.
 // https://threejs.org/examples/#webgl_interactive_cubes
 
 import { loadLibrary, Stats } from '../lib.js';

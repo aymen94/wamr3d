@@ -1,4 +1,4 @@
-// Benchmark: the same workloads in WAMR3D (dist/wamr3d) and in three.js r186.
+// Benchmark: the same workloads in WAMR3D (dist/wamr3d) and in three.js.
 //
 //   node engine/bindings/build.mjs && node bench/bench.mjs
 //
@@ -25,10 +25,10 @@ await wamr.init();
 const wamrInitMs = performance.now() - t0;
 
 t0 = performance.now();
-// the comparison side: `npm install` at the repository root fetches the pinned three@0.186.1
+// the comparison side: `npm install` at the repository root fetches the pinned `three` package
 const T = await import( 'three/src/Three.Core.js' ).catch( () => {
 
-	console.error( 'bench: three@0.186.1 is not installed; run `npm install` at the repository root to get the comparison side' );
+	console.error( 'bench: three is not installed; run `npm install` at the repository root to get the comparison side' );
 	process.exit( 1 );
 
 } );

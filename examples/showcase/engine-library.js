@@ -1,6 +1,6 @@
 // The same scene written once against a three.js-style library `L`, and run with:
-//   three-webgpu, three-webgl   three.js r186 with its own renderer (the reference, loaded from a CDN)
-//   wamr3d-api                  WAMR3D's object API with its own WebGPU renderer
+//   three-webgpu, three-webgl   three.js with its own renderer (the reference, loaded from a CDN)
+//   wamr3d-api, wamr3d-api-webgl WAMR3D's object API with its own WebGPU or WebGL 2 renderer
 // The code below is identical for all three; only the import and the renderer differ.
 
 import { loadThreeWebGL, loadThreeWebGPU } from '../three-reference.js';
@@ -8,13 +8,14 @@ import { animate, cameraPosition, BACKGROUND, SUN_COLOR, PALETTE, CAMERA, SUN_LI
 
 async function library( kind, canvas ) {
 
-	if ( kind === 'wamr3d-api' ) {
+	if ( kind === 'wamr3d-api' || kind === 'wamr3d-api-webgl' ) {
 
+		const webgl = kind === 'wamr3d-api-webgl';
 		const L = await import( '../../dist/wamr3d/compat.js' );
 		await L.init();
-		const renderer = new L.WebGPURenderer( { canvas, antialias: true } );
+		const renderer = new L.WebGPURenderer( { canvas, antialias: true, backend: webgl ? 'webgl' : 'webgpu' } );
 		await renderer.init();
-		return { L, renderer, name: 'WAMR3D · object API', detail: 'three.js-style classes over the WebAssembly engine, WAMR3D WebGPU renderer' };
+		return { L, renderer, name: webgl ? 'WAMR3D · object API · WebGL' : 'WAMR3D · object API', detail: `three.js-style classes over the WebAssembly engine, WAMR3D ${webgl ? 'WebGL 2' : 'WebGPU'} renderer` };
 
 	}
 
@@ -26,13 +27,13 @@ async function library( kind, canvas ) {
 		const fallback = ! renderer.backend.isWebGPUBackend;
 		// this renderer clears its counters after each frame unless told not to
 		renderer.info.autoReset = false;
-		return { L, renderer, name: fallback ? 'three.js r186 · WebGL 2 fallback' : 'three.js r186 · WebGPU', detail: 'three.js alone, its WebGPU renderer' };
+		return { L, renderer, name: fallback ? 'three.js · WebGL 2 fallback' : 'three.js · WebGPU', detail: 'three.js alone, its WebGPU renderer' };
 
 	}
 
 	const L = await loadThreeWebGL();
 	const renderer = new L.WebGLRenderer( { canvas, antialias: true, powerPreference: 'high-performance' } );
-	return { L, renderer, name: 'three.js r186 · WebGL', detail: 'three.js alone, its WebGL renderer' };
+	return { L, renderer, name: 'three.js · WebGL', detail: 'three.js alone, its WebGL renderer' };
 
 }
 

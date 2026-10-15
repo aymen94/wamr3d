@@ -1,8 +1,8 @@
 // Opens every ported example in headless Chrome or Edge and checks that it draws frames
-// without errors, on WAMR3D and, with --three, also on three.js r186 (loaded from a CDN).
+// without errors, on WAMR3D and, with --three, also on three.js (loaded from a CDN).
 //
 //   node examples/browser/serve.mjs                (in another terminal)
-//   node examples/ports/check.mjs [--three] [--only=stack,city] [--shots=folder] [--thumbs=folder]
+//   node examples/ports/check.mjs [--three] [--webgl] [--only=stack,city] [--shots=folder] [--thumbs=folder]
 //
 // Needs a GPU that the browser exposes to WebGPU.
 
@@ -18,7 +18,8 @@ const BASE = option( 'base', 'http://localhost:8080/examples/ports/' );
 const here = path.dirname( fileURLToPath( import.meta.url ) );
 const all = fs.readdirSync( here, { withFileTypes: true } ).filter( ( e ) => e.isDirectory() && fs.existsSync( path.join( here, e.name, 'index.html' ) ) ).map( ( e ) => e.name );
 const ports = option( 'only', '' ) ? option( 'only', '' ).split( ',' ) : all;
-const engines = process.argv.includes( '--three' ) ? [ 'wamr3d', 'three' ] : [ 'wamr3d' ];
+// --webgl also runs WAMR3D on its WebGL 2 backend
+const engines = [ 'wamr3d', ...( process.argv.includes( '--webgl' ) ? [ 'wamr3d-webgl' ] : [] ), ...( process.argv.includes( '--three' ) ? [ 'three' ] : [] ) ];
 const shots = option( 'shots', '' );
 if ( shots ) fs.mkdirSync( shots, { recursive: true } );
 // --thumbs=website/images/examples writes the 640×360 card images of the website.
@@ -77,7 +78,7 @@ try {
 		for ( const engine of engines ) {
 
 			problems = [];
-			await send( 'Page.navigate', { url: `${BASE}${name}/${engine === 'three' ? '?engine=three' : ''}` } );
+			await send( 'Page.navigate', { url: `${BASE}${name}/${engine === 'three' ? '?engine=three' : engine === 'wamr3d-webgl' ? '?backend=webgl' : ''}` } );
 			let state = null;
 			const started = Date.now();
 			while ( Date.now() - started < 20000 ) {

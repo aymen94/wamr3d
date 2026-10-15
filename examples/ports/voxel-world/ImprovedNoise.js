@@ -1,4 +1,4 @@
-// three.js add-on `examples/jsm/math/ImprovedNoise.js` (r186), MIT License, © three.js authors.
+// three.js add-on `examples/jsm/math/ImprovedNoise.js`, MIT License, © three.js authors.
 // Based on Ken Perlin's Improved Noise (2002). The only change: `lerp` is defined here
 // instead of being taken from three.js `MathUtils`, so the file needs no library.
 

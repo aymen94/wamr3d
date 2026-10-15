@@ -33,26 +33,19 @@ world.setPosition( hand, 1, 0, 0 );
 world.updateMatrixWorld( scene, false );
 console.log( world.matrixWorld( hand ) ); // Float32Array(16), column-major`;
 
-const fallback = `async function createRenderer( canvas ) {
-  try {
-    const WAMR3D = await import( 'wamr3d/compat' );
-    await WAMR3D.init();
-    const renderer = new WAMR3D.WebGPURenderer( { canvas, antialias: true } );
-    await renderer.init(); // rejects when the browser has no WebGPU
-    return { THREE: WAMR3D, renderer };
-  } catch ( error ) {
-    console.warn( \`\${ error.message }: drawing with three.js\` );
-    const THREE = await import( 'three/webgpu' ); // switches to WebGL 2 by itself
-    const renderer = new THREE.WebGPURenderer( { canvas, antialias: true } );
-    await renderer.init();
-    return { THREE, renderer };
-  }
-}
+const fallback = `// 'auto' (the default): WebGPU, else WebGL 2, else a software WebGPU adapter
+const renderer = new WAMR3D.WebGPURenderer( { antialias: true } );
+await renderer.init();
+console.log( renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL 2' );
 
-const { THREE, renderer } = await createRenderer( canvas );
-const scene = new THREE.Scene(); // build the scene after the choice`;
+// or choose: WebGPU only, or WebGL 2 only (forceWebGL: true is the same)
+new WAMR3D.WebGPURenderer( { backend: 'webgpu' } );
+new WAMR3D.WebGPURenderer( { backend: 'webgl' } );
 
-const toc = [['object-api', 'Object API'], ['low-level', 'Low-level API'], ['conventions', 'Conventions'], ['no-webgpu', 'Without WebGPU'], ['coverage', 'Coverage'], ['architecture', 'Architecture']];
+// code written for three.js's WebGLRenderer keeps it: WAMR3D on WebGL 2
+const legacy = new WAMR3D.WebGLRenderer( { antialias: true } );`;
+
+const toc = [['object-api', 'Object API'], ['low-level', 'Low-level API'], ['conventions', 'Conventions'], ['no-webgpu', 'WebGPU or WebGL 2'], ['coverage', 'Coverage'], ['architecture', 'Architecture']];
 
 const article = (id, label, title, body) => `<article id="${id}" class="scroll-mt-28 border-b border-white/5 py-14 first:pt-0 last:border-0" data-reveal>
   <p class="font-mono text-[11px] uppercase tracking-[0.2em] text-brand-cyan">${label}</p>
@@ -71,8 +64,8 @@ export function docs() {
         ${article('object-api', '01 · The familiar route', 'Object API', `<p>Import from <code class="font-mono text-slate-200">wamr3d/compat</code>. Classes, properties, chaining and scene construction follow three.js conventions where supported.</p>${codeBlock(objectApi, { title: 'object-api.js' })}<p>Setting <code class="font-mono text-slate-200">position</code>, <code class="font-mono text-slate-200">rotation</code> and <code class="font-mono text-slate-200">scale</code> does not call into WebAssembly: the object API keeps them in JavaScript and sends every change to the engine in one batch per frame. Engine objects are released when their JavaScript object is collected; <code class="font-mono text-slate-200">dispose()</code> releases them at once.</p>`)}
         ${article('low-level', '02 · The batched route', 'Low-level API', `<p>Handle-based and batched; use it when thousands of objects change every frame.</p>${codeBlock(lowLevel, { title: 'low-level.js' })}<ul class="list-disc space-y-2 pl-5 marker:text-brand-cyan"><li>Objects, geometries and materials are handles (<code class="font-mono text-slate-200">bigint</code>). Math values, <code class="font-mono text-slate-200">Timer</code> and <code class="font-mono text-slate-200">World</code> are classes; call <code class="font-mono text-slate-200">.free()</code> when done.</li><li>Methods change values in place and return nothing, so calls do not chain.</li><li>There are no default arguments: rotation order, segment counts and the like are always written out.</li><li>A view from <code class="font-mono text-slate-200">attributeView()</code> stops working when the module's memory grows. Create it right before use.</li></ul>`)}
         ${article('conventions', '03 · Same as three.js', 'Conventions', `<ul class="list-disc space-y-2 pl-5 marker:text-brand-cyan"><li>Right-handed, +Y up, cameras look down −Z, column-major matrices, radians.</li><li>Values are stored as 32-bit floats; results agree with three.js to about <code class="font-mono text-slate-200">1e-6</code>. Keep animated angles wrapped rather than letting them grow for minutes.</li><li><code class="font-mono text-slate-200">world.destroy(object)</code> leaves the children alive as roots; <code class="font-mono text-slate-200">destroyRecursive</code> removes the subtree.</li></ul>`)}
-        ${article('no-webgpu', '04 · Fallback', 'Browsers without WebGPU', `<p>WAMR3D has no WebGL renderer yet. Without WebGPU, <code class="font-mono text-slate-200">renderer.init()</code> rejects; nothing switches automatically, unlike three.js r186, whose <code class="font-mono text-slate-200">WebGPURenderer</code> falls back to WebGL 2. To run everywhere, choose the library at start-up and build the scene after the choice:</p>${codeBlock(fallback, { title: 'fallback.js' })}<p>The object API keeps three.js names, so the same scene code runs on both, as long as it uses supported classes. <code class="font-mono text-slate-200">three</code> becomes a dependency of your application; WAMR3D never loads it. Pass your own canvas: a failed WAMR3D start leaves it free for three.js.</p>`)}
-        ${article('coverage', '05 · Today', 'What works', `<div class="grid gap-4 sm:grid-cols-3">${coverage('Ready', 'text-emerald-300', 'Scene graph, transforms, cameras, picking, math, geometry, eight shapes, instancing, fog.')}${coverage('Renderer', 'text-brand-cyan', 'Meshes, lines, points, sprites and instancing; basic, Lambert and standard materials; colour maps; up to 16 lights; PCF shadows; tone mapping; render targets; 4× MSAA.')}${coverage('Coming next', 'text-slate-300', 'Environment maps in the object API (low-level already), texture maps other than colour, more material types, point-light shadows, area lights, post-processing, scene background textures, most loaders, animation, audio, controls and a WebGL fallback.')}</div><p>Missing classes throw a clear “not available yet” error instead of silently doing nothing.</p>${button(repoFile('STATUS.md'), 'Full implementation status', 'secondary', true)}`)}
+        ${article('no-webgpu', '04 · Backends', 'WebGPU or WebGL 2', `<p>WAMR3D draws with WebGPU where the browser has it and switches to its own WebGL 2 renderer otherwise, so it also runs on machines without WebGPU or a recent graphics driver. The scene work in WebAssembly is the same on both; only the final drawing calls differ. You can also pick the backend yourself:</p>${codeBlock(fallback, { title: 'backend.js' })}<p>On WebGL 2, colour is blended in sRGB space as three.js's WebGL renderer does, render targets are single-sampled, and tone mapping, float render targets and environment maps need the <code class="font-mono text-slate-200">EXT_color_buffer_float</code> extension.</p>`)}
+        ${article('coverage', '05 · Today', 'What works', `<div class="grid gap-4 sm:grid-cols-3">${coverage('Ready', 'text-emerald-300', 'Scene graph, transforms, cameras, picking, math, geometry, eight shapes, instancing, fog.')}${coverage('Renderer', 'text-brand-cyan', 'Meshes, lines, points, sprites and instancing; basic, Lambert, Phong, toon, normal and standard materials with three.js lighting; colour, normal, roughness, metalness, emissive, alpha and occlusion maps; environment lighting and texture backgrounds; up to 16 lights; PCF shadows; tone mapping; render targets; 4× MSAA.')}${coverage('Coming next', 'text-slate-300', 'Light, bump and displacement maps, cube textures, the physical and shader materials, point-light shadows, area lights, post-processing, most loaders, animation, audio and controls.')}</div><p>Missing classes throw a clear “not available yet” error instead of silently doing nothing.</p>${button(repoFile('STATUS.md'), 'Full implementation status', 'secondary', true)}`)}
         ${article('architecture', '06 · Under the hood', 'Typed core, thin host', `<p>A Rust engine compiled to WebAssembly prepares each frame: culling, ordering, pipeline state, uniform data and WGSL. A thin JavaScript host issues the WebGPU calls. The low-level API exposes geometry and world matrices through typed-array views over engine memory; compatibility API properties may return copies.</p><p>Math, scene graph and API behaviour are compared with fixtures generated from the three.js source; the renderer is compared with stored three.js images.</p>${button(repoFile('DECISIONS.md'), 'Design decisions', 'secondary', true)}`)}
       </div>
     </div>

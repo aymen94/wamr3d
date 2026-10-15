@@ -21,16 +21,18 @@
 <h1 id="result">rendering…</h1>
 <nav id="cases" aria-label="Visual parity cases"></nav>
 <figure><canvas id="actual"></canvas><figcaption id="actual-label">WAMR3D, WebGPU</figcaption></figure>
-<figure><canvas id="expected"></canvas><figcaption>stored three.js r186 reference</figcaption></figure>
+<figure><canvas id="expected"></canvas><figcaption>stored three.js reference</figcaption></figure>
 <figure><canvas id="difference"></canvas><figcaption>difference × 8</figcaption></figure>
 <script type="module">
 // ?case=<name> draws the case with WAMR3D and compares it with reference/<name>.png.
-// ?case=<name>&mode=generate draws it with three.js r186 instead, for run.mjs to store.
+// ?case=<name>&mode=generate draws it with three.js instead, for run.mjs to store.
 
 import { CASES, REFERENCE_URL, WIDTH, HEIGHT, MEAN_LIMIT, DIFFERENT_LIMIT, PIXEL_THRESHOLD, BACKGROUND_RGB } from './cases.js';
 
 const params = new URLSearchParams( location.search );
 const name = params.get( 'case' ) || 'cube', generate = params.get( 'mode' ) === 'generate';
+// ?backend=webgl checks WAMR3D's WebGL 2 backend against the same references
+const backend = params.get( 'backend' ) === 'webgl' ? 'webgl' : 'webgpu';
 const result = window.__visual = { ready: false, error: null, case: name };
 const $ = ( id ) => document.getElementById( id );
 for ( const caseName of Object.keys( CASES ) ) {
@@ -65,7 +67,7 @@ try {
 		renderer.setSize( WIDTH, HEIGHT, false );
 		await setup?.( renderer );
 		renderer.render( scene, camera );
-		$( 'actual-label' ).textContent = 'three.js r186, WebGPU';
+		$( 'actual-label' ).textContent = 'three.js, WebGPU';
 		result.png = $( 'actual' ).toDataURL( 'image/png' );
 		$( 'result' ).textContent = `${name}: reference image`;
 
@@ -74,7 +76,7 @@ try {
 		const WAMR3D = await import( '../../dist/wamr3d/compat.js' );
 		await WAMR3D.init();
 		const { scene, camera, setup, probes = [] } = CASES[ name ]( WAMR3D );
-		const renderer = new WAMR3D.WebGPURenderer( { canvas: $( 'actual' ), antialias: true } );
+		const renderer = new WAMR3D.WebGPURenderer( { canvas: $( 'actual' ), antialias: true, backend } );
 		await renderer.init();
 		renderer.setSize( WIDTH, HEIGHT, false );
 		await setup?.( renderer );

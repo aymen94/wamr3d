@@ -10,8 +10,10 @@ import { DEFAULTS, CAMERA, layout } from './scene.js';
 const ENGINES = [
 	[ 'wamr3d', 'WAMR3D · batched API' ],
 	[ 'wamr3d-api', 'WAMR3D · object API' ],
-	[ 'three-webgpu', 'three.js r186 · WebGPU' ],
-	[ 'three-webgl', 'three.js r186 · WebGL' ]
+	[ 'wamr3d-webgl', 'WAMR3D · batched API · WebGL' ],
+	[ 'wamr3d-api-webgl', 'WAMR3D · object API · WebGL' ],
+	[ 'three-webgpu', 'three.js · WebGPU' ],
+	[ 'three-webgl', 'three.js · WebGL' ]
 ];
 
 // `rebuild` settings change what the scene is made of; the others are applied to the running scene.
@@ -80,8 +82,9 @@ async function build() {
 
 			const started = performance.now();
 			scene = layout( config.count, config.shape );
-			const module = config.engine === 'wamr3d' ? await import( './engine-wamr3d.js' ) : await import( './engine-library.js' );
-			engine = config.engine === 'wamr3d' ? await module.createEngine( canvas, scene, config ) : await module.createEngine( config.engine, canvas, scene, config );
+			const batched = config.engine === 'wamr3d' || config.engine === 'wamr3d-webgl';
+			const module = batched ? await import( './engine-wamr3d.js' ) : await import( './engine-library.js' );
+			engine = batched ? await module.createEngine( canvas, scene, config, config.engine === 'wamr3d-webgl' ) : await module.createEngine( config.engine, canvas, scene, config );
 			engine.setOptions( config );
 			state.buildMs = performance.now() - started;
 			state.engine = engine.name;
@@ -319,7 +322,7 @@ async function compare( engines = ENGINES.map( ( [ name ] ) => name ) ) {
 	config.engine = chosen;
 	inputs.engine.value = chosen;
 	await build();
-	$( 'compare' ).textContent = 'Compare all four renderers';
+	$( 'compare' ).textContent = 'Compare all six renderers';
 	$( 'compare' ).disabled = false;
 	comparing = false;
 	return rows;

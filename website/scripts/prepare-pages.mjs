@@ -18,16 +18,27 @@ const copyWebsiteAsset = async (from, to) => {
   await fs.copyFile(source, destination);
 };
 
-const wasmPackage = path.join(websiteRoot, 'node_modules', 'wamr3d');
+// The site ships the local build, the same package its pages and examples are developed against.
+const wasmPackage = path.join(projectRoot, 'dist', 'wamr3d');
 try {
   await fs.access(path.join(wasmPackage, 'wamr3d_wasm_bg.wasm'));
 } catch (error) {
-  throw new Error('The wamr3d package is not installed. Run `npm ci` in website/.', { cause: error });
+  throw new Error('The local wamr3d package is missing. Run `node engine/bindings/build.mjs` at the repository root first.', { cause: error });
 }
 
 await copyWebsiteAsset('images/favicon.ico', 'images/favicon.ico');
 await fs.cp(path.join(websiteRoot, 'images', 'examples'), path.join(outputRoot, 'images', 'examples'), { recursive: true });
-for (const asset of ['favicon.ico', 'favicon-16x16.png', 'favicon-32x32.png', 'apple-touch-icon.png', 'android-chrome-192x192.png', 'android-chrome-512x512.png', 'logo.png', 'site.webmanifest']) await copy(asset, asset);
+// Site icons live in website/images/ (older checkouts keep them at the repository root);
+// the pages expect them at the site root.
+for (const asset of ['favicon.ico', 'favicon-16x16.png', 'favicon-32x32.png', 'apple-touch-icon.png', 'android-chrome-192x192.png', 'android-chrome-512x512.png', 'logo.png', 'site.webmanifest']) {
+  const moved = path.join('images', asset);
+  try {
+    await fs.access(path.join(websiteRoot, moved));
+    await copyWebsiteAsset(moved, asset);
+  } catch {
+    await copy(asset, asset);
+  }
+}
 for (const document of ['README.md', 'MIGRATION.md', 'STATUS.md', 'DECISIONS.md']) await copy(document, `project-docs/${document}`);
 await fs.cp(path.join(projectRoot, 'examples'), path.join(outputRoot, 'examples'), { recursive: true });
 await fs.cp(path.join(projectRoot, 'parity', 'visual'), path.join(outputRoot, 'parity', 'visual'), { recursive: true, filter: (source) => path.basename(source) !== 'out' });

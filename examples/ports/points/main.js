@@ -1,4 +1,4 @@
-// three.js example "webgl_buffergeometry_points" (r186), MIT License, © three.js authors.
+// three.js example "webgl_buffergeometry_points", MIT License, © three.js authors.
 // https://threejs.org/examples/#webgl_buffergeometry_points
 
 import { loadLibrary, Stats } from '../lib.js';

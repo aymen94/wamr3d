@@ -1,9 +1,9 @@
 // End-to-end check of the built WebAssembly package against the reference library:
 // the same inputs go through the public JavaScript API of dist/wamr3d and through
-// three.js r186, and the results must agree.
+// three.js, and the results must agree.
 //
 // This check needs the reference: `npm install` at the repository root fetches the
-// pinned three@0.186.1. parity/bindings/compat-check.mjs covers the object API against
+// pinned `three` package. parity/bindings/compat-check.mjs covers the object API against
 // stored values without it.
 //
 //   node engine/bindings/build.mjs && node parity/bindings/check.mjs

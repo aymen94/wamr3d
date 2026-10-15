@@ -1,5 +1,5 @@
 // Benchmark of the object API: the same three.js-style application code run against
-// `wamr3d/compat` and against three.js r186.
+// `wamr3d/compat` and against three.js.
 //
 //   node engine/bindings/build.mjs && node bench/compat.mjs [--json=out.json]
 //
@@ -17,7 +17,7 @@ const W = await import( '../dist/wamr3d/compat.js' );
 await W.init();
 const T = await import( 'three/src/Three.Core.js' ).catch( () => {
 
-	console.error( 'bench: three@0.186.1 is not installed; run `npm install` at the repository root' );
+	console.error( 'bench: three is not installed; run `npm install` at the repository root' );
 	process.exit( 1 );
 
 } );

@@ -1,4 +1,4 @@
-// three.js example "webgl_lights_spotlights" (r186), MIT License, © three.js authors.
+// three.js example "webgl_lights_spotlights", MIT License, © three.js authors.
 // https://threejs.org/examples/#webgl_lights_spotlights
 
 import TWEEN from 'https://cdn.jsdelivr.net/npm/@tweenjs/tween.js@23.1.3/dist/tween.esm.js';

@@ -1,4 +1,4 @@
-// three.js example "webgl_geometry_minecraft" (r186), MIT License, © three.js authors.
+// three.js example "webgl_geometry_minecraft", MIT License, © three.js authors.
 // https://threejs.org/examples/#webgl_geometry_minecraft
 
 import { loadLibrary, Stats } from '../lib.js';

@@ -5,7 +5,7 @@
 //   node examples/browser/smoke.mjs [url]
 //
 // The default page loads no three.js. Add ?compare=1 for the transform check against
-// three.js r186 and ?renderer=three for the reference adapter; both load it from a CDN.
+// three.js and ?renderer=three for the reference adapter; both load it from a CDN.
 
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';

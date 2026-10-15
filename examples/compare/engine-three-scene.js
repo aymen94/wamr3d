@@ -1,4 +1,4 @@
-// three.js r186 on its own, building and animating the scene from the same scene code
+// three.js on its own, building and animating the scene from the same scene code
 // as the WAMR3D object API (examples/webgpu/scene.js) and drawing it with its own
 // WebGPU or WebGL renderer. No WAMR3D code runs here.
 
@@ -19,7 +19,7 @@ export async function createEngine( canvas, description, cameraState, webgpu ) {
 
 	return {
 
-		name: `three.js r186 (${backend})`,
+		name: `three.js (${backend})`,
 		objectCount: () => demo.objectCount,
 
 		update( time ) {

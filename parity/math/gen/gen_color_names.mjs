@@ -1,4 +1,4 @@
-// Writes engine/math/src/color_names.rs from Color.NAMES in three@0.186.1 src/math/Color.js,
+// Writes engine/math/src/color_names.rs from Color.NAMES in the pinned three.js src/math/Color.js,
 // so the keyword table is never transcribed by hand.
 //
 // Run:  node parity/math/gen/gen_color_names.mjs

@@ -6,16 +6,18 @@
 
 import { init, World, Renderer, Color } from '../../dist/wamr3d/index.js';
 import { createBackend } from '../../dist/wamr3d/webgpu.js';
+import { createWebGLBackend } from '../../dist/wamr3d/webgl.js';
 import { animate, boxData, floorData, COLORS, FLOOR, CUBE, FIRST_SATELLITE } from './scene.js';
 
 
-export async function createEngine( canvas, description, cameraState ) {
+// `webgl` draws the same prepared frames with the WebGL 2 host instead of WebGPU.
+export async function createEngine( canvas, description, cameraState, webgl = false ) {
 
 	const initStart = performance.now();
 	await init();
 	const wasmInitMs = performance.now() - initStart;
 
-	const backend = await createBackend( canvas, { antialias: true } );
+	const backend = webgl ? await createWebGLBackend( canvas, { antialias: true } ) : await createBackend( canvas, { antialias: true } );
 	const { count, parents, positions, scales, satellites } = description;
 
 	const world = new World(), frame = new Renderer();
@@ -79,7 +81,7 @@ export async function createEngine( canvas, description, cameraState ) {
 
 	return {
 
-		name: 'WAMR3D (WebGPU)',
+		name: webgl ? 'WAMR3D (WebGL 2)' : 'WAMR3D (WebGPU)',
 		wasmInitMs,
 		objectCount: () => world.objectCount() - 1,
 
@@ -124,7 +126,7 @@ export async function createEngine( canvas, description, cameraState ) {
 
 }
 
-export async function createApiEngine( canvas, description, cameraState ) {
+export async function createApiEngine( canvas, description, cameraState, webgl = false ) {
 
 	const WAMR3D = await import( '../../dist/wamr3d/compat.js' );
 	const { buildScene } = await import( '../webgpu/scene.js' );
@@ -133,14 +135,14 @@ export async function createApiEngine( canvas, description, cameraState ) {
 	await WAMR3D.init();
 	const wasmInitMs = performance.now() - initStart;
 
-	const renderer = new WAMR3D.WebGPURenderer( { canvas, antialias: true } );
+	const renderer = new WAMR3D.WebGPURenderer( { canvas, antialias: true, backend: webgl ? 'webgl' : 'webgpu' } );
 	await renderer.init();
 	const demo = buildScene( WAMR3D, description.satellites, { standard: true } );
 	demo.scene.traverse( ( object ) => ( object.frustumCulled = false ) );
 
 	return {
 
-		name: 'WAMR3D object API (WebGPU)',
+		name: webgl ? 'WAMR3D object API (WebGL 2)' : 'WAMR3D object API (WebGPU)',
 		wasmInitMs,
 		objectCount: () => demo.objectCount,
 

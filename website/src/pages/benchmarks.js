@@ -8,7 +8,7 @@ const td = 'py-2.5 pr-4';
 const resLabel = (r) => r.replace('x', '×');
 
 // Rows that run on their own renderer, in a fixed order; the adapter pair is the transform-only baseline.
-const compareOrder = ['api', 'native', 'three-webgpu', 'three-webgl', 'wamr3d', 'three'];
+const compareOrder = ['api', 'native', 'api-webgl', 'native-webgl', 'three-webgpu', 'three-webgl', 'wamr3d', 'three'];
 const compareNames = { wamr3d: 'WAMR3D transforms, three.js WebGL renderer', three: 'three.js transforms, three.js WebGL renderer' };
 const compareName = (k) => compareNames[k.engine] ?? k.name;
 
@@ -47,7 +47,7 @@ function compareTable() {
 export function benchmarks() {
   const logs = repoFile(meta.dir);
   const canvasNote = resolutions.map((r) => `${resLabel(r)} → ${(meta.canvases[r] ?? ['not recorded']).map(resLabel).join(', ')}`).join('; ');
-  return shell(`${pageIntro({ label: 'Benchmarks', title: 'Measured, <span class="text-gradient">with context.</span>', intro: `Measured on one machine on ${meta.date}, one run per configuration, at four canvas resolutions. Every figure on this page comes from the raw logs; ratios are computed from medians and nothing is estimated.` })}
+  return shell(`${pageIntro({ label: 'Benchmarks', title: 'Measured, <span class="text-gradient">with context.</span>', intro: `Measured on one machine on ${meta.date}, one run per configuration, at four canvas resolutions. Every figure on this page comes from the raw logs; ratios are computed from medians and nothing is estimated. This run includes WAMR3D on its WebGL 2 renderer. The comparison scene was not run at 3840×2160 (time limit); the showcase covers all four resolutions.` })}
   <div class="relative bg-gradient-to-b from-transparent via-ink-950/85 to-ink-950">
     <section class="mx-auto max-w-6xl px-6 pb-24">
       <div class="glass mb-6 flex flex-col gap-4 rounded-3xl p-6 text-sm sm:flex-row sm:items-center" data-reveal>
@@ -57,7 +57,7 @@ export function benchmarks() {
       <div class="glass mb-10 grid gap-5 rounded-3xl p-6 text-sm sm:grid-cols-2 lg:grid-cols-3" data-reveal>
         <div><p class="font-mono text-[11px] uppercase tracking-wider text-slate-400">Hardware</p><p class="mt-1 text-slate-200">${meta.cpu}; ${meta.gpu}</p></div>
         <div><p class="font-mono text-[11px] uppercase tracking-wider text-slate-400">Browser and OS</p><p class="mt-1 text-slate-200">${meta.chrome}, headless (<code class="font-mono">--headless=new</code>, GPU enabled, ANGLE on Direct3D 11), ${meta.os}; Node.js ${meta.node}</p></div>
-        <div><p class="font-mono text-[11px] uppercase tracking-wider text-slate-400">Rendering backends</p><p class="mt-1 text-slate-200">WAMR3D and three.js WebGPURenderer on WebGPU; three.js WebGLRenderer on WebGL 2. Pixel ratio 1.</p></div>
+        <div><p class="font-mono text-[11px] uppercase tracking-wider text-slate-400">Rendering backends</p><p class="mt-1 text-slate-200">WAMR3D on WebGPU and on its own WebGL 2 renderer; three.js WebGPURenderer on WebGPU and WebGLRenderer on WebGL 2. Pixel ratio 1.</p></div>
         <div><p class="font-mono text-[11px] uppercase tracking-wider text-slate-400">Resolution requested → canvas drawn</p><p class="mt-1 text-slate-200">${canvasNote}</p></div>
         <div><p class="font-mono text-[11px] uppercase tracking-wider text-slate-400">What is timed</p><p class="mt-1 text-slate-200">CPU time in JavaScript, 0.1 ms resolution. GPU time is not measured; it shows only in the frame rate, which the display caps at 60.</p></div>
         <div><p class="font-mono text-[11px] uppercase tracking-wider text-slate-400">Failed configurations</p><p class="mt-1 text-slate-200">${failures.length ? failures.join('; ') : 'None: every configuration produced results.'}</p></div>
@@ -93,13 +93,13 @@ node examples/browser/serve.mjs          # in another terminal
 node examples/showcase/check.mjs --measure --size=1920x1080
 node examples/showcase/check.mjs --measure --counts=100000 --modes=instanced --size=1920x1080
 node examples/compare/measure.mjs --gpu --size=1920x1080
-node bench/bench.mjs                     # needs npm install (three@0.186.1)
+node bench/bench.mjs                     # needs npm install (the pinned three)
 node bench/compat.mjs
 
 # logs saved per size in bench/results/<date>/, then:
 node website/scripts/benchmark-data.mjs bench/results/<date>`, { title: 'terminal', language: 'sh' })}</div>
         <div class="space-y-4 text-slate-400" data-reveal>
-          <p>Or open the <a class="text-brand-cyan hover:text-white" href="./examples/showcase/" target="_blank" rel="noreferrer">live showcase</a> and press “Compare all four renderers” to measure your own browser, display and GPU.</p>
+          <p>Or open the <a class="text-brand-cyan hover:text-white" href="./examples/showcase/" target="_blank" rel="noreferrer">live showcase</a> and press “Compare all six renderers” to measure your own browser, display and GPU.</p>
           <p>Close other headless browsers before measuring: leftover processes once made every engine 20–50% slower. The raw logs of this run are in <a class="text-brand-cyan hover:text-white" href="${logs}" target="_blank" rel="noreferrer">${meta.dir}</a>.</p>
           <div class="flex flex-wrap gap-3">${button('./examples/showcase/', 'Open the showcase', 'primary', true)}${button(logs, 'Raw logs of this run', 'secondary', true)}</div>
         </div>

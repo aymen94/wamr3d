@@ -1,10 +1,10 @@
 // The visual parity cases, written once against a library object `L`. generate mode
-// passes three.js r186 with its WebGPU renderer and stores the image; check mode passes
+// passes three.js with its WebGPU renderer and stores the image; check mode passes
 // WAMR3D and compares.
 
 export const WIDTH = 512, HEIGHT = 384;
 
-// Only `run.mjs --generate` loads this: the three.js r186 WebGPU build that draws the
+// Only `run.mjs --generate` loads this: the three.js WebGPU build that draws the
 // reference images. Checking against the stored images needs no three.js.
 export const REFERENCE_URL = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.186.1/three.webgpu.js';
 
@@ -557,3 +557,201 @@ Object.assign( CASES, {
 } );
 
 export const BACKGROUND_RGB = [ BACKGROUND >> 16, BACKGROUND >> 8 & 255, BACKGROUND & 255 ];
+
+// A smooth equirectangular sky (sRGB bytes): blue above, a warm horizon, dark ground, and a
+// bright patch on the +X side, so that rotations and reflections show.
+function sky( L ) {
+
+	const width = 128, height = 64, data = new Uint8Array( width * height * 4 );
+
+	for ( let y = 0; y < height; y ++ ) for ( let x = 0; x < width; x ++ ) {
+
+		const v = y / ( height - 1 ), u = x / ( width - 1 );
+		const up = Math.max( 0, v - 0.5 ) * 2, down = Math.max( 0, 0.5 - v ) * 2;
+		const patch = Math.max( 0, 1 - Math.hypot( ( u - 0.5 ) * 4, ( v - 0.62 ) * 6 ) );
+		const r = 200 - up * 140 - down * 150 + patch * 55, g = 170 - up * 70 - down * 120 + patch * 70, b = 120 + up * 110 - down * 80 + patch * 60;
+		data.set( [ r, g, b ].map( ( c ) => Math.max( 0, Math.min( 255, Math.round( c ) ) ) ).concat( 255 ), ( y * width + x ) * 4 );
+
+	}
+
+	const texture = new L.DataTexture( data, width, height );
+	texture.colorSpace = L.SRGBColorSpace;
+	texture.mapping = L.EquirectangularReflectionMapping;
+	texture.magFilter = texture.minFilter = L.LinearFilter;
+	texture.needsUpdate = true;
+	return texture;
+
+}
+
+// Cases for the Phong, toon, normal and emissive materials, line loops, colours with
+// alpha, environment lighting and texture backgrounds.
+Object.assign( CASES, {
+
+	// Blinn-Phong, toon, normal and emissive spheres, and a closed line under them.
+	materials( L ) {
+
+		const { scene, camera } = stage( L, 0, 1.2, 6.5 );
+		const sun = new L.DirectionalLight( 0xffffff, 2.5 );
+		sun.position.set( 2, 4, 3 );
+		scene.add( sun, new L.HemisphereLight( 0xbfd4ff, 0x30281e, 0.6 ) );
+
+		const sphere = new L.SphereGeometry( 0.7, 40, 20 );
+		[
+			new L.MeshPhongMaterial( { color: 0x4f8cff, specular: 0xffffff, shininess: 60 } ),
+			new L.MeshToonMaterial( { color: 0xff6b3d } ),
+			new L.MeshNormalMaterial(),
+			new L.MeshLambertMaterial( { color: 0x303030, emissive: 0x6fd08c, emissiveIntensity: 0.8 } )
+		].forEach( ( material, i ) => {
+
+			const mesh = new L.Mesh( sphere, material );
+			mesh.position.set( ( i - 1.5 ) * 1.6, 0.4, 0 );
+			scene.add( mesh );
+
+		} );
+
+		const outline = [ [ - 2.6, - 1.1 ], [ 2.6, - 1.1 ], [ 2.2, - 0.6 ], [ - 2.2, - 0.6 ] ].map( ( [ x, y ] ) => new L.Vector3( x, y, 0 ) );
+		scene.add( new L.LineLoop( new L.BufferGeometry().setFromPoints( outline ), new L.LineBasicMaterial( { color: 0xffe08a } ) ) );
+		return { scene, camera };
+
+	},
+
+	// A triangle whose vertex colours carry alpha, blended over a box.
+	vertex_alpha( L ) {
+
+		const { scene, camera } = stage( L, 0, 0, 3.5 );
+		const box = new L.Mesh( new L.BoxGeometry( 1, 1, 1 ), new L.MeshBasicMaterial( { color: 0x4f8cff } ) );
+		box.rotation.set( 0.4, 0.6, 0 );
+		box.position.z = - 0.8;
+
+		const geometry = new L.BufferGeometry();
+		geometry.setAttribute( 'position', new L.Float32BufferAttribute( [ - 1.4, - 1, 0, 1.4, - 1, 0, 0, 1.2, 0 ], 3 ) );
+		geometry.setAttribute( 'color', new L.Float32BufferAttribute( [ 1, 0.3, 0.2, 1, 0.3, 1, 0.4, 0.2, 1, 0.9, 0.3, 0.6 ], 4 ) );
+		const triangle = new L.Mesh( geometry, new L.MeshBasicMaterial( { vertexColors: true, transparent: true, side: L.DoubleSide } ) );
+		scene.add( box, triangle );
+		return { scene, camera };
+
+	},
+
+	// Standard materials lit only by `scene.environment`, which is also the background.
+	environment( L ) {
+
+		const { scene, camera } = stage( L, 0, 0.5, 5 );
+		const map = sky( L );
+		scene.environment = map;
+		scene.background = map;
+
+		[ [ 0.05, 1 ], [ 0.45, 1 ], [ 0.6, 0 ] ].forEach( ( [ roughness, metalness ], i ) => {
+
+			const ball = new L.Mesh( new L.SphereGeometry( 0.75, 48, 24 ), new L.MeshStandardMaterial( { color: 0xffffff, roughness, metalness } ) );
+			ball.position.x = ( i - 1 ) * 1.8;
+			scene.add( ball );
+
+		} );
+
+		return { scene, camera };
+
+	},
+
+	// A blurred, dimmed, rotated background, and an environment turned and weakened per scene.
+	background_blurred( L ) {
+
+		const { scene, camera } = stage( L, 0, 0.3, 4 );
+		const map = sky( L );
+		scene.background = map;
+		scene.backgroundBlurriness = 0.3;
+		scene.backgroundIntensity = 0.7;
+		scene.backgroundRotation.y = 1.2;
+		scene.environment = map;
+		scene.environmentIntensity = 0.6;
+		scene.environmentRotation.y = - 0.8;
+
+		const knot = new L.Mesh( new L.TorusGeometry( 0.8, 0.3, 24, 64 ), new L.MeshStandardMaterial( { color: 0xe8e4d8, roughness: 0.25, metalness: 0.9 } ) );
+		knot.rotation.set( 0.5, 0.3, 0 );
+		scene.add( knot );
+		return { scene, camera };
+
+	}
+
+} );
+
+// An RGBA data texture of `size` squared filled by `texel( u, v )` (0..1 each, v up),
+// returning four bytes.
+function generated( L, size, texel, colorSpace = L.NoColorSpace ) {
+
+	const data = new Uint8Array( size * size * 4 );
+
+	for ( let y = 0; y < size; y ++ ) for ( let x = 0; x < size; x ++ ) {
+
+		data.set( texel( ( x + 0.5 ) / size, ( y + 0.5 ) / size ).map( ( c ) => Math.max( 0, Math.min( 255, Math.round( c ) ) ) ), ( y * size + x ) * 4 );
+
+	}
+
+	const texture = new L.DataTexture( data, size, size );
+	texture.colorSpace = colorSpace;
+	texture.magFilter = texture.minFilter = L.LinearFilter;
+	texture.wrapS = texture.wrapT = L.RepeatWrapping;
+	texture.needsUpdate = true;
+	return texture;
+
+}
+
+// Tangent-space normals of round bumps on a grid, encoded as three.js expects.
+function bumps( L ) {
+
+	return generated( L, 64, ( u, v ) => {
+
+		const fx = ( u * 4 ) % 1 - 0.5, fy = ( v * 4 ) % 1 - 0.5, d2 = fx * fx + fy * fy;
+		const inside = d2 < 0.16, nx = inside ? fx * 2.2 : 0, ny = inside ? fy * 2.2 : 0, length = Math.hypot( nx, ny, 1 );
+		return [ ( nx / length * 0.5 + 0.5 ) * 255, ( ny / length * 0.5 + 0.5 ) * 255, ( 1 / length * 0.5 + 0.5 ) * 255, 255 ];
+
+	} );
+
+}
+
+Object.assign( CASES, {
+
+	// Normal, roughness, metalness, emissive, alpha and ambient-occlusion maps, and an alpha test.
+	texture_maps( L ) {
+
+		const { scene, camera } = stage( L, 0, 1.6, 6.5 );
+		camera.lookAt( 0, 0.2, 0 );
+		const sun = new L.DirectionalLight( 0xffffff, 2.2 );
+		sun.position.set( - 2, 3, 4 );
+		scene.add( sun, new L.HemisphereLight( 0xbfd4ff, 0x30281e, 0.9 ) );
+		scene.environment = sky( L );
+
+		// bumps lit from the upper left, at two strengths
+		const bumpy = new L.Mesh( new L.PlaneGeometry( 1.6, 1.6 ), new L.MeshStandardMaterial( { color: 0xd8c8b0, roughness: 0.6, normalMap: bumps( L ) } ) );
+		bumpy.position.set( - 2.1, 0.9, 0 );
+		const flatter = new L.Mesh( new L.PlaneGeometry( 1.6, 1.6 ), new L.MeshPhongMaterial( { color: 0x8fb0d8, shininess: 40, normalMap: bumps( L ), normalScale: new L.Vector2( 0.4, - 0.4 ) } ) );
+		flatter.position.set( - 2.1, - 0.9, 0 );
+
+		// metal stripes (blue) and rough bands (green) reflecting the environment
+		const surface = generated( L, 32, ( u, v ) => [ 0, v < 0.5 ? 40 : 230, u % 0.25 < 0.125 ? 255 : 0, 255 ] );
+		const ball = new L.Mesh( new L.SphereGeometry( 0.85, 48, 24 ), new L.MeshStandardMaterial( { color: 0xffffff, roughness: 1, metalness: 1, roughnessMap: surface, metalnessMap: surface } ) );
+		ball.position.set( 0, 0.9, 0 );
+
+		// glowing squares, and occlusion darkening toward one edge
+		const glow = generated( L, 16, ( u, v ) => ( ( u * 2 | 0 ) + ( v * 2 | 0 ) ) % 2 ? [ 255, 140, 40, 255 ] : [ 0, 0, 0, 255 ], L.SRGBColorSpace );
+		const panel = new L.Mesh( new L.BoxGeometry( 1.2, 1.2, 0.3 ), new L.MeshLambertMaterial( { color: 0x404448, emissive: 0xffffff, emissiveMap: glow } ) );
+		panel.position.set( 0, - 0.9, 0 );
+		panel.rotation.y = 0.4;
+		const shaded = new L.Mesh( new L.PlaneGeometry( 1.6, 1.6 ), new L.MeshToonMaterial( { color: 0x6fd08c, aoMap: generated( L, 16, ( u ) => [ 255 * u, 0, 0, 255 ] ), aoMapIntensity: 0.9 } ) );
+		shaded.position.set( 2.1, - 0.9, 0 );
+
+		// a cut-out: circles kept by a grey alpha map and the alpha test
+		const holes = generated( L, 32, ( u, v ) => {
+
+			const grey = Math.hypot( ( u * 3 ) % 1 - 0.5, ( v * 3 ) % 1 - 0.5 ) < 0.35 ? 255 : 0;
+			return [ grey, grey, grey, 255 ];
+
+		} );
+		const cutout = new L.Mesh( new L.PlaneGeometry( 1.6, 1.6 ), new L.MeshBasicMaterial( { color: 0xffe08a, alphaMap: holes, alphaTest: 0.5, side: L.DoubleSide } ) );
+		cutout.position.set( 2.1, 0.9, 0 );
+
+		scene.add( bumpy, flatter, ball, panel, shaded, cutout );
+		return { scene, camera };
+
+	}
+
+} );

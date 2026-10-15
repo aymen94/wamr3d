@@ -10,27 +10,28 @@ const diff = `- import * as THREE from 'three';
 
 const differences = [
   ['Works without setup', '<code>await init()</code> once, and <code>await renderer.init()</code> before the first <code>render</code> (<code>setAnimationLoop</code> waits for you)'],
-  ['<code>WebGLRenderer</code>', '<code>WebGPURenderer</code> only'],
-  ['<code>WebGPURenderer</code> falls back to WebGL 2', 'No fallback yet: <code>renderer.init()</code> rejects without WebGPU. <a class="text-brand-cyan hover:text-white" href="#/docs#no-webgpu">Pick the library at start-up</a> to keep three.js as the fallback'],
-  ['<code>MeshStandardMaterial</code> with environment and many maps', '<code>color</code>, <code>map</code>, <code>roughness</code>, <code>metalness</code>, <code>side</code>, <code>transparent</code>, <code>opacity</code>, <code>depthTest</code>, <code>depthWrite</code>, <code>vertexColors</code>. Unsupported parameters are stored, have no effect and log one warning'],
-  ['A missing class is <code>undefined</code>', 'Unsupported classes (<code>LineLoop</code>, <code>SkinnedMesh</code>, <code>LOD</code>, <code>MeshPhongMaterial</code>, <code>WebGLRenderer</code>, …) throw “not available yet”'],
+  ['<code>WebGLRenderer</code>', 'Works: the same renderer drawing with WebGL 2. <code>WebGPURenderer</code> picks WebGPU or WebGL 2 by itself'],
+  ['<code>WebGPURenderer</code> falls back to WebGL 2', 'The same here, with WAMR3D\'s own WebGL 2 renderer; <code>backend: \'webgpu\'</code> or <code>\'webgl\'</code> (or <code>forceWebGL</code>) pins one. <a class="text-brand-cyan hover:text-white" href="#/docs#no-webgpu">Backends</a>'],
+  ['<code>MeshStandardMaterial</code> with environment and many maps', '<code>color</code>, <code>map</code>, <code>roughness</code>, <code>metalness</code>, <code>emissive</code>, the normal, roughness, metalness, emissive, alpha and ambient-occlusion maps (one shared uv transform), <code>alphaTest</code>, <code>envMap</code> or <code>scene.environment</code> (equirectangular, one per frame), <code>side</code>, <code>transparent</code>, <code>opacity</code>, <code>depthTest</code>, <code>depthWrite</code>, <code>vertexColors</code>. Unsupported parameters are stored, have no effect and log one warning'],
+  ['<code>MeshPhysicalMaterial</code>', 'Drawn as <code>MeshStandardMaterial</code>; clearcoat, sheen, transmission and the other extensions log one warning'],
+  ['A missing class is <code>undefined</code>', 'Unsupported classes (<code>SkinnedMesh</code>, <code>ShaderMaterial</code>, …) throw “not available yet”'],
   ['Any number of lights', 'Up to 16 directional, point and spot lights combined, plus ambient and hemisphere lights. Directional and spot lights support PCF shadows; point-light shadows are not available'],
   ['Shadows from any light', 'Directional and spot shadows support PCF filtering, up to 4 shadow-casting lights per frame. Other shadow-map types draw as PCF. Point lights cast no shadows'],
-  ['Points, sprites, render targets and tone mapping', 'Supported, with limitations: points are one pixel, sprites are not raycast, and screen tone mapping applies to the whole frame'],
+  ['Points, sprites, render targets and tone mapping', 'Supported, with limitations: points are one pixel, picking a sprite needs <code>raycaster.camera</code> as in three.js, and screen tone mapping applies to the whole frame'],
   ['<code>object.matrix.elements[ 12 ] = 5</code>', '<code>matrixWorld</code>, <code>matrix.elements</code>, <code>box.min</code> and similar are copies. Use <code>position</code>, <code>rotation</code>, <code>scale</code> or the value’s methods'],
   ['Numbers are 64-bit', 'Stored as 32-bit floats; results agree to about <code>1e-6</code>'],
   ['Garbage collected', 'Also here; <code>dispose()</code> releases engine objects at once']
 ];
 
 const missing = [
-  ['Rendering', 'Environment maps through <code>scene.environment</code> and <code>envMap</code> (the low-level <code>setEnvironment</code> works); maps other than <code>map</code>; more than 16 lights; area lights; point-light shadows; shadow modes other than PCF; scene background textures; post-processing; render-target depth textures and multiple attachments; lines wider than one pixel; a WebGL fallback.'],
-  ['Objects and materials', '<code>LineLoop</code>, <code>SkinnedMesh</code>, <code>LOD</code>, <code>MeshPhongMaterial</code>, <code>MeshPhysicalMaterial</code>, <code>MeshToonMaterial</code>, <code>MeshNormalMaterial</code>, <code>ShaderMaterial</code>; picking sprites or individual instances of an <code>InstancedMesh</code>.'],
+  ['Rendering', 'Light, bump, displacement, specular and gradient maps; per-map uv transforms; cube textures; more than one environment map per frame; the physical extensions of <code>MeshPhysicalMaterial</code>; more than 16 lights; area lights; point-light shadows; shadow modes other than PCF; post-processing; render-target depth textures and multiple attachments; lines wider than one pixel.'],
+  ['Objects and materials', '<code>SkinnedMesh</code>, <code>ShaderMaterial</code>, wireframes, morph targets.'],
   ['Everything else', 'Loaders other than <code>TextureLoader</code>, the animation system, audio, controls, and helpers other than <code>GridHelper</code> and <code>AxesHelper</code>.']
 ];
 
 const steps = [
   ['Install and change the import', 'Install <code>wamr3d</code> from npm, import <code>wamr3d/compat</code> where you imported <code>three</code>, and initialise the module once.'],
-  ['Swap the renderer', 'Create a <code>WebGPURenderer</code> and await <code>renderer.init()</code>. Your scene, camera, meshes and animation loop stay as they are for supported classes. For browsers without WebGPU, keep three.js as a fallback chosen at start-up.'],
+  ['Swap the renderer', 'Create a <code>WebGPURenderer</code> (or keep <code>WebGLRenderer</code>) and await <code>renderer.init()</code>. Your scene, camera, meshes and animation loop stay as they are for supported classes; browsers without WebGPU get WebGL 2 automatically.'],
   ['Check what you depend on', 'Compare your imports with the list below. Unsupported constructors throw, so a missing feature shows up on the first run.'],
   ['Batch the hot paths', 'When a scene grows to thousands of moving objects, move the per-frame updates to the batched low-level API and measure.']
 ];

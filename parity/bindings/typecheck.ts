@@ -59,6 +59,41 @@ export async function main( canvas: HTMLCanvasElement ): Promise<void> {
 	raycaster.setFromCamera( new THREE.Vector2( 0, 0 ), camera );
 	const hit: THREE.Intersection | undefined = raycaster.intersectObjects( scene.children )[ 0 ];
 	if ( hit && hit.face ) hit.face.normal.clone().applyQuaternion( cube.quaternion );
+	if ( hit && hit.instanceId !== undefined ) instances.getMatrixAt( hit.instanceId, new THREE.Matrix4() );
+
+	// environment, background, more materials, objects and math
+	const sky = new THREE.TextureLoader().load( 'sky.jpg' );
+	sky.mapping = THREE.EquirectangularReflectionMapping;
+	sky.colorSpace = THREE.SRGBColorSpace;
+	scene.environment = sky;
+	scene.background = sky;
+	scene.backgroundBlurriness = 0.2;
+	scene.environmentRotation.y = 0.5;
+	const chrome = new THREE.MeshStandardMaterial( { metalness: 1, roughness: 0.1 } );
+	chrome.envMapIntensity = 0.8;
+	chrome.emissive.setHex( 0x111111 );
+	chrome.normalMap = sky;
+	chrome.normalScale.set( 0.5, 0.5 );
+	chrome.roughnessMap = chrome.metalnessMap = sky;
+	chrome.aoMapIntensity = 0.7;
+	chrome.alphaTest = 0.5;
+	const leaves = new THREE.MeshLambertMaterial( { alphaMap: sky, alphaTest: 0.3, emissiveMap: sky } );
+	leaves.aoMap = null;
+	const shiny: THREE.Material = new THREE.MeshPhongMaterial( { color: 0x4f8cff, shininess: 40 } );
+	const glass = new THREE.MeshPhysicalMaterial( { roughness: 0, transmission: 1 } );
+	glass.ior = 1.4;
+	const levels = new THREE.LOD().addLevel( new THREE.Mesh( new THREE.SphereGeometry(), shiny ), 0 ).addLevel( new THREE.Mesh( new THREE.BoxGeometry(), new THREE.MeshToonMaterial() ), 20 );
+	const outline = new THREE.LineLoop( new THREE.BufferGeometry().setFromPoints( [ new THREE.Vector3(), new THREE.Vector3( 1, 0, 0 ), new THREE.Vector3( 0, 1, 0 ) ] ) );
+	const normals = new THREE.Mesh( box.geometry.clone(), new THREE.MeshNormalMaterial() );
+	scene.add( levels, outline, normals, new THREE.Mesh( new THREE.SphereGeometry(), glass ) );
+	const bounds = new THREE.Box3().setFromObject( scene, true );
+	const orbit = new THREE.Spherical().setFromVector3( camera.position );
+	camera.position.setFromSpherical( orbit );
+	const area: number = new THREE.Triangle( bounds.min, bounds.max, new THREE.Vector3() ).getArea() + new THREE.Line3( bounds.min, bounds.max ).distance();
+	const packed = new THREE.InterleavedBuffer( new Float32Array( 30 ), 5 );
+	box.geometry.setAttribute( 'uv1', new THREE.InterleavedBufferAttribute( packed, 2, 3 ) );
+	const hex: string = new THREE.Color().setRGB( 0.5, 0.5, 0.5, THREE.SRGBColorSpace ).getHexString( THREE.LinearSRGBColorSpace ) + area + scene.uuid;
+	hex.toUpperCase();
 
 	const renderer = new THREE.WebGPURenderer( { canvas, antialias: true } );
 	await renderer.init();

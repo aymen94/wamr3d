@@ -12,6 +12,8 @@ const ENGINES = {
 	'three-webgl': ( ...args ) => import( './engine-three-scene.js' ).then( ( m ) => m.createEngine( ...args, false ) ),
 	api: ( ...args ) => import( './engine-native.js' ).then( ( m ) => m.createApiEngine( ...args ) ),
 	native: ( ...args ) => import( './engine-native.js' ).then( ( m ) => m.createEngine( ...args ) ),
+	'api-webgl': ( ...args ) => import( './engine-native.js' ).then( ( m ) => m.createApiEngine( ...args, true ) ),
+	'native-webgl': ( ...args ) => import( './engine-native.js' ).then( ( m ) => m.createEngine( ...args, true ) ),
 	three: ( ...args ) => import( './engine-three.js' ).then( ( m ) => m.createEngine( ...args ) ),
 	wamr3d: ( ...args ) => import( './engine-wamr3d.js' ).then( ( m ) => m.createEngine( ...args ) )
 };

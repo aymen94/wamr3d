@@ -1,15 +1,14 @@
-// The site's live backdrop, drawn by WAMR3D's own WebGPU renderer through `wamr3d/compat`.
+// The site's live backdrop, drawn by WAMR3D through `wamr3d/compat` in hybrid mode: WebGPU
+// where the browser has it, WAMR3D's own WebGL 2 renderer otherwise.
 // A wave field of instanced boxes (matrices written straight into `instanceMatrix.array`,
 // the batched path) around a brand cube that can be hovered and clicked (Raycaster).
-// Without WebGPU the page keeps its static CSS backdrop; three.js is never loaded.
+// With neither API the page keeps its static CSS backdrop; three.js is never loaded.
 
 const BACKGROUND = { dark: 0x04050c, light: 0xf4f6fb };
 const PALETTE = [[0.64, 0.35, 1.0], [0.24, 0.35, 1.0], [0.13, 0.89, 1.0]];
 const FIELD_Y = -3.1;
 
 export async function startHeroScene(canvas, report = () => {}) {
-  if (!('gpu' in navigator)) return report({ state: 'unsupported', reason: 'This browser has no WebGPU.' });
-
   let W;
   try {
     W = await import('wamr3d/compat');
@@ -19,13 +18,14 @@ export async function startHeroScene(canvas, report = () => {}) {
     return report({ state: 'unsupported', reason: 'The WAMR3D module could not be loaded.' });
   }
 
-  const renderer = new W.WebGPURenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+  const renderer = new W.WebGPURenderer({ canvas, antialias: true, powerPreference: 'high-performance', backend: 'auto' });
   try {
     await renderer.init();
   } catch (error) {
-    console.info('WebGPU is not available.', error);
-    return report({ state: 'unsupported', reason: 'WebGPU could not start on this device.' });
+    console.info('Neither WebGPU nor WebGL 2 is available.', error);
+    return report({ state: 'unsupported', reason: 'Neither WebGPU nor WebGL 2 could start on this device.' });
   }
+  const api = renderer.backend?.isWebGLBackend ? 'WebGL 2' : 'WebGPU';
 
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const small = innerWidth < 760;
@@ -255,7 +255,7 @@ export async function startHeroScene(canvas, report = () => {}) {
 
     frames++;
     if (now - fpsClock > 600) {
-      report({ state: 'running', fps: (frames * 1000) / (now - fpsClock), calls: renderer.info.render.calls, instances: count, objects: count + satellites.length + 4 });
+      report({ state: 'running', api, fps: (frames * 1000) / (now - fpsClock), calls: renderer.info.render.calls, instances: count, objects: count + satellites.length + 4 });
       frames = 0;
       fpsClock = now;
     }
@@ -267,10 +267,10 @@ export async function startHeroScene(canvas, report = () => {}) {
   setTimeout(() => { canvas.style.transition = 'none'; }, 1600);
   if (reducedMotion) {
     frame(performance.now());
-    report({ state: 'static', instances: count, calls: renderer.info.render.calls });
+    report({ state: 'static', api, instances: count, calls: renderer.info.render.calls });
   } else {
     renderer.setAnimationLoop(frame);
-    report({ state: 'running', instances: count });
+    report({ state: 'running', api, instances: count });
   }
 }
 

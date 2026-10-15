@@ -1,4 +1,4 @@
-// Comparison mode: recomputes the demo's transforms with three.js r186 (loaded from a
+// Comparison mode: recomputes the demo's transforms with three.js (loaded from a
 // CDN when the mode is switched on) from the same inputs and reports how far WAMR3D's
 // results are from it. Used for checking only; nothing here feeds the picture.
 

@@ -1,19 +1,12 @@
 # Migrating from three.js to WAMR3D
 
-This guide shows how three.js code maps onto WAMR3D today, what does not map yet, and how to move a project over one piece at a time.
+WAMR3D follows the three.js API, so most applications move over by changing the import, initializing the WebAssembly module once and using the WebGPU renderer. This guide covers those steps, the differences to watch for, and what is not available yet.
 
-There are two ways in. The **object API** (`wamr3d/compat`) has classes, properties and chaining like three.js and draws with WAMR3D's own WebGPU renderer; start there. The **low-level API** (`wamr3d`) is handle-based and batched; reach for it when thousands of objects change every frame. Check [Not available yet](#not-available-yet) for what is still missing. Behaviour matches three.js r186, checked by parity tests.
+## 1. Install and change the import
 
-## Contents
-
-- [The object API](#the-object-api)
-- [The low-level API](#the-low-level-api)
-- [Batching the frame loop](#batching-the-frame-loop)
-- [Low-level API mapping](#low-level-api-mapping)
-- [Not available yet](#not-available-yet)
-- [Checklist](#checklist)
-
-## The object API
+```
+npm install wamr3d
+```
 
 ```diff
 - import * as THREE from 'three';
@@ -25,329 +18,82 @@ There are two ways in. The **object API** (`wamr3d/compat`) has classes, propert
 + await renderer.init();
 ```
 
-Available: `Scene`, `Group`, `Object3D`, `Mesh`, `Points`, `Sprite`, `PointsMaterial`, `SpriteMaterial`, `RenderTarget` (also as `WebGLRenderTarget`), the light `shadow` objects, the tone-mapping constants, `PerspectiveCamera`, `OrthographicCamera`, `BufferGeometry`, `BufferAttribute` (and the `Float32`, `Uint16`, `Uint32` variants), `BoxGeometry`, `PlaneGeometry`, `SphereGeometry`, `CylinderGeometry`, `ConeGeometry`, `CircleGeometry`, `RingGeometry`, `TorusGeometry`, `Line`, `LineSegments`, `LineBasicMaterial`, `MeshBasicMaterial`, `MeshLambertMaterial`, `MeshStandardMaterial`, `Texture`, `DataTexture`, `CanvasTexture`, `TextureLoader`, `Clock`, `InstancedMesh`, `GridHelper`, `AxesHelper`, `Fog`, `FogExp2`, `AmbientLight`, `HemisphereLight`, `DirectionalLight`, `PointLight`, `SpotLight`, `Raycaster`, `WebGPURenderer`, `Vector2`, `Vector3`, `Vector4`, `Quaternion`, `Euler`, `Matrix3`, `Matrix4`, `Color`, `Box3`, `Sphere`, `Plane`, `Ray`, `Frustum`, `MathUtils`, and the constants `FrontSide`, `BackSide`, `DoubleSide`.
+`init()` loads the WebAssembly module; call it once, before creating anything. `renderer.init()` must finish before the first `render` (`setAnimationLoop` waits for it). The renderer draws with WebGPU where the browser has it and switches to WebGL 2 by itself otherwise (see [Choosing the backend](#choosing-the-backend)). Code that keeps `new THREE.WebGLRenderer()` also works: it is the same renderer, drawing with WebGL 2, and it starts `init()` itself. Pages must be served over HTTP, and a bundler or an import map resolves the package name. To try the repository's own build, run `node engine/bindings/build.mjs` and install `dist/wamr3d`.
 
-Differences to watch for:
+Everything else keeps its three.js form: `scene.add( mesh )`, `mesh.position.set( 1, 2, 3 )`, `mesh.rotation.y += 0.01`, `camera.lookAt( 0, 0, 0 )`, materials with their parameters, `raycaster.intersectObjects( scene.children )` and chained math.
 
-| In three.js | In `wamr3d/compat` |
+## 2. Check the differences
+
+| In three.js | In WAMR3D |
 |---|---|
-| Works without setup | `await init()` once before creating anything, and `await renderer.init()` before the first `render` (`setAnimationLoop` waits for you) |
-| `WebGLRenderer` | `WebGPURenderer` only; the browser must support WebGPU |
-| `WebGPURenderer` falls back to WebGL 2 when WebGPU is missing | No fallback: `renderer.init()` rejects. Choose the library at start-up, see [Browsers without WebGPU](#browsers-without-webgpu) |
-| `MeshStandardMaterial` with environment and many maps | `color`, `map`, `roughness`, `metalness`, `side`, `transparent`, `opacity`, `depthTest`, `depthWrite` and `vertexColors` work. The object API does not read `envMap` or `scene.environment` yet, so metals look dark away from the highlight (the low-level `setEnvironment` provides reflections). Any other parameter is stored, has no effect, and logs one warning |
-| Textures | Mipmaps, the six filters, the three wrapping modes, `repeat`, `offset`, `rotation` and `center` work. No anisotropy, and only colour maps |
-| A missing class is `undefined` | Common classes that do not exist yet (`SkinnedMesh`, `LOD`, `MeshPhongMaterial`, `WebGLRenderer`, ...) throw "not available yet" when constructed |
-| Any number of lights | Up to 16 `DirectionalLight`, `PointLight` and `SpotLight` together, plus all `AmbientLight` and `HemisphereLight`. A `HemisphereLight` is treated as pointing up |
-| Shadows from any light | Directional and spot lights, PCF filtering, up to 4 shadow-casting lights per frame; `renderer.shadowMap.type` other than `PCFShadowMap` draws as PCF. Point lights cast no shadow |
-| `PointsMaterial.size` | Points are one pixel; `size` has no effect, as with the three.js r186 WebGPU renderer |
-| `material.toneMapped = false` | Has no effect on screen output, as with the three.js r186 WebGPU renderer: tone mapping is applied to the whole frame |
-| `Line`, `LineSegments` | Drawn one pixel wide. `Raycaster` hits them as in three.js (`params.Line.threshold`, 1 world unit by default) |
-| `InstancedMesh` | Works, drawn in one call. Instances are not culled or picked one by one |
-| `scene.fog` | `Fog` and `FogExp2` work; `material.fog = false` is ignored |
-| `object.matrix.elements[ 12 ] = 5` changes the object | `object.matrixWorld`, `matrix.elements`, `box.min`, `box.max`, `sphere.center`, `plane.normal`, `ray.origin` and `ray.direction` are copies. Change the object through `position`, `rotation`, `quaternion`, `scale`, or the value through its methods |
-| `mesh.matrixAutoUpdate = false` and writing matrices yourself | Works through the matrix's methods: `mesh.matrix.copy( m )`, `.compose( ... )`, `.makeRotationY( a ).setPosition( x, y, z )`. Writing into `matrix.elements` has no effect |
-| `mesh.material = [ a, b ]` | Works with geometry groups. Assign a new array to change it; editing the array in place is not seen |
-| `attribute.array` is the data | `attribute.array` is your copy; set `attribute.needsUpdate = true` after changing it, as in three.js. Zero-copy access is `attributeView()` in the low-level API |
+| `WebGLRenderer` and `WebGPURenderer` | Both exist; `WebGPURenderer` picks WebGPU or WebGL 2, `WebGLRenderer` always uses WebGL 2 (see below) |
+| Any number of lights | Up to 16 directional, point and spot lights, plus ambient and hemisphere lights |
+| Shadows from any light | Directional and spot lights, PCF filtering, up to 4 shadow-casting lights per frame |
+| Environment maps of any kind | Equirectangular textures (`mapping = EquirectangularReflectionMapping`) for `scene.environment`, `envMap` and `scene.background`; one environment map per frame |
+| Every texture has its own uv transform | A material's maps share one uv transform (the colour map's, else the first map's) |
+| `MeshPhysicalMaterial` | Drawn as `MeshStandardMaterial`; clearcoat, sheen, transmission and the other extensions log a warning |
+| Lines and points of any size | One pixel wide, as in three.js's WebGPU renderer |
+| `object.matrix.elements[ 12 ] = 5` | `matrix.elements`, `matrixWorld`, `box.min` and similar are copies: change values through `position`, `rotation`, `scale` or the value's methods |
+| `attribute.array` is what is drawn | Set `attribute.needsUpdate = true` after changing it, as three.js asks; integer data is stored as floats |
 | Numbers are 64-bit | Stored as 32-bit floats; results agree to about `1e-6` |
-| Everything is garbage collected | Also here: engine objects are released when their JavaScript object is collected. `geometry.dispose()`, `material.dispose()` and `object.dispose()` release them at once |
+| A missing class is `undefined` | Classes that do not exist yet throw "not available yet" when constructed |
+| Garbage collected | Also here; `dispose()` releases engine objects at once |
 
-Speed: `position`, `rotation`, `quaternion`, `scale` and `up` are kept in JavaScript and sent to the engine in one batch, so setting them is as cheap as in three.js. In the measured scene, updating 10,000 objects one property at a time took 3.1 ms against 3.6 ms for three.js at 1920×1080, and draw submission was about twice as fast as three.js WebGL (9.2 against 18.8 ms; raw logs in `bench/results/2026-10-14/`). For very large scenes the batched low-level calls are faster still (2.2 ms), but do not mix them with the object API on the same objects: the object API does not see transforms written behind its back.
+Unsupported material parameters are stored, have no effect and log one warning, so a first run shows what your scene depends on.
 
-TypeScript: the typings are in `wamr3d/compat` (`compat.d.ts`). They need `"lib": [ "esnext", "dom" ]` in `tsconfig.json`.
+### Choosing the backend
 
-A complete page is [`examples/webgpu/main.js`](examples/webgpu/main.js), and [`parity/bindings/compat-check.mjs`](parity/bindings/compat-check.mjs) is a script that runs unchanged on both libraries.
-
-### Browsers without WebGPU
-
-WAMR3D has no WebGL renderer yet. Without WebGPU, or without a usable GPU adapter, `renderer.init()` rejects with `WAMR3D: WebGPU is not available in this browser` or `WAMR3D: no WebGPU adapter found`. three.js r186's `WebGPURenderer` switches to WebGL 2 by itself in that case, so an application that must run everywhere picks the library before it builds the scene:
+The examples offer the same choice: `examples/ports/<name>/?backend=webgl`, the showcase's engine menu (WebGPU and WebGL 2 rows for both WAMR3D APIs) and the WebGL 2 pairs on the comparison page.
 
 ```js
-async function createRenderer( canvas ) {
-  try {
-    const WAMR3D = await import( 'wamr3d/compat' );
-    await WAMR3D.init();
-    const renderer = new WAMR3D.WebGPURenderer( { canvas, antialias: true } );
-    await renderer.init(); // rejects when the browser has no WebGPU
-    return { THREE: WAMR3D, renderer };
-  } catch ( error ) {
-    console.warn( `${ error.message }: drawing with three.js` );
-    const THREE = await import( 'three/webgpu' ); // switches to WebGL 2 by itself
-    const renderer = new THREE.WebGPURenderer( { canvas, antialias: true } );
-    await renderer.init();
-    return { THREE, renderer };
-  }
-}
+new THREE.WebGPURenderer();                       // 'auto': WebGPU, else WebGL 2
+new THREE.WebGPURenderer( { backend: 'webgpu' } ); // WebGPU only; init() rejects without it
+new THREE.WebGPURenderer( { backend: 'webgl' } );  // WebGL 2 only (same as forceWebGL: true)
+new THREE.WebGLRenderer();                        // WebGL 2, for code written for three.js's WebGLRenderer
 
-const { THREE, renderer } = await createRenderer( canvas );
-const scene = new THREE.Scene(); // build the scene after the choice
+await renderer.init();
+console.log( renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL 2' );
 ```
 
-Because the object API follows three.js names, the rest of the code is the same for both libraries, as long as it uses only classes that WAMR3D supports. `three` is then a dependency of your application; WAMR3D itself never loads it. Pass your own `canvas`: a failed WAMR3D start leaves it without a context, so three.js can still use it. Code written for the low-level API (`wamr3d`) has no such fallback.
+In `'auto'` mode the renderer tries WebGPU on a GPU, then WebGL 2, then the browser's software WebGPU adapter (slow, but it draws on machines without a usable graphics driver), and logs once which one it fell back to. Everything above the renderer, the scene graph, culling and draw preparation in WebAssembly, is the same on every backend. On WebGL 2, colour is blended in sRGB rather than linear space (as with three.js's WebGL renderer), render targets are not multisampled, and tone mapping, float render targets and environment maps need the `EXT_color_buffer_float` extension (available almost everywhere); without it they are skipped with a warning.
 
-## The low-level API
+## 3. Move hot loops to the batched API (optional)
 
-This and the following sections describe `wamr3d`, the handle-based API.
-
-| three.js | WAMR3D | Why |
-|---|---|---|
-| `new THREE.Object3D()` returns an object | `world.createObject()` returns a handle (`bigint`) | The engine owns every object in WebAssembly memory. A handle to a destroyed object is dead and can never reach another object. |
-| `object.position.set(x, y, z)` | `world.setPosition(object, x, y, z)` | State lives in the engine, so you call the `World` with the handle. |
-| `a.add(b).multiplyScalar(2)` | `a.add(b); a.multiplyScalar(2);` | Methods mutate in place and return nothing, so they do not chain. |
-| `new THREE.Euler(x, y, z)` defaults to `'XYZ'` | `world.setRotation(object, x, y, z, 'XYZ')` | There are no default arguments: the order is always written out. |
-| Garbage collected | `value.free()`, `world.destroy(object)`, `world.disposeGeometry(g)` | Nothing in the engine is freed by the JavaScript garbage collector. |
-| `dispose()` releases GPU copies, object stays usable | `disposeGeometry` / `disposeMaterial` free the resource; its handle is dead afterwards | |
-| Numbers are 64-bit | Values are stored as 32-bit floats | Results agree with three.js to about `1e-6` per operation. Keep animated angles small (wrap them) rather than letting them grow for minutes. |
-| Synchronous event listeners | `world.drainEvents()` once per frame | Events are queued in order and read when you choose. |
-
-Conventions are the same as three.js: right-handed, +Y up, cameras look down −Z, column-major matrices, radians.
-
-### Loading the module
-
-Install the package with `npm install wamr3d` (<https://www.npmjs.com/package/wamr3d>).
+The object API keeps transforms in JavaScript and sends them to the engine in one batch per frame, so ordinary code needs no changes. When thousands of objects change every frame, the handle-based API in `wamr3d` does the same work in fewer calls:
 
 ```js
-// before
-import * as THREE from 'three';
+import * as THREE from 'wamr3d/compat';
 
-// after
-import { init, World, Vector3, Quaternion, Matrix4, Timer } from 'wamr3d';
-await init(); // once, before anything else
-```
-
-`init()` fetches the `.wasm` file that sits next to the module (or reads it from disk under Node.js). Pass a URL, `Response`, `ArrayBuffer` or `WebAssembly.Module` to load it from somewhere else. In a browser the page must be served over HTTP.
-
-### The scene graph
-
-```js
-// three.js
-const scene = new THREE.Scene();
-const arm = new THREE.Object3D();
-const hand = new THREE.Object3D();
-arm.name = 'arm';
-scene.add(arm);
-arm.add(hand);
-
-arm.position.set(10, 0, 0);
-arm.rotation.set(0, 0, Math.PI / 2);
-hand.position.set(1, 0, 0);
-hand.lookAt(0, 5, 0);
-
-scene.updateMatrixWorld();
-const world = hand.matrixWorld.elements;
-```
-
-```js
-// WAMR3D
-const world = new World();
-const scene = world.createObject();
-const arm = world.createObject();
-const hand = world.createObject();
-world.setName(arm, 'arm');
-world.add(scene, arm);
-world.add(arm, hand);
-
-world.setPosition(arm, 10, 0, 0);
-world.setRotation(arm, 0, 0, Math.PI / 2, 'XYZ');
-world.setPosition(hand, 1, 0, 0);
-world.lookAt(hand, 0, 5, 0);
-
-world.updateMatrixWorld(scene, false);
-const matrix = world.matrixWorld(hand); // Float32Array(16)
-```
-
-A camera is an object with a camera attached:
-
-```js
-// three.js
-const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 2000);
-camera.position.set(0, 2, 8);
-camera.lookAt(0, 0, 0);
-```
-
-```js
-// WAMR3D
-const camera = world.createObject();
-world.setPerspectiveCamera(camera, 50, width / height, 0.1, 2000, false);
-world.setPosition(camera, 0, 2, 8);
-world.lookAt(camera, 0, 0, 0);
-world.updateMatrixWorld(camera, false);
-
-world.projectionMatrix(camera);    // Float32Array(16)
-world.matrixWorldInverse(camera);  // the view matrix
-```
-
-The last argument of `setPerspectiveCamera` picks the clip-space depth range: `false` for −1..1 (what the three.js WebGL renderer expects), `true` for 0..1 (WebGPU).
-
-Geometry:
-
-```js
-// three.js
-const geometry = new THREE.BoxGeometry(1, 1, 1);
-const custom = new THREE.BufferGeometry();
-custom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-custom.setIndex(indices);
-custom.computeVertexNormals();
-custom.computeBoundingSphere();
-```
-
-```js
-// WAMR3D
-const geometry = world.createBoxGeometry(1, 1, 1, 1, 1, 1);
-const custom = world.createGeometry();
-world.setAttribute(custom, 'position', positions, 3);   // Float32Array
-world.setIndex(custom, indices);                        // Uint32Array
-world.computeVertexNormals(custom);
-const sphere = world.computeBoundingSphere(custom);     // [cx, cy, cz, radius]
-const normals = world.getAttribute(custom, 'normal');   // a copy
-```
-
-## Batching the frame loop
-
-Every call from JavaScript into WebAssembly has a fixed cost, and a `bigint` handle argument adds to it. A call that does little work is slower than the same line in three.js. A call that does a lot of work is faster. So batch.
-
-```js
-// slow: three calls per object per frame
-for (let i = 0; i < count; i++) {
-  world.setPosition(handles[i], x[i], y[i], z[i]);
-  world.setQuaternion(handles[i], qx[i], qy[i], qz[i], qw[i]);
-  world.setScale(handles[i], s[i], s[i], s[i]);
-}
-
-// fast: one call for all objects
-// transforms: Float32Array, 10 numbers per object (position xyz, quaternion xyzw, scale xyz)
-world.setTransforms(handles, transforms);
+const world = THREE.getWorld();                     // the engine behind the object API
+const handles = BigUint64Array.from( meshes, ( m ) => m.handle );
+// 10 numbers per object: position xyz, quaternion xyzw, scale xyz
+world.setTransforms( handles, transforms );
 ```
 
 | Instead of, per object | Use, once |
 |---|---|
-| `createObject()` | `createObjects(count)` → `BigUint64Array` |
-| `add(parent, child)` | `addMany(parents, children)` |
-| `setPosition` + `setQuaternion` + `setScale` | `setTransforms(handles, values)` |
-| `setRotation` | `setRotations(handles, angles, order)` |
-| `matrixWorld(object)` | `matricesWorld(handles)` |
+| `new Object3D()` | `world.createObjects( count )` |
+| `parent.add( child )` | `world.addMany( parents, children )` |
+| `position.set`, `quaternion.set`, `scale.set` | `world.setTransforms( handles, values )` |
+| `object.matrixWorld` | `world.matricesWorld( handles )` |
+| `attribute.array` (a copy) | `attributeView( world, geometry, name )` from `wamr3d`, a view over engine memory; create it right before use, as memory growth invalidates it |
 
-To write vertex data without copying, use a view over engine memory:
+Do not mix the two APIs on the same objects: the object API does not see transforms written behind its back. The full low-level API is typed in `wamr3d_wasm.d.ts` in the package.
 
-```js
-import { attributeView } from 'wamr3d';
+## 4. Not available yet
 
-const positions = attributeView(world, geometry, 'position'); // Float32Array, no copy
-positions[1] += 0.5;
-world.markAttributeNeedsUpdate(geometry, 'position');
-```
+Keep three.js for these, or keep that part of the application outside WAMR3D:
 
-A view stops working when the module's memory grows, which any engine call that allocates can cause. Create it right before you use it; do not keep it across frames.
+- **Rendering:** cube textures; light, bump, displacement, specular and gradient maps; per-map uv transforms; more than one environment map per frame; area lights; point-light shadows; shadow types other than PCF; post-processing; depth textures and multiple render-target attachments; wireframes.
+- **Objects and materials:** `SkinnedMesh`, `ShaderMaterial`, morph targets, geometry shapes other than box, plane, sphere, cylinder, cone, circle, ring and torus.
+- **Everything else:** loaders other than `TextureLoader`, the animation system, audio, controls, and helpers other than `GridHelper` and `AxesHelper`.
 
-Measured results for these patterns are on the website's benchmarks page; the raw logs are in [`bench/results/`](bench/results/).
-
-## Low-level API mapping
-
-### Math
-
-`Vector2`, `Vector3`, `Vector4`, `Quaternion`, `Euler`, `Matrix3`, `Matrix4`, `Color`, `Box3`, `Sphere`, `Plane`, `Ray` and `Frustum` are classes, created with `new` and released with `.free()`. Method names match three.js; the differences are the ones in the table below plus:
-
-- Methods that take a `target` in three.js return a new value instead (`box.getCenter()`, `ray.at(t)`), and methods that can fail return `undefined` (`ray.intersectBox(box)`).
-- `new Euler(x, y, z, order)` always takes the order. `new Color(r, g, b)` takes linear components; use `Color.fromHex(0xff8800)` or `Color.fromStyle('orange')` for sRGB input.
-- `MathUtils.degToRad` and the other scalar helpers are available on `MathUtils` and as plain exports.
-
-| three.js | WAMR3D |
-|---|---|
-| `new Vector3(x, y, z)` | `new Vector3(x, y, z)` (all three arguments required) |
-| `v.x`, `v.set`, `v.copy`, `v.clone` | same |
-| `v.add`, `v.sub`, `v.multiplyScalar`, `v.dot`, `v.cross`, `v.length`, `v.lengthSq`, `v.normalize`, `v.distanceTo`, `v.lerp` | same, no chaining |
-| `v.applyMatrix4`, `v.applyQuaternion`, `v.transformDirection` | same |
-| `v.toArray()` | `v.toArray()` → `Float32Array` |
-| `new Quaternion()` | `new Quaternion(0, 0, 0, 1)` |
-| `q.setFromAxisAngle`, `q.setFromRotationMatrix`, `q.multiply`, `q.premultiply`, `q.slerp`, `q.normalize`, `q.invert`, `q.dot` | same |
-| `q.setFromEuler(euler)` | `q.setFromEuler(x, y, z, 'XYZ')` |
-| `new Matrix4()` | same (identity) |
-| `m.identity`, `m.copy`, `m.clone`, `m.multiply`, `m.premultiply`, `m.multiplyMatrices`, `m.invert`, `m.transpose`, `m.determinant`, `m.compose`, `m.lookAt` | same |
-| `m.makeTranslation`, `m.makeScale`, `m.makeRotationX/Y/Z`, `m.makeRotationFromQuaternion` | same |
-| `m.elements` | `m.toArray()` / `m.fromArray(array)` |
-| `m.decompose(p, q, s)` | `m.decompose()` → 10 numbers: position, quaternion, scale |
-| `m.makePerspective(l, r, t, b, n, f, coordinateSystem, reversedDepth)` | `m.makePerspective(l, r, t, b, n, f, webgpu, reversedDepth)` with booleans |
-| `new Timer()`, `timer.update(t)`, `getDelta`, `getElapsed`, `setTimescale` | `new Timer(performance.now())`, then the same; pass every timestamp yourself |
-
-### Scene graph (`World`)
-
-| three.js | WAMR3D |
-|---|---|
-| `new Object3D()`, `new Scene()`, `new Group()` | `world.createObject()` |
-| `parent.add(child)`, `parent.remove(child)`, `child.removeFromParent()`, `parent.clear()` | `world.add(parent, child)`, `world.remove(parent, child)`, `world.removeFromParent(child)`, `world.clear(parent)` |
-| `parent.attach(child)` | `world.attach(parent, child)` |
-| `object.parent`, `object.children` | `world.parent(object)`, `world.children(object)` |
-| `object.name`, `scene.getObjectByName(n)` | `world.name(object)` / `world.setName(object, n)`, `world.getObjectByName(root, n)` |
-| `object.visible` | `world.isVisible(object)` / `world.setVisible(object, bool)` |
-| `object.position.set`, `object.scale.set` | `world.setPosition`, `world.setScale` |
-| `object.rotation.set(x, y, z, order)` | `world.setRotation(object, x, y, z, order)` |
-| `object.quaternion.set(x, y, z, w)` | `world.setQuaternion(object, x, y, z, w)` |
-| read `object.position` / `rotation` / `quaternion` / `scale` | `world.position(object)` etc. → `Float32Array` |
-| `object.rotateOnAxis`, `object.translateOnAxis` | `world.rotateOnAxis(object, axis, angle)`, `world.translateOnAxis(object, axis, distance)` |
-| `object.lookAt(x, y, z)` | `world.lookAt(object, x, y, z)` |
-| `object.updateMatrix()`, `object.updateMatrixWorld(force)` | `world.updateMatrix(object)`, `world.updateMatrixWorld(object, force)` |
-| `object.matrix.elements`, `object.matrixWorld.elements` | `world.matrix(object)`, `world.matrixWorld(object)` |
-| `object.getWorldPosition(target)` and the other `getWorld*` | `world.getWorldPosition(object)` etc. → `Float32Array` |
-| `object.localToWorld(v)`, `object.worldToLocal(v)` | `world.localToWorld(object, x, y, z)`, `world.worldToLocal(object, x, y, z)` |
-| drop the last reference | `world.destroy(object)` (children survive as roots) or `world.destroyRecursive(object)` |
-| `addEventListener('added' / 'removed' / 'childadded' / 'childremoved' / 'dispose')` | `world.drainEvents()` → triples `[kind, a, b]` |
-
-### Cameras
-
-| three.js | WAMR3D |
-|---|---|
-| `new PerspectiveCamera(fov, aspect, near, far)` | `world.setPerspectiveCamera(object, fov, aspect, near, far, webgpu)` |
-| `new OrthographicCamera(l, r, t, b, near, far)` | `world.setOrthographicCamera(object, l, r, t, b, near, far, webgpu)` |
-| `camera.aspect = a; camera.updateProjectionMatrix()` | `world.setCameraAspect(object, a)` |
-| `camera.projectionMatrix`, `projectionMatrixInverse`, `matrixWorldInverse` | `world.projectionMatrix(object)`, `world.projectionMatrixInverse(object)`, `world.matrixWorldInverse(object)` |
-
-`world.setCameraZoom`, `world.setCameraViewOffset` and `world.clearCameraViewOffset` cover zoom and view offsets. Film offset and focal length are implemented in the engine but not yet exposed to JavaScript.
-
-### Geometry
-
-| three.js | WAMR3D |
-|---|---|
-| `new BufferGeometry()` | `world.createGeometry()` |
-| `new BoxGeometry(w, h, d, ws, hs, ds)` | `world.createBoxGeometry(w, h, d, ws, hs, ds)` |
-| `new PlaneGeometry(w, h, ws, hs)` | `world.createPlaneGeometry(w, h, ws, hs)` |
-| `new SphereGeometry(r, ws, hs, phiStart, phiLength, thetaStart, thetaLength)` | `world.createSphereGeometry(...)`, all seven arguments |
-| `geometry.setAttribute(name, new BufferAttribute(array, size))` | `world.setAttribute(geometry, name, array, size)` |
-| `geometry.setIndex(indices)` | `world.setIndex(geometry, indices)` |
-| `geometry.getAttribute(name).array`, `geometry.index.array` | `world.getAttribute(geometry, name)`, `world.getIndex(geometry)` (copies), or `attributeView(...)` (no copy) |
-| `attribute.needsUpdate = true` | `world.markAttributeNeedsUpdate(geometry, name)` |
-| `geometry.computeVertexNormals()`, `computeTangents()` | `world.computeVertexNormals(geometry)`, `world.computeTangents(geometry)` |
-| `geometry.computeBoundingBox()`, `computeBoundingSphere()` | same names on `world`; they return the result |
-| `geometry.applyMatrix4(m)` | `world.applyMatrix4ToGeometry(geometry, m)` |
-| `geometry.dispose()` | `world.disposeGeometry(geometry)` |
-| `new Mesh(geometry, material)` | `world.setRenderable(object, geometry, world.createMaterial(name))`; this records the link, nothing is drawn yet |
-| `material.side = DoubleSide` | `world.setMaterialSide(material, 2)` (0 front, 1 back, 2 both) |
-| `object.clone(recursive)` | `world.cloneObject(object, recursive)` |
-| `object.layers.mask` | `world.layers(object)` / `world.setLayers(object, mask)` |
-
-### Picking
-
-| three.js | WAMR3D |
-|---|---|
-| `raycaster.setFromCamera(ndc, camera); raycaster.intersectObject(root, true)` | `world.raycastFromCamera(camera, ndc.x, ndc.y, root, true)` |
-| `new Raycaster(origin, direction, near, far).intersectObject(root, true)` | `world.raycast(root, true, origin, direction, near, far)` |
-| `hits[i].distance`, `.point`, `.object`, `.faceIndex`, `.uv`, `.normal` | `hits.distance(i)`, `hits.point(i)`, `hits.object(i)`, `hits.faceIndex(i)`, `hits.uv(i)`, `hits.normal(i)`; `hits.length` is the count |
-
-Update world matrices before casting. Only meshes are picked; free the result with `hits.free()`.
-
-## Not available yet
-
-Keep using three.js for these:
-
-- **Rendering:** environment maps through the object API (`scene.environment`, `envMap`; the low-level `setEnvironment` works), every map other than `map`, more than 16 lights, area lights, point-light shadows, shadow types other than PCF, scene background textures, post-processing, render-target depth textures and multiple attachments, lines wider than one pixel, a WebGL fallback.
-- **Object API:** every class not listed under [The object API](#the-object-api), including controls and every helper other than `GridHelper` and `AxesHelper`.
-- **Objects:** `LineLoop`, `SkinnedMesh`, `LOD`; picking single instances of an `InstancedMesh`; picking sprites.
-- **Math from JavaScript:** `Triangle`, `Line3`, `Spherical`, `Cylindrical`. They exist in the Rust crates but have no JavaScript binding.
-- **Geometry:** shapes other than box, plane, sphere, cylinder, cone, circle, ring and torus; integer attributes from JavaScript; morph targets; interleaved buffers.
-- **Everything else:** loaders, the animation system (`AnimationMixer`, clips, tracks), audio, controls, helpers. (`MathUtils.randInt`, `randFloat`, `randFloatSpread` and `generateUUID` exist; objects carry no `uuid`.)
+[STATUS.md](STATUS.md) lists the current state in detail.
 
 ## Checklist
 
-1. `npm install wamr3d`, replace the `three` import with `wamr3d/compat`, and `await init()` once.
-2. Replace `WebGLRenderer` with `WebGPURenderer` and `await renderer.init()` before the first frame. Decide what browsers without WebGPU get ([Browsers without WebGPU](#browsers-without-webgpu)).
-3. Run the app. Classes that do not exist yet throw "not available yet" when constructed; compare the rest with [Not available yet](#not-available-yet).
-4. Compare a few frames against the three.js version of your page.
-5. If thousands of objects change every frame, move that loop to the batched low-level calls ([Batching the frame loop](#batching-the-frame-loop)) and measure. Do not mix the two APIs on the same objects.
+1. Install `wamr3d`, import `wamr3d/compat` instead of `three`, and `await init()` once.
+2. Use `WebGPURenderer` (or keep `WebGLRenderer`) and `await renderer.init()`; pick a `backend` if the default WebGPU-then-WebGL 2 choice does not suit you.
+3. Run the application: missing classes throw, unsupported parameters warn once.
+4. Compare a few frames with the three.js version of your page.
+5. If thousands of objects change every frame, move that loop to the batched calls and measure.

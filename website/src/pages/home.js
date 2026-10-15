@@ -1,6 +1,23 @@
 import { button, codeBlock, eyebrow, icon, installChip, miniCube, repoFile, sectionHead, shell } from '../components/ui.js';
 import { showcaseChart } from '../components/charts.js';
-import { lowLevel, meta, showcase } from '../data/benchmarks.js';
+import { engines, lowLevel, meta, showcase, startup } from '../data/benchmarks.js';
+
+// The headline figure: every showcase configuration in the published logs (all resolutions,
+// separate and instanced meshes, every object count), WAMR3D batched against whichever
+// three.js renderer was faster in that configuration. Frame rates and CPU times are summed
+// over all configurations and then divided, so no single scene decides the result.
+function overall() {
+  let wamrFps = 0, threeFps = 0, wamrCpu = 0, threeCpu = 0, runs = 0;
+  for (const modes of Object.values(showcase)) for (const counts of Object.values(modes)) for (const row of Object.values(counts)) {
+    const three = [row.webgpu, row.webgl].filter(Boolean).sort((a, b) => b.fps - a.fps)[0];
+    if (!row.batched || !three) continue;
+    wamrFps += row.batched.fps; threeFps += three.fps;
+    wamrCpu += row.batched.update + row.batched.submit; threeCpu += three.update + three.submit;
+    runs ++;
+  }
+  return runs ? { fps: wamrFps / threeFps, cpu: threeCpu / wamrCpu, runs } : null;
+}
+const OVERALL = overall();
 
 // The home page quotes one resolution; the benchmarks page has all of them.
 const HEADLINE = '1920x1080';
@@ -45,22 +62,29 @@ function hero() {
       <div class="max-w-2xl">
         <div data-scene-status class="glass mb-8 inline-flex items-center gap-2.5 rounded-full px-3.5 py-1.5 font-mono text-[11px] text-slate-300" role="status" aria-live="polite">
           <span class="size-2 animate-pulse-dot rounded-full bg-brand-cyan" aria-hidden="true"></span>
-          <span data-scene-text>Starting the WAMR3D WebGPU renderer…</span>
+          <span data-scene-text>Starting the WAMR3D renderer…</span>
         </div>
         <h1 id="hero-title" class="font-display text-[2.5rem] font-semibold leading-[1.03] tracking-tight text-white sm:text-6xl lg:text-[4.1rem]">
-          The 3D engine you already know.
-          <span class="text-gradient animate-shine block">Compiled to WebAssembly.</span>
+          Unlock your imagination without limits.
+          <span class="text-gradient animate-shine block">Native WebAssembly 3D.</span>
         </h1>
         <p class="mt-7 max-w-xl text-lg leading-relaxed text-slate-300 sm:text-xl">
-          WAMR3D is a fast 3D engine for the web: a Rust core compiled to WebAssembly, its own WebGPU renderer, and classes that read like three.js. Change the import, call <code class="font-mono text-brand-cyan">init()</code>, switch to WebGPU, and keep the code you know.
+          WAMR3D is a high-performance 3D engine that runs as native WebAssembly in the browser: a Rust core, its own WebGPU and WebGL 2 renderers, and the three.js API you already know. It turns the browser into a serious 3D machine: compiled code on the CPU, every frame ready for the GPU. Change the import, call <code class="font-mono text-brand-cyan">init()</code>, and keep your code.
         </p>
+        ${OVERALL ? `<p data-performance-claim class="mt-5 font-display text-xl font-semibold text-brand-cyan sm:text-2xl">${OVERALL.fps.toFixed(1)}× faster than three.js</p>
+        <p class="mt-2 max-w-xl text-sm leading-relaxed text-slate-400">Frame rate summed over all ${OVERALL.runs} measured scenes, against the faster three.js renderer in each, with ${OVERALL.cpu.toFixed(1)}× less CPU time per frame. <a class="text-brand-cyan hover:text-white" href="#/benchmarks">How it was measured</a>.</p>` : ''}
+        <ul class="mt-7 grid max-w-xl gap-3 text-sm leading-relaxed text-slate-300 sm:grid-cols-3">
+          <li><span class="block font-semibold text-white">Performance</span>Scene updates, culling and draw ordering in compiled code, batched across the JavaScript boundary.</li>
+          <li><span class="block font-semibold text-white">Native execution</span>Rust compiled to WebAssembly with SIMD, drawing through WebGPU or WebGL 2. No runtime dependencies.</li>
+          <li><span class="block font-semibold text-white">Familiar API</span>three.js classes, properties and chaining. Most code moves over with a new import.</li>
+        </ul>
         <div class="mt-9 flex flex-wrap items-center gap-3">
           ${button('#install', 'Get started')}
           ${button('#/examples', 'See live demos', 'secondary')}
         </div>
         ${installChip('mt-6')}
         <ul class="mt-10 flex flex-wrap gap-x-6 gap-y-2 font-mono text-[11px] uppercase tracking-[0.16em] text-slate-400">
-          <li>MIT license</li><li>No runtime dependencies</li><li>488 KiB Wasm</li><li>Checked against three.js</li>
+          <li>MIT license</li><li>No runtime dependencies</li><li>${startup?.wasmKiB ?? 567} KiB Wasm</li><li>Checked against three.js</li>
         </ul>
       </div>
     </div>
@@ -79,7 +103,7 @@ function hero() {
 function migrationPreview() {
   const steps = [
     ['Change the import', 'Point <code class="font-mono text-brand-cyan">three</code> at <code class="font-mono text-brand-cyan">wamr3d/compat</code> and call <code class="font-mono text-brand-cyan">init()</code> once.'],
-    ['Swap the renderer', 'Use <code class="font-mono text-brand-cyan">WebGPURenderer</code> and <code class="font-mono text-brand-cyan">await renderer.init()</code>. There is no WebGL renderer.'],
+    ['Swap the renderer', 'Use <code class="font-mono text-brand-cyan">WebGPURenderer</code> and <code class="font-mono text-brand-cyan">await renderer.init()</code>. It draws with WebGPU, or WebGL 2 where WebGPU is missing; <code class="font-mono text-brand-cyan">WebGLRenderer</code> works too.'],
     ['Keep your scene code', '<code class="font-mono text-brand-cyan">scene.add</code>, <code class="font-mono text-brand-cyan">position.set</code>, <code class="font-mono text-brand-cyan">rotation.y +=</code>, <code class="font-mono text-brand-cyan">lookAt</code> and raycasting work as written for supported classes.']
   ];
   return `<section id="migration-preview" class="relative px-6 py-20">
@@ -109,12 +133,32 @@ function features() {
       ${sectionHead({ label: 'What it is', title: 'A native core.<br><span class="text-gradient">A familiar surface.</span>', intro: 'Scene graph, transforms, cameras, geometry processing, culling and draw ordering run inside a WebAssembly module. You drive it from JavaScript through three.js-style classes or batched calls.' })}
       <div class="grid gap-5 md:grid-cols-6">
         ${card('md:col-span-4', 'Rust → WebAssembly', 'The heavy lifting runs native.', 'Set transforms as cheaply as in three.js: the object API batches every change into the Rust engine once per frame. When you need more, the low-level API gives you handles, explicit disposal and zero-copy typed-array views of geometry and world matrices.', chips(['scene graph', 'world matrices', 'frustum culling', 'draw ordering', 'raycasting', 'batched updates']))}
-        ${card('md:col-span-2', 'WebGPU', 'Its own renderer.', 'Not a wrapper around three.js. Meshes, lines, points, sprites and instanced meshes; basic, Lambert and standard materials; colour textures, fog, up to 16 lights, PCF shadows, tone mapping, render targets and 4× MSAA.')}
+        ${card('md:col-span-2', 'WebGPU + WebGL 2', 'Its own renderers.', 'Not a wrapper around three.js. WebGPU where the browser has it, a native WebGL 2 renderer everywhere else, chosen automatically. Meshes, lines, points, sprites and instanced meshes; basic, Lambert and standard materials; colour textures, fog, up to 16 lights, PCF shadows, tone mapping, render targets and 4× MSAA.')}
         ${card('md:col-span-2', 'Object API', 'Code that reads like three.js.', 'Scene, Group, Mesh, InstancedMesh, Points, Sprite, render targets, cameras, eight shapes, six materials, textures, five light types, shadows, tone mapping, Raycaster, Clock and the math types.')}
         ${card('md:col-span-2', 'Batched API', 'One call, thousands of objects.', 'Handles and batched calls such as <code class="font-mono text-slate-200">setRotations</code>; read world matrices and geometry through typed-array views over engine memory, with no copy.')}
         ${card('md:col-span-2', 'Parity', 'Checked against.', 'Over 7,600 reference cases generated from the three.js source are replayed against the Rust code. All 23 renderer cases are compared with stored three.js images.')}
-        ${card('md:col-span-6', 'Roadmap', 'Coming next.', 'Everything above ships today. These are still on the way; keep three.js for them for now:', `<ul class="mt-5 grid gap-x-8 gap-y-2 text-sm text-slate-300 sm:grid-cols-2 lg:grid-cols-3">${['Environment maps in the object API', 'Normal, roughness and other texture maps', 'Point-light shadows and area lights', 'Phong, Physical, Toon and Shader materials', 'Post-processing and scene background textures', 'Shadow modes other than PCF', 'Most loaders, animation, audio and controls', 'Lines and points wider than one pixel', 'A WebGL fallback'].map((item) => `<li class="flex items-center gap-2"><span class="text-slate-400">${icon('cross')}</span>${item}</li>`).join('')}</ul>`)}
+        ${card('md:col-span-6', 'Roadmap', 'Coming next.', 'Everything above ships today. These are still on the way; keep three.js for them for now:', `<ul class="mt-5 grid gap-x-8 gap-y-2 text-sm text-slate-300 sm:grid-cols-2 lg:grid-cols-3">${['Light, bump and displacement maps', 'Point-light shadows and area lights', 'Physical extensions and Shader materials', 'Post-processing and cube textures', 'Shadow modes other than PCF', 'Most loaders, animation, audio and controls', 'Lines and points wider than one pixel'].map((item) => `<li class="flex items-center gap-2"><span class="text-slate-400">${icon('cross')}</span>${item}</li>`).join('')}</ul>`)}
       </div>
+    </div>
+  </section>`;
+}
+
+function pipeline() {
+  const step = (tag, title, body, items) => `<article class="glass gradient-border flex flex-col rounded-3xl p-7" data-reveal>
+    <p class="font-mono text-[11px] uppercase tracking-wider text-brand-cyan">${tag}</p>
+    <h3 class="mt-3 font-display text-2xl font-semibold text-white">${title}</h3>
+    <p class="mt-3 text-sm leading-relaxed text-slate-400">${body}</p>
+    <ul class="mt-5 space-y-2 text-sm text-slate-300">${items.map((item) => `<li class="flex gap-2"><span class="text-brand-cyan" aria-hidden="true">▸</span>${item}</li>`).join('')}</ul>
+  </article>`;
+  return `<section id="cpu-gpu" class="relative scroll-mt-24 px-6 py-20">
+    <div class="mx-auto max-w-6xl">
+      ${sectionHead({ label: 'CPU + GPU', title: 'Turn your browser into<br><span class="text-gradient">a powerful 3D machine.</span>', intro: 'Browser 3D usually spends its frame in JavaScript before the GPU sees a single triangle. WAMR3D puts both processors to work: compiled Rust does the scene work on the CPU at native speed, and the GPU receives a frame that is ready to draw, through WebGPU or WebGL 2. No plug-in, no install, just a tab.' })}
+      <div class="grid gap-5 md:grid-cols-3">
+        ${step('01 · CPU, in WebAssembly', 'Native-speed scene work.', 'Rust compiled to WebAssembly with SIMD runs the whole scene: no garbage collector pauses, no object churn, data laid out in flat typed memory.', ['Transforms and world matrices, only for what changed', 'Frustum culling and draw ordering', 'Lights, shadows and materials packed into one uniform buffer', 'Thousands of objects moved by one batched call'])}
+        ${step('02 · The boundary', 'One crossing per frame.', 'The object API records your changes and sends them to the engine in a batch. Geometry and world matrices are typed-array views over engine memory: read without copying.', ['Zero-copy views of geometry and matrices', 'Vertex and index buffers uploaded only when they change', 'No per-property calls into WebAssembly'])}
+        ${step('03 · GPU, WebGPU or WebGL 2', 'A frame that is ready to draw.', 'A thin host turns the prepared frame into GPU commands: pipelines and programs are cached, instanced meshes draw in one call, and the same frame runs on WebGPU or WebGL 2.', ['Cached pipelines, no per-frame rebuilds', 'Instancing, 4× MSAA, PCF shadows, physically based lighting', 'Automatic WebGL 2 fallback on machines without WebGPU'])}
+      </div>
+      <p class="mt-8 max-w-3xl text-sm leading-relaxed text-slate-400" data-reveal>The result: the CPU time three.js spends updating and submitting a scene shrinks, and more of each frame is left to the GPU. How much depends on the scene; the <a class="text-brand-cyan hover:text-white" href="#/benchmarks">benchmarks</a> show measured medians, including where WAMR3D is slower.</p>
     </div>
   </section>`;
 }
@@ -130,11 +174,12 @@ function performance() {
   </div>`;
   return `<section id="performance" class="relative px-6 py-20">
     <div class="mx-auto max-w-6xl">
-      ${sectionHead({ label: 'Measured, not promised', title: 'Batch the work.<br><span class="text-gradient">See the difference.</span>', intro: 'The same scene, four renderers, one engine at a time. Medians from a single run on one machine; higher is better in every figure here. Open the showcase to measure yours.' })}
-      <div class="mb-8 grid gap-5 md:grid-cols-3">
+      ${sectionHead({ label: 'Measured, not promised', title: 'Batch the work.<br><span class="text-gradient">See the difference.</span>', intro: `The same scene, ${engines.length} renderers, one engine at a time. Medians from a single run on one machine; higher is better in every figure here. Open the showcase to measure yours.` })}
+      <div class="mb-8 grid gap-5 ${sep['batched-webgl'] ? 'md:grid-cols-2 lg:grid-cols-4' : 'md:grid-cols-3'}">
         ${stat(sep.batched.fps.toFixed(0), 'fps', `10,000 separate meshes at ${res}`, `WAMR3D batched. three.js ran at ${sep.webgl.fps.toFixed(1)} fps with WebGL and ${sep.webgpu.fps.toFixed(1)} fps with WebGPU.`)}
         ${stat(inst.batched.fps.toFixed(0), 'fps', `50,000 instanced bodies at ${res}`, `WAMR3D batched. three.js ran at ${inst.webgl.fps.toFixed(1)} fps with WebGL and ${inst.webgpu.fps.toFixed(1)} fps with WebGPU; its scene update took ${inst.webgl.update.toFixed(0)} to ${inst.webgpu.update.toFixed(0)} ms against ${inst.batched.update.toFixed(1)} ms.`)}
         ${stat((sep.webgl.submit / sep.batched.submit).toFixed(1), '× faster', 'Draw submission than three.js WebGL', `10,000 separate meshes at ${res}: ${sep.batched.submit.toFixed(1)} ms of CPU time per frame against ${sep.webgl.submit.toFixed(1)} ms. Computed from the measured medians.`)}
+        ${sep['batched-webgl'] ? stat(sep['batched-webgl'].fps.toFixed(0), 'fps', `The same 10,000 meshes on WebGL 2`, `WAMR3D batched on its WebGL 2 renderer, for machines without WebGPU: ${(sep['batched-webgl'].fps / sep.webgl.fps).toFixed(1)}× the frame rate of three.js WebGL (${sep.webgl.fps.toFixed(1)} fps) on the same graphics API.`) : ''}
       </div>
       <div data-reveal>${showcaseChart('objects', 10000, HEADLINE)}</div>
       <div class="mt-8 grid grid-cols-1 gap-5 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
@@ -154,7 +199,7 @@ function liveDemo() {
   ];
   return `<section id="demo" class="relative px-6 py-20">
     <div class="mx-auto max-w-6xl">
-      ${sectionHead({ label: 'Live demos', title: 'Running in your browser.<br><span class="text-gradient">Right now.</span>', intro: 'Every demo below is drawn by the WAMR3D WebGPU renderer, except the three.js engines you choose to compare against.' })}
+      ${sectionHead({ label: 'Live demos', title: 'Running in your browser.<br><span class="text-gradient">Right now.</span>', intro: 'Every demo below is drawn by WAMR3D, with WebGPU or WebGL 2 depending on your browser, except the three.js engines you choose to compare against.' })}
       <div class="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <div class="gradient-border relative aspect-[16/10] overflow-hidden rounded-3xl bg-ink-900" data-reveal data-demo>
           <div class="grid-backdrop absolute inset-0 flex flex-col items-center justify-center gap-5 p-8 text-center" data-demo-poster>
@@ -209,5 +254,5 @@ function closing() {
 }
 
 export function home() {
-  return shell(`${hero()}<div class="relative bg-gradient-to-b from-transparent via-ink-950/80 to-ink-950">${migrationPreview()}${features()}${performance()}${liveDemo()}${install()}${closing()}</div>`, 'home');
+  return shell(`${hero()}<div class="relative bg-gradient-to-b from-transparent via-ink-950/80 to-ink-950">${migrationPreview()}${features()}${pipeline()}${performance()}${liveDemo()}${install()}${closing()}</div>`, 'home');
 }

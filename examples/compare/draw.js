@@ -1,6 +1,6 @@
 // Drawing shared by both sides of the comparison: the same WebGL renderer, lights,
 // materials and meshes, so that any difference in frame time comes from how the
-// transforms are produced, not from what is drawn. three.js r186 does the drawing in
+// transforms are produced, not from what is drawn. three.js does the drawing in
 // both cases; for WAMR3D that is the temporary rendering adapter.
 
 import { loadThreeWebGL } from '../three-reference.js';

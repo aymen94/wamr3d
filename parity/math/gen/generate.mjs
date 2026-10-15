@@ -1,6 +1,6 @@
 // Parity fixture generator for Phase 1 (engine/math).
 //
-// Imports the real three.js r186 math modules straight from three@0.186.1 src/math
+// Imports the real three.js math modules straight from the pinned `three` package's src/math
 // (never build/) and writes deterministic JSON fixtures to parity/math/<Type>.json.
 // Expected values are always computed by three.js; nothing here is hand-written.
 //

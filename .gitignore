@@ -16,7 +16,7 @@ pnpm-debug.log
 /dist/
 /website/dist/
 /build/
-/three.js-r186/
+/three.js-r*/
 .parcel-cache/
 
 # Environment & OS

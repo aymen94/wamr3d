@@ -4,6 +4,7 @@
 
 import { init, World, Renderer, Color, memory } from '../../dist/wamr3d/index.js';
 import { createBackend } from '../../dist/wamr3d/webgpu.js';
+import { createWebGLBackend } from '../../dist/wamr3d/webgl.js';
 import { animate, cameraPosition, BACKGROUND, SUN_COLOR, PALETTE, CAMERA, SUN_LIGHT, FILL_LIGHT, SKY, GROUND, SHAPE_ARGUMENTS } from './scene.js';
 
 const TAU = Math.PI * 2;
@@ -16,10 +17,11 @@ function linear( hex ) {
 
 }
 
-export async function createEngine( canvas, scene, config ) {
+// `webgl` draws the same prepared frames with the WebGL 2 host instead of WebGPU.
+export async function createEngine( canvas, scene, config, webgl = false ) {
 
 	await init();
-	const backend = await createBackend( canvas, { antialias: true } );
+	const backend = webgl ? await createWebGLBackend( canvas, { antialias: true } ) : await createBackend( canvas, { antialias: true } );
 	const world = new World(), frame = new Renderer();
 	const palette = PALETTE.map( linear );
 	const { nodes, bodies, firstBody, parent, position, scale, bodyBelt, bodyShape, groups } = scene;
@@ -125,7 +127,7 @@ export async function createEngine( canvas, scene, config ) {
 
 	return {
 
-		name: 'WAMR3D · batched API',
+		name: webgl ? 'WAMR3D · batched API · WebGL' : 'WAMR3D · batched API',
 		detail: 'scene graph in WebAssembly, one call per frame for all rotations, WAMR3D WebGPU renderer',
 
 		setOptions( options ) {

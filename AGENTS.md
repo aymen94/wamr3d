@@ -1,6 +1,6 @@
 # AGENTS.md: WAMR3D
 
-**Mission:** Port the core of Three.js (r186) to a native engine in **Rust** or **C++**, built to **WebAssembly**, rendering through **WebGPU**. The public API should feel familiar to Three.js users. The internals are typed, explicitly managed, and designed for Wasm.
+**Mission:** Port the core of Three.js to a native engine in **Rust** or **C++**, built to **WebAssembly**, rendering through **WebGPU**. The public API should feel familiar to Three.js users. The internals are typed, explicitly managed, and designed for Wasm.
 
 ---
 
@@ -9,7 +9,7 @@
 ```
 WAMRNative/
 ├── node_modules/three/     # REFERENCE, optional, not in the repository: `npm install` fetches the
-│   └── src/                # pinned three@0.186.1. Read-only. `src/` is the only part read for porting
+│   └── src/                # the pinned `three` package. Read-only. `src/` is the only part read for porting
 ├── engine/                 # OUR code (Rust crate, or C++ with CMake)
 │   ├── math/               # Phase 1
 │   ├── core/               # Phase 2
@@ -28,9 +28,9 @@ Renaming any of our folders is a decision, so record it in `DECISIONS.md`.
 
 ## 1. Repository Import Rules (critical)
 
-1. **The reference is three.js r186, exactly `three@0.186.1`.** It is not kept in the repository. `npm install` at the root puts it in `node_modules/three/`; below, `three/src/` means `node_modules/three/src/`. **Read only `three/src/`.** Never feed the AI `build/three.js` or `build/three.module.js`. They are compiled output and lack the structure we need.
+1. **The reference is three.js at the exact version pinned in the root `package.json`.** It is not kept in the repository. `npm install` at the root puts it in `node_modules/three/`; below, `three/src/` means `node_modules/three/src/`. **Read only `three/src/`.** Never feed the AI `build/three.js` or `build/three.module.js`. They are compiled output and lack the structure we need.
    - Nothing in `engine/`, `dist/wamr3d/` or the primary examples may import three.js, from `node_modules` or from a CDN. The engine builds and its tests run without the reference: parity tests read committed fixtures.
-   - The comparison pages load the pinned r186 builds from a CDN (`examples/three-reference.js`); that is the only place a URL to three.js belongs.
+   - The comparison pages load the pinned builds from a CDN (`examples/three-reference.js`); that is the only place a URL to three.js belongs.
 2. **Ignore everything else in the reference tree.** Do not read, summarize, or port from:
    - `build/`, `docs/`, `editor/`, `examples/`, `test/`, `devtools/`, `manual/`, `tsl/`, `utils/`, `files/`, `.github/`
    - Asset folders anywhere (`models/`, `textures/`, `fonts/`, `sounds/`, `luts/`, `ies/`, `screenshots/`, and so on)
@@ -42,7 +42,7 @@ Renaming any of our folders is a decision, so record it in `DECISIONS.md`.
    - `src/renderers/shaders/ShaderLib/` and `ShaderChunk/` (GLSL for WebGL; reference only, see section 6)
 
    These are candidates for later phases. Add them to `STATUS.md` when we get there.
-5. **Verify file names first.** The first thing each agent does is `ls` its source folder and write the actual file list into `STATUS.md`. File names below come from upstream structure and must be checked against r186.
+5. **Verify file names first.** The first thing each agent does is `ls` its source folder and write the actual file list into `STATUS.md`. File names below come from upstream structure and must be checked against the pinned reference.
 
 ---
 
@@ -65,7 +65,7 @@ Record each in `DECISIONS.md`. Do not start coding until these are filled in.
 | Decision | Recommendation | Why |
 |---|---|---|
 | Language | Rust | `wasm-bindgen` and `wgpu` are mature; memory safety helps the leak goal |
-| Three.js version | `r186`, pinned | Matches the folder we have |
+| Three.js version | Pinned exactly in `package.json` | Fixtures and comparisons stay reproducible |
 | Matrix layout | Column-major `[f32; 16]` | Same as `Matrix4.elements`, so buffers match |
 | Handedness | Right-handed, +Y up, camera looks down −Z | Three.js default |
 | Euler default order | `XYZ` | Three.js default |
@@ -100,7 +100,7 @@ Skip `math/interpolants/` in v1.
 **Source (`three/src/core/`):**
 `Object3D`, `BufferGeometry`, `BufferAttribute`, `InterleavedBuffer`, `InterleavedBufferAttribute`, `InstancedBufferAttribute`, `InstancedBufferGeometry`, `EventDispatcher`, `Layers`, `Uniform`, `Raycaster`, `Clock`, `Timer`, `RenderTarget`
 
-Confirm this list with `ls`. Drop anything that doesn't exist in r186.
+Confirm this list with `ls`. Drop anything that doesn't exist in the pinned reference.
 
 **Responsibilities:**
 - Analyze the class hierarchy in `src/core/` and write it into `DECISIONS.md` before writing code.
@@ -198,18 +198,18 @@ These are the most likely porting bugs. Each one needs a test.
 
 | ID | Risk | Mitigation |
 |---|---|---|
-| R1 | r186's WebGPU backend is built on the TSL node system (`src/nodes/`, `src/materials/nodes/`). Porting it wholesale would mean porting most of the renderer. | v1 does not port `src/nodes/`. Materials are written as hand-written WGSL that follows the behavior of the node versions. Log every material's behavior source in `DECISIONS.md`. Confirm this in r186 before Phase 4. |
+| R1 | The reference WebGPU backend is built on the TSL node system (`src/nodes/`, `src/materials/nodes/`). Porting it wholesale would mean porting most of the renderer. | v1 does not port `src/nodes/`. Materials are written as hand-written WGSL that follows the behavior of the node versions. Log every material's behavior source in `DECISIONS.md`. Confirm this in the pinned reference before Phase 4. |
 | R2 | `ShaderLib` and `ShaderChunk` are GLSL for WebGL. They cannot be reused as WGSL. | Use them to understand intent (lighting math, UV transforms). Write WGSL from scratch. |
 | R3 | Depth range and Y conventions differ between GL and WebGPU. | Section 5 tests, required before Phase 4 exit. |
 | R4 | Wasm memory growth invalidates typed-array views. | `refreshViews()` in Phase 5. Tests that grow memory on purpose. |
-| R5 | Parity fixtures drift if the reference changes. | Pinned to `three@0.186.1` in `package.json` (exact version) and in the CDN URLs. Never regenerate fixtures from a different version without updating `DECISIONS.md`. |
+| R5 | Parity fixtures drift if the reference changes. | Pinned to one exact `three` version in `package.json` and in the CDN URLs. Never regenerate fixtures from a different version without updating `DECISIONS.md`. |
 
 ---
 
 ## 7. Testing and Parity
 
 - **Language:** the goal is a working Three.js replacement. Keep scene computation and core logic in Rust/Wasm where it provides value, and do not cross the Wasm boundary for every property update; the JavaScript layer may hold code that is simpler or faster there (`DECISIONS.md` section 6).
-- **Visual reference:** the Three.js r186 WebGPU renderer (`DECISIONS.md` D27).
+- **Visual reference:** the Three.js WebGPU renderer (`DECISIONS.md` D27).
 - **Parity fixtures:** Generated by a Node script that imports the real `three/src` modules and writes JSON or binary to `parity/`. Fixtures and reference images are committed, so running the tests needs no three.js; only regenerating them does (`npm run reference:fixtures`, `node parity/visual/run.mjs --generate`). Never hand-write expected values from memory.
 - **Unit tests:** Every ported public function has at least one test, placed next to the code.
 - **Visual tests:** Headless Chromium with WebGPU, compared against Three.js renders. Diffs go to `parity/visual/out/` (gitignored).

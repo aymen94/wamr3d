@@ -21,6 +21,14 @@ function showcaseFindings() {
     out.push(['Separate meshes, 10,000 bodies.', `Across ${sep.map(res).join(', ')}: WAMR3D batched ran at ${fps('batched')} fps, three.js at ${fps('webgl')} (WebGL) and ${fps('webgpu')} (WebGPU). WAMR3D submitted draws ${ratio('webgl')}× faster than three.js WebGL and ${ratio('webgpu')}× faster than three.js WebGPU.`]);
   }
 
+  // WAMR3D on its WebGL 2 renderer against three.js on WebGL: the same graphics API on both sides.
+  const gl = resolutions.filter((r) => get(r, 'objects', 10000, 'batched-webgl') && get(r, 'objects', 10000, 'webgl'));
+  if (gl.length) {
+    const fps = (e) => range(gl.map((r) => get(r, 'objects', 10000, e).fps));
+    const cpu = (e) => range(gl.map((r) => get(r, 'objects', 10000, e).update + get(r, 'objects', 10000, e).submit));
+    out.push(['WebGL 2 against WebGL, 10,000 bodies.', `For machines without WebGPU. Across ${gl.map(res).join(', ')}: WAMR3D batched on its WebGL 2 renderer ran at ${fps('batched-webgl')} fps and spent ${cpu('batched-webgl')} ms of CPU per frame; three.js WebGL ran at ${fps('webgl')} fps with ${cpu('webgl')} ms.`]);
+  }
+
   const inst = measured('instanced', 50000);
   if (inst.length) {
     const f = (e, k) => range(inst.map((r) => get(r, 'instanced', 50000, e)[k]));

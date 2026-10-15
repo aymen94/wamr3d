@@ -1,4 +1,4 @@
-// Baseline: the scene driven entirely by three.js r186. No WAMR3D code runs here.
+// Baseline: the scene driven entirely by three.js. No WAMR3D code runs here.
 
 import { createDrawing, THREE } from './draw.js';
 import { animate, boxData, floorData } from './scene.js';
@@ -38,7 +38,7 @@ export async function createEngine( canvas, description, cameraState ) {
 
 	return {
 
-		name: 'three.js r186',
+		name: 'three.js',
 		objectCount: () => count,
 
 		/** CPU side: this frame's rotations, world matrices and camera matrices. */

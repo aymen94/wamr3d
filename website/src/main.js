@@ -189,10 +189,10 @@ function updateSceneStatus() {
   const hint = app.querySelector('[data-scene-hint]');
   if (!text) return;
   const { state } = sceneState;
-  if (state === 'running' && sceneState.fps) text.textContent = `Rendered live by WAMR3D · WebGPU · ${Math.round(sceneState.fps)} fps · ${sceneState.instances.toLocaleString('en-US')} instances · ${sceneState.calls} draw calls`;
-  else if (state === 'running') text.textContent = 'Rendered live by WAMR3D · WebGPU';
-  else if (state === 'static') text.textContent = 'Rendered by WAMR3D · WebGPU · motion paused (reduced motion)';
-  else if (state === 'unsupported') text.textContent = `${sceneState.reason} The backdrop is static; the engine needs WebGPU.`;
+  if (state === 'running' && sceneState.fps) text.textContent = `Rendered live by WAMR3D · ${sceneState.api ?? 'WebGPU'} · ${Math.round(sceneState.fps)} fps · ${sceneState.instances.toLocaleString('en-US')} instances · ${sceneState.calls} draw calls`;
+  else if (state === 'running') text.textContent = `Rendered live by WAMR3D · ${sceneState.api ?? 'WebGPU'}`;
+  else if (state === 'static') text.textContent = `Rendered by WAMR3D · ${sceneState.api ?? 'WebGPU'} · motion paused (reduced motion)`;
+  else if (state === 'unsupported') text.textContent = `${sceneState.reason} The backdrop is static; the engine needs WebGPU or WebGL 2.`;
   if (hint) hint.hidden = state === 'unsupported';
   text.previousElementSibling?.classList.toggle('bg-brand-cyan', state !== 'unsupported');
   text.previousElementSibling?.classList.toggle('bg-amber-400', state === 'unsupported');
