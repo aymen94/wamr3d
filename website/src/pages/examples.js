@@ -49,7 +49,6 @@ const sections = [
       port('voxel-world', 'Procedural terrain', 'Voxel world', 'A 128 × 128 Minecraft-style landscape from Perlin noise, merged into a single textured mesh. Fly through it with the mouse and keyboard.', 'three.js authors', 'https://threejs.org/examples/#webgl_geometry_minecraft'),
       port('spotlights', 'Lights and shadows', 'Spotlights', 'Three coloured spot lights with PCF shadows, tweened to new cones and positions every five seconds. Drag to orbit.', 'three.js authors', 'https://threejs.org/examples/#webgl_lights_spotlights')
     ]
-<<<<<<< HEAD
   },
   {
     id: 'threejs-examples',
@@ -62,8 +61,6 @@ const sections = [
       port('points', '500,000 points', 'BufferGeometry points', 'Half a million vertex-coloured points in a single draw call, rotating in fog.', 'three.js authors', 'https://threejs.org/examples/#webgl_buffergeometry_points'),
       port('lines', '10,000 vertices', 'BufferGeometry lines', 'A 10,000-vertex coloured line that blends towards a second random shape, with its position attribute updated every frame.', 'three.js authors', 'https://threejs.org/examples/#webgl_buffergeometry_lines')
     ]
-=======
->>>>>>> a835af623fd9c01496f831b10a857aa60b6ecc05
   }
 ];
 
