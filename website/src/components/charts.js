@@ -16,7 +16,7 @@ const track = (fraction) => `calc(${Math.max(fraction, 0.004).toFixed(4)} * (100
 
 export function better(direction) {
   const higher = direction === 'higher';
-  return `<span class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider ring-1 ${higher ? 'bg-emerald-300/10 text-emerald-300 ring-emerald-300/30' : 'bg-white/5 text-slate-300 ring-white/15'}"><span aria-hidden="true">${higher ? '▲' : '▼'}</span>${higher ? 'Higher is better' : 'Lower is better'}</span>`;
+  return `<span class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider ring-1 bg-emerald-300/10 text-emerald-300 ring-emerald-300/30"><span aria-hidden="true">${higher ? '▲' : '▼'}</span>${higher ? 'Higher is better' : 'Lower is better'}</span>`;
 }
 
 function panelHead(title, direction, note) {

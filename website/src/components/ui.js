@@ -137,6 +137,14 @@ export function installChip(className = '') {
   </div>`;
 }
 
+// Secondary text, collapsed: the page reads in one pass and the detail is one click away.
+export function more(summary, body, extra = '') {
+  return `<details class="group mt-6 text-sm ${extra}" data-reveal>
+    <summary class="inline-flex cursor-pointer list-none items-center gap-2 font-semibold text-brand-cyan transition hover:text-white [&::-webkit-details-marker]:hidden"><span class="inline-block transition-transform group-open:rotate-90" aria-hidden="true">▸</span>${summary}</summary>
+    <div class="mt-4 leading-relaxed text-slate-400">${body}</div>
+  </details>`;
+}
+
 export function pageIntro({ label, title, intro }) {
   return `<section class="mx-auto max-w-6xl px-6 pb-16 pt-40 sm:pt-48">
     <div class="max-w-3xl" data-reveal>${eyebrow(label)}<h1 class="font-display text-4xl font-semibold leading-[1.05] tracking-tight text-white sm:text-6xl">${title}</h1><p class="mt-6 text-lg leading-relaxed text-slate-300">${intro}</p></div>

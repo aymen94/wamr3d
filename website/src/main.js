@@ -95,6 +95,7 @@ function bind() {
 
   app.querySelectorAll('[data-chart]').forEach(bindChart);
   app.querySelector('[data-demo-start]')?.addEventListener('click', startDemo);
+  spinReel(app.querySelector('[data-reel]'));
   if (!('gpu' in navigator)) app.querySelectorAll('[data-gpu-note]').forEach((note) => { note.hidden = false; });
   updateSceneStatus();
   reveal();
@@ -154,6 +155,39 @@ function bindChart(chart) {
     show(event.target, r.right, r.top + 4);
   });
   chart.addEventListener('focusout', () => tip.classList.add('hidden'));
+}
+
+// Slot-machine reel of acronym names: every few seconds it spins one full round past the
+// next name, overshoots a little and settles. Paused while the tab is hidden.
+let reelTimer = 0;
+function spinReel(reel) {
+  clearInterval(reelTimer);
+  if (!reel) return;
+  const strip = reel.querySelector('[data-reel-strip]');
+  const rows = strip.children.length;
+  const count = Number(reel.dataset.count);
+  let index = 0;
+  const offset = (i) => `translateY(${(-i * 100) / rows}%)`;
+  reelTimer = setInterval(() => {
+    if (!reel.isConnected) return clearInterval(reelTimer);
+    if (document.hidden) return;
+    const next = (index + 1) % count;
+    if (reducedMotion) {
+      strip.style.transform = offset(next);
+    } else {
+      // index + 1 + count is the next name in the second round; once there, the strip
+      // jumps back to the same name in the first round, which looks identical.
+      const spin = strip.animate([
+        { transform: offset(index), filter: 'blur(0)' },
+        { filter: 'blur(1.5px)', offset: 0.3 },
+        { filter: 'blur(0.6px)', offset: 0.75 },
+        { transform: offset(index + 1 + count), filter: 'blur(0)' }
+      ], { duration: 1400, easing: 'cubic-bezier(.2,.65,.3,1.12)' });
+      strip.style.transform = offset(index + 1 + count);
+      spin.finished.then(() => { strip.style.transform = offset(next); }, () => {});
+    }
+    index = next;
+  }, 3200);
 }
 
 function startDemo(event) {

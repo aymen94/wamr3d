@@ -2,25 +2,8 @@ import { button, codeBlock, eyebrow, icon, installChip, miniCube, repoFile, sect
 import { showcaseChart } from '../components/charts.js';
 import { engines, lowLevel, meta, showcase, startup } from '../data/benchmarks.js';
 
-// The headline figure: every showcase configuration in the published logs (all resolutions,
-// separate and instanced meshes, every object count), WAMR3D batched against whichever
-// three.js renderer was faster in that configuration. Frame rates and CPU times are summed
-// over all configurations and then divided, so no single scene decides the result.
-function overall() {
-  let wamrFps = 0, threeFps = 0, wamrCpu = 0, threeCpu = 0, runs = 0;
-  for (const modes of Object.values(showcase)) for (const counts of Object.values(modes)) for (const row of Object.values(counts)) {
-    const three = [row.webgpu, row.webgl].filter(Boolean).sort((a, b) => b.fps - a.fps)[0];
-    if (!row.batched || !three) continue;
-    wamrFps += row.batched.fps; threeFps += three.fps;
-    wamrCpu += row.batched.update + row.batched.submit; threeCpu += three.update + three.submit;
-    runs ++;
-  }
-  return runs ? { fps: wamrFps / threeFps, cpu: threeCpu / wamrCpu, runs } : null;
-}
-const OVERALL = overall();
-
 // The home page quotes one resolution; the benchmarks page has all of them.
-const HEADLINE = '1920x1080';
+const HEADLINE = '1280x720';
 
 const migrationDiff = `- import * as THREE from 'three';
 + import * as THREE from 'wamr3d/compat';
@@ -56,6 +39,32 @@ renderer.setAnimationLoop( ( time ) => {
   renderer.render( scene, camera );
 } );`;
 
+// What the letters can stand for. The reel lands on each in turn, first letters lit.
+const ACRONYMS = [
+  'WebAssembly Accelerated Modular Rendering 3D',
+  'WebAssembly Advanced Mesh Renderer 3D',
+  'WebAssembly Matrix Rendering 3D',
+  'WebAssembly Multi-platform Renderer 3D',
+  'WebAssembly Accelerated Modeling & Rendering 3D',
+  'WebAssembly Animation & Mesh Runtime 3D',
+  'WebAssembly-native Advanced Modular Renderer 3D'
+];
+
+const initials = (name) => name.replace(/(^|\s)([A-Za-z0-9])/g, (_, gap, letter) => `${gap}<span class="text-brand-cyan">${letter}</span>`);
+
+function acronymReel() {
+  // Two full rounds plus two spare names: a spin runs one round past the target, may
+  // overshoot by part of a row, then rests on the same name in the first round.
+  const names = [...ACRONYMS, ...ACRONYMS, ACRONYMS[0], ACRONYMS[1]];
+  return `<p class="mt-6 flex items-center gap-3 font-display text-[min(3.6vw,1.5rem)] font-semibold">
+    <span class="hidden shrink-0 text-white sm:inline">WAMR3D</span><span class="hidden shrink-0 text-slate-500 sm:inline" aria-hidden="true">=</span>
+    <span class="sr-only">${ACRONYMS[0]}</span>
+    <span data-reel data-count="${ACRONYMS.length}" class="relative block h-[1.4em] min-w-0 overflow-hidden" aria-hidden="true">
+      <span data-reel-strip class="block">${names.map((name) => `<span class="block h-[1.4em] truncate leading-[1.4em] text-slate-200">${initials(name)}</span>`).join('')}</span>
+    </span>
+  </p>`;
+}
+
 function hero() {
   return `<section class="relative flex min-h-[100svh] items-center px-6 pb-20 pt-36 sm:pt-40" aria-labelledby="hero-title">
     <div class="mx-auto w-full max-w-6xl">
@@ -68,17 +77,11 @@ function hero() {
           Unlock your imagination without limits.
           <span class="text-gradient animate-shine block">Native WebAssembly 3D.</span>
         </h1>
-        <p class="mt-7 max-w-xl text-lg leading-relaxed text-slate-300 sm:text-xl">
-          WAMR3D is a high-performance 3D engine that runs as native WebAssembly in the browser: a Rust core, its own WebGPU and WebGL 2 renderers, and the three.js API you already know. It turns the browser into a serious 3D machine: compiled code on the CPU, every frame ready for the GPU. Change the import, call <code class="font-mono text-brand-cyan">init()</code>, and keep your code.
+        <p class="mt-6 max-w-lg text-lg leading-relaxed text-slate-300">
+          A Rust 3D engine in WebAssembly with the three.js API. Change the import, call <code class="font-mono text-brand-cyan">init()</code>, keep your code.
         </p>
-        ${OVERALL ? `<p data-performance-claim class="mt-5 font-display text-xl font-semibold text-brand-cyan sm:text-2xl">${OVERALL.fps.toFixed(1)}× faster than three.js</p>
-        <p class="mt-2 max-w-xl text-sm leading-relaxed text-slate-400">Frame rate summed over all ${OVERALL.runs} measured scenes, against the faster three.js renderer in each, with ${OVERALL.cpu.toFixed(1)}× less CPU time per frame. <a class="text-brand-cyan hover:text-white" href="#/benchmarks">How it was measured</a>.</p>` : ''}
-        <ul class="mt-7 grid max-w-xl gap-3 text-sm leading-relaxed text-slate-300 sm:grid-cols-3">
-          <li><span class="block font-semibold text-white">Performance</span>Scene updates, culling and draw ordering in compiled code, batched across the JavaScript boundary.</li>
-          <li><span class="block font-semibold text-white">Native execution</span>Rust compiled to WebAssembly with SIMD, drawing through WebGPU or WebGL 2. No runtime dependencies.</li>
-          <li><span class="block font-semibold text-white">Familiar API</span>three.js classes, properties and chaining. Most code moves over with a new import.</li>
-        </ul>
-        <div class="mt-9 flex flex-wrap items-center gap-3">
+        ${acronymReel()}
+        <div class="mt-8 flex flex-wrap items-center gap-3">
           ${button('#install', 'Get started')}
           ${button('#/examples', 'See live demos', 'secondary')}
         </div>
@@ -137,7 +140,7 @@ function features() {
         ${card('md:col-span-2', 'Object API', 'Code that reads like three.js.', 'Scene, Group, Mesh, InstancedMesh, Points, Sprite, render targets, cameras, eight shapes, six materials, textures, five light types, shadows, tone mapping, Raycaster, Clock and the math types.')}
         ${card('md:col-span-2', 'Batched API', 'One call, thousands of objects.', 'Handles and batched calls such as <code class="font-mono text-slate-200">setRotations</code>; read world matrices and geometry through typed-array views over engine memory, with no copy.')}
         ${card('md:col-span-2', 'Parity', 'Checked against.', 'Over 7,600 reference cases generated from the three.js source are replayed against the Rust code. All 23 renderer cases are compared with stored three.js images.')}
-        ${card('md:col-span-6', 'Roadmap', 'Coming next.', 'Everything above ships today. These are still on the way; keep three.js for them for now:', `<ul class="mt-5 grid gap-x-8 gap-y-2 text-sm text-slate-300 sm:grid-cols-2 lg:grid-cols-3">${['Light, bump and displacement maps', 'Point-light shadows and area lights', 'Physical extensions and Shader materials', 'Post-processing and cube textures', 'Shadow modes other than PCF', 'Most loaders, animation, audio and controls', 'Lines and points wider than one pixel'].map((item) => `<li class="flex items-center gap-2"><span class="text-slate-400">${icon('cross')}</span>${item}</li>`).join('')}</ul>`)}
+        ${card('md:col-span-6', 'Roadmap', 'Coming next.', 'These features are not supported by either the WebGPU or WebGL 2 renderer yet. Keep three.js for them for now:', `<ul class="mt-5 grid gap-x-8 gap-y-2 text-sm text-slate-300 sm:grid-cols-2 lg:grid-cols-3">${['Light, bump and displacement maps', 'Point-light shadows and area lights', 'Physical extensions and Shader materials', 'Post-processing and cube textures', 'Shadow modes other than PCF', 'Most loaders, animation, audio and controls', 'Lines and points wider than one pixel'].map((item) => `<li class="flex items-center gap-2"><span class="text-slate-400">${icon('cross')}</span>${item}</li>`).join('')}</ul>`)}
       </div>
     </div>
   </section>`;
@@ -184,7 +187,7 @@ function performance() {
       <div data-reveal>${showcaseChart('objects', 10000, HEADLINE)}</div>
       <div class="mt-8 grid grid-cols-1 gap-5 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         <p class="text-sm leading-relaxed text-slate-400" data-reveal><strong class="text-slate-200">Where it is slower:</strong> calls that do very little work, such as a single vector operation or one property at a time, cost more than plain JavaScript because crossing into WebAssembly has a fixed cost. ${mathSlowdown.length ? `Single math calls measured ${Math.min(...mathSlowdown).toFixed(1)}× to ${Math.max(...mathSlowdown).toFixed(1)}× slower than three.js.` : ''} GPU time is not measured; it only shows in the frame rate.</p>
-        <p class="font-mono text-[11px] leading-relaxed text-slate-400 md:text-right" data-reveal>${meta.cpu}, ${meta.gpu.replace(/ \(0x.*$/, '')}, ${meta.chrome} headless, ${meta.os}.<br>Measured ${meta.date} at 1280×720 to 3840×2160. Raw logs: <a class="text-brand-cyan hover:text-white" href="${repoFile(meta.dir)}" target="_blank" rel="noreferrer">${meta.dir}</a>.</p>
+        <p class="font-mono text-[11px] leading-relaxed text-slate-400 md:text-right" data-reveal>${meta.cpu}, ${meta.gpu.replace(/ \(0x.*$/, '')}, ${meta.chrome} headless, ${meta.os}.<br>Fresh 1280×720 measurements; the higher-resolution charts use the earlier same-day run. Raw logs: <a class="text-brand-cyan hover:text-white" href="${repoFile(meta.dir)}" target="_blank" rel="noreferrer">${meta.dir}</a>.</p>
       </div>
       <div class="mt-8" data-reveal>${button('#/benchmarks', 'All benchmark results', 'secondary')}</div>
     </div>

@@ -6,7 +6,7 @@
 
 **Unlock your imagination without limits.** WAMR3D is a high-performance 3D engine that runs as native WebAssembly in the browser: a Rust core, its own WebGPU renderer and the three.js API you already know.
 
-**X[number] faster than three.js and other browser-based 3D libraries.** *(Placeholder: the figure will be set from published benchmarks.)*
+**1.9× faster on a batched 10,000-transform update than three.js.** *(1.45 ms vs 2.72 ms in the current Node.js benchmark.)*
 
 WAMR3D provides a WebAssembly scene graph, transforms, cameras, geometry processing, culling and draw ordering, plus a separate WebGPU renderer. Drive it from JavaScript through classes that follow three.js conventions or through batched calls for large scenes. The object API keeps user-facing transforms in JavaScript and synchronizes them with the engine in batches. Behaviour is checked against three.js value by value and pixel by pixel.
 
@@ -14,14 +14,14 @@ It has no runtime dependencies and draws with its own WebGPU renderer, switching
 
 ## Why try it
 
-- **Faster scene updates where it counts.** Updating 10,000 animated objects (rotations, world matrices, camera) took a median 1.6 ms in WAMR3D against 4.5 ms in three.js at 1920×1080, in Chrome on the same machine with the same scene and the same renderer. At 2,000 objects it was 0.4 ms against 0.6 ms.
+- **Faster batched scene updates.** Setting 10,000 transforms and updating their world matrices in one batched call took 1.45 ms in WAMR3D against 2.72 ms in three.js in the current Node.js benchmark. Through the object API, updating 10,000 meshes took 2.70 ms against 5.53 ms.
 - **Same results as three.js.** Over 7,600 reference cases generated from the three.js source are replayed against the Rust code. Individual operations agree to about one part in a million.
 - **Explicit low-level ownership.** The handle-based API stores objects in WebAssembly memory and uses explicit destruction; stale handles cannot refer to a different object. The three.js-style object API keeps transforms in JavaScript and releases engine objects when their JavaScript objects are collected.
 - **Zero-copy low-level geometry access.** Read and write geometry attributes through typed-array views straight over engine memory. The compatibility API exposes copies for mutable attribute arrays.
-- **Its own WebGPU and WebGL 2 renderers.** In the showcase scene with 10,000 separate animated meshes at 1920×1080, WAMR3D ran at 59 fps on WebGPU (13.3 ms of draw submission per frame) and 54 fps on its WebGL 2 renderer; three.js ran at 37 fps with its WebGL renderer (21.6 ms) and 12 fps with its WebGPU renderer (78.3 ms). With 50,000 instanced bodies in a four-level scene graph, WAMR3D ran at 55 to 60 fps (12 to 13 ms of scene update) against 20 to 21 fps for three.js (40 to 45 ms). Summed over all 28 showcase configurations (four resolutions), WAMR3D's frame rate is 1.3× that of the faster three.js renderer in each, with 2.2× less CPU time per frame. One run per configuration on one machine; raw logs in [`bench/results/2026-10-15-webgl/`](bench/results/2026-10-15-webgl/) (the comparison scene was not run at 3840×2160), tables on the website's benchmarks page.
+- **Its own WebGPU and WebGL 2 renderers.** In the fresh 1280×720 showcase run, WAMR3D drew 10,000 separate animated meshes at 60 fps on WebGPU (13.2 ms CPU draw submission) and 53 fps on its WebGL 2 renderer; three.js ran at 12 fps on WebGPU and 44 fps on WebGL. With 100,000 instanced bodies, WAMR3D ran at 33 fps with 25.6 ms of CPU scene update, against 10 fps and 80.5 ms for three.js WebGPU. These are single runs on one machine; the same-day higher-resolution results are also in [`bench/results/2026-10-15-current/`](bench/results/2026-10-15-current/). The comparison scene was not run at 3840×2160.
 - **Small and free.** The current SIMD WebAssembly module is about 567 KiB, shaders for both backends included. Nothing to pay, nothing else to install at run time.
 
-What it is not: a complete replacement for three.js. Calls that do very little work (a single vector operation, one property at a time) are *slower* than plain JavaScript, because crossing into WebAssembly has a fixed cost. WAMR3D wins when you batch. The numbers for both cases are in [`bench/results/2026-10-14/`](bench/results/2026-10-14/).
+What it is not: a complete replacement for three.js. Calls that do very little work (a single vector operation, one property at a time) are *slower* than plain JavaScript, because crossing into WebAssembly has a fixed cost. WAMR3D wins when you batch. The current numbers for both cases are in [`bench/results/2026-10-15-current/`](bench/results/2026-10-15-current/).
 
 ## Install
 
@@ -112,7 +112,7 @@ Then open:
 | Page | What you get |
 |---|---|
 | <http://localhost:8080/examples/showcase/> | **The showcase.** Up to 100,000 tumbling bodies in eight belts around a sun, as separate or instanced meshes, with a settings panel, live timings, and the same scene on three.js (WebGPU and WebGL) one click away. "Compare all four renderers" measures them in turn |
-| <http://localhost:8080/examples/ports/crossy-road/> | **three.js games and scenes on WAMR3D, import changed**: `crossy-road`, `stack`, `city`, `voxel-world`, `spotlights`, `interactive-cubes`, `triangles`, `points`, `lines` under `examples/ports/`. Add `?engine=three` to run the same code on three.js. Each page lists what changed besides the import |
+| <http://localhost:8080/examples/ports/crossy-road/> | **three.js games and scenes on WAMR3D, import changed**: `crossy-road`, `stack`, `city`, `voxel-world` and `spotlights` under `examples/ports/`. Add `?engine=three` to run the same code on three.js. Each page lists what changed besides the import |
 | <http://localhost:8080/examples/webgpu/> | **WAMR3D drawing by itself with WebGPU**: rotating cube, orbiting cubes, a moving point light, a see-through ring, a line grid, click to recolour. No other library on the page. |
 | <http://localhost:8080/parity/visual/> | Each visual parity case drawn by WAMR3D next to the stored three.js image, with the pixel difference |
 | <http://localhost:8080/examples/webgpu/visual.html> | The demo scene drawn by WAMR3D and by three.js (WebGL) on the same page, with the pixel difference |

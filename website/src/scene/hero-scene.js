@@ -30,7 +30,17 @@ export async function startHeroScene(canvas, report = () => {}) {
     return report({ state: 'unsupported', reason: 'The WAMR3D module could not be loaded.' });
   }
 
-  const renderer = new W.WebGPURenderer({ canvas, antialias: true, powerPreference: 'high-performance', backend: 'auto' });
+  // Low-power hints: few cores, little memory, or a software adapter (WebGPU drawn on the
+  // CPU when the browser has no usable GPU driver). Such devices start with a smaller field,
+  // no MSAA and pixel ratio 1; every device steps its quality down if it runs slow.
+  let softwareAdapter = false;
+  try {
+    // No powerPreference: only the software flag matters here.
+    const adapter = await navigator.gpu?.requestAdapter();
+    softwareAdapter = !!adapter && !!(adapter.info?.isFallbackAdapter ?? adapter.isFallbackAdapter);
+  } catch {}
+  const lowPower = softwareAdapter || (navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 4;
+  const renderer = new W.WebGPURenderer({ canvas, antialias: !lowPower, powerPreference: 'high-performance', backend: 'auto' });
   try {
     await renderer.init();
   } catch (error) {
@@ -294,7 +304,8 @@ export async function startHeroScene(canvas, report = () => {}) {
 
     frames++;
     if (now - fpsClock > 600) {
-      report({ state: 'running', api, fps: (frames * 1000) / (now - fpsClock), calls: renderer.info.render.calls, instances: count, objects: count + satellites.length + 4 });
+      const fps = (frames * 1000) / (now - fpsClock);
+      report({ state: 'running', api, fps, calls: renderer.info.render.calls, instances: drawn, objects: drawn + satellites.length + 4 });
       frames = 0;
       fpsClock = now;
       // After the warm-up (pipeline compilation, page load), two slow reports in a row

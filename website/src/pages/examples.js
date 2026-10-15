@@ -43,23 +43,11 @@ const sections = [
     id: 'scenes',
     label: 'Complex scenes',
     title: 'Bigger designs, same code',
-    intro: 'Larger scenes from the three.js community and the official examples: hundreds of objects, merged terrain, spot-light shadows, fog and tweened animation.',
+    intro: 'Larger scenes from the three.js community: hundreds of objects, merged terrain, spot-light shadows, fog and tweened animation.',
     items: [
       port('city', 'Procedural · GSAP', 'City 3D', 'A neon city of shadowed towers with 60 light streaks on GSAP tweens, 300 floating particles, fog and a grid floor. Move the mouse to tilt it.', 'Victor Vergara', 'https://codepen.io/vcomics/pen/aGmoae'),
       port('voxel-world', 'Procedural terrain', 'Voxel world', 'A 128 × 128 Minecraft-style landscape from Perlin noise, merged into a single textured mesh. Fly through it with the mouse and keyboard.', 'three.js authors', 'https://threejs.org/examples/#webgl_geometry_minecraft'),
       port('spotlights', 'Lights and shadows', 'Spotlights', 'Three coloured spot lights with PCF shadows, tweened to new cones and positions every five seconds. Drag to orbit.', 'three.js authors', 'https://threejs.org/examples/#webgl_lights_spotlights')
-    ]
-  },
-  {
-    id: 'threejs-examples',
-    label: 'three.js examples',
-    title: 'Official examples, library swapped',
-    intro: 'Examples from threejs.org. Each page lists what had to change besides the import, which is usually a material or add-on that WAMR3D does not have yet.',
-    items: [
-      port('interactive-cubes', '2,000 meshes · picking', 'Interactive cubes', 'Two thousand cubes picked with a Raycaster on every frame while the camera circles. Hover to highlight.', 'three.js authors', 'https://threejs.org/examples/#webgl_interactive_cubes'),
-      port('triangles', '160,000 triangles', 'BufferGeometry triangles', 'One geometry with 160,000 separate triangles, flat normals and vertex colours, lit by two lights through fog.', 'three.js authors', 'https://threejs.org/examples/#webgl_buffergeometry'),
-      port('points', '500,000 points', 'BufferGeometry points', 'Half a million vertex-coloured points in a single draw call, rotating in fog.', 'three.js authors', 'https://threejs.org/examples/#webgl_buffergeometry_points'),
-      port('lines', '10,000 vertices', 'BufferGeometry lines', 'A 10,000-vertex coloured line that blends towards a second random shape, with its position attribute updated every frame.', 'three.js authors', 'https://threejs.org/examples/#webgl_buffergeometry_lines')
     ]
   }
 ];

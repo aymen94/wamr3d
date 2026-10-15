@@ -5,9 +5,9 @@ import { examples } from './examples.js';
 import { migration } from './migration.js';
 
 export const routes = {
-  '/': { render: home, title: 'WAMR3D | High-performance native WebAssembly 3D engine with a three.js-style API', description: 'Unlock your imagination without limits. WAMR3D is a high-performance 3D engine that runs as native WebAssembly, with its own WebGPU renderer and the three.js API you know. X[number] faster than three.js and other browser-based 3D libraries. Open source, MIT.' },
+  '/': { render: home, title: 'WAMR3D | High-performance native WebAssembly 3D engine with a three.js-style API', description: 'Unlock your imagination without limits. WAMR3D is a high-performance 3D engine that runs as native WebAssembly, with its own WebGPU renderer and the three.js API you know. Open source, MIT.' },
   '/docs': { render: docs, title: 'Documentation | WAMR3D', description: 'Use the three.js-style object API or the batched low-level API of WAMR3D, a WebAssembly 3D engine with a WebGPU renderer.' },
   '/benchmarks': { render: benchmarks, title: 'Benchmarks | WAMR3D', description: 'Measured comparisons of WAMR3D and three.js: frame rate, scene update and draw submission, with method and limits.' },
-  '/examples': { render: examples, title: 'Live demos | WAMR3D', description: 'WAMR3D demos: three.js games and scenes ported by changing the import (Crossy Road, Stack, City 3D, a voxel world, official examples), the 100,000-body showcase, the three.js comparison and visual parity.' },
+  '/examples': { render: examples, title: 'Live demos | WAMR3D', description: 'WAMR3D demos: games and scenes ported from three.js (Crossy Road, Stack, City 3D, a voxel world, spotlights), original simulations, the 100,000-body showcase, engine comparison and visual parity.' },
   '/migration': { render: migration, title: 'Migrate from three.js | WAMR3D', description: 'Migrate from three.js to WAMR3D: change the import, switch to the WebGPU renderer and batch the hot paths when it pays.' }
 };

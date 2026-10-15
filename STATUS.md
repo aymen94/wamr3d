@@ -5,9 +5,9 @@
 - **WebGL 2 backend and automatic fallback.** `engine/bindings/js/webgl.js` draws the engine's frames with WebGL 2 and the GLSL in `engine/renderer_webgpu/src/glsl.rs` (mesh with all materials, maps, lights, shadows and environment lighting; shadow, background, tone-mapping output and environment-prefiltering passes). `WebGPURenderer` takes `backend: 'auto' | 'webgpu' | 'webgl'` (default `'auto'`: WebGPU, then WebGL 2, then the software WebGPU adapter) and three.js's `forceWebGL`; `renderer.backend` reports which one draws. `WebGLRenderer` is now the same renderer on WebGL 2 instead of a class that throws. Checked on 2026-10-15 (Chrome headless, D3D11): `node parity/visual/run.mjs --backend=webgl` passes 26 of 28 cases against the three.js WebGPU references; `points` (4.4% of pixels off) and `lines` (2.5%) fail because 1-pixel points and lines rasterize slightly differently under WebGL's multisampling. All 12 ported examples run on it (`node examples/ports/check.mjs --webgl`). Two fixes came from those runs: canvas frames now always go through a linear half-float target, so blending is in linear light as on WebGPU (it was sRGB blending, which failed `transparent`, `vertex_alpha` and `fog`), and render targets are drawn with y flipped so their rows match WebGPU's (the `render_target` case was upside down and sampled black). The package's `files` list now includes `compat/`, `webgpu/` and `webgl.js` (the module folders were missing from it). The SIMD module is 566.6 KiB with the GLSL sources.
 - Version references to the three.js reference were removed from comments, documentation, the website and scripts. The exact pin stays only where tools need it: `three` in `package.json` and its lockfile, the CDN constants (`examples/three-reference.js`, `REFERENCE_URL` in `parity/visual/cases.js`) and the metadata of generated fixtures. Stored logs in `bench/results/` were left as recorded; `website/scripts/benchmark-data.mjs` now drops any revision from the engine names it reads.
 - Engine names shown by the comparison pages and written by future measurements no longer carry a revision (`three.js · WebGPU`).
-- Website and README positioning: "Unlock your imagination without limits", a high-performance native WebAssembly engine with familiar three.js APIs. The performance line `X[number] faster than three.js and other browser-based 3D libraries` is a placeholder until benchmarks justify a figure; the home page's meta descriptions use it in place of the earlier "up to 2.8×".
+- Website and README positioning: "Unlock your imagination without limits", a high-performance native WebAssembly engine with familiar three.js APIs. The README's previous speed placeholder is now the measured 1.9× result for one batched 10,000-transform update; the website benchmark page reports the full workload data.
 - `MIGRATION.md` is now a short, generic guide (install and import, differences, browsers without WebGPU, batching, what is missing).
-- No test, benchmark or browser check was run after these changes.
+- Fresh test and benchmark results are recorded below.
 
 ## Verification (2026-10-15)
 
@@ -39,19 +39,32 @@ No benchmark or profiling has been run since these changes; see "Measurements".
 
 ## Measurements
 
-Two benchmark runs are stored, both made before the work listed above and before the previous round's additions:
+Historical benchmark runs made before the latest renderer and API changes:
 
 - `bench/results/2026-10-15-webgl/`: the current run, which the website (`website/src/data/benchmarks.js`) and the README quote. Six showcase engines including WAMR3D batched and object API on the WebGL 2 renderer, four resolutions; the 3840×2160 comparison scene was skipped for time (`benchmark-data.mjs` lists it as missing). Showcase summed over 28 configurations: WAMR3D batched 1.3× the frame rate of the faster three.js renderer, 2.2× less CPU per frame.
 - `bench/results/2026-10-14/`: the earlier complete run, before texture maps, the three.js lighting model and the WebGL 2 backend.
 - `bench/results/2026-10-15/`: a later run of the same set; the 3840×2160 scene comparison failed (`compare-3840x2160.txt` holds a `measure.mjs` error), the other files are complete. Superseded by `2026-10-15-webgl`.
+- `bench/results/2026-10-15-current/`: fresh Node.js, compatibility, 1280×720 showcase, 100,000-instance showcase and browser comparison results. The higher-resolution logs were copied from the earlier same-day run; the 3840×2160 comparison remains unavailable.
 
-Pending, not yet run: benchmarks of this tree. Changes that can affect them: seven texture bindings per draw instead of one (bind groups per distinct texture set), the standard material's longer lighting code, and the object API split into modules (bundlers and the browser now load 14 files instead of 1). The SIMD module is 539.4 KiB (488 KiB at the 2026-10-14 run).
+The fresh benchmark run is recorded below. Changes that can affect future runs include seven texture bindings per draw instead of one (bind groups per distinct texture set), the standard material's longer lighting code, and the object API split into modules (bundlers and the browser now load 14 files instead of 1). The SIMD module is 566.9 KiB.
+
+## Fresh verification and benchmarks (2026-10-15)
+
+- `cargo test --workspace`: 655 tests passed; `cargo build --workspace --target wasm32-unknown-unknown`: passed.
+- `node engine/bindings/build.mjs`: passed, producing a 566.9 KiB SIMD Wasm module.
+- `node parity/bindings/compat-check.mjs`: passed, 1,537 stored-reference values; largest scaled error 5.692e-6.
+- `node parity/bindings/check.mjs`: passed, 44,179 live-reference values; largest scaled error 6.147e-6.
+- `tsc -p parity/bindings`: passed.
+- Browser checks passed: `node examples/ports/check.mjs --three` (eight remaining pages on both engines), `node examples/browser/smoke.mjs`, `node examples/webgpu/smoke.mjs`, `node examples/showcase/check.mjs`, and `node parity/visual/run.mjs` (28 cases).
+- Fresh benchmark logs are in `bench/results/2026-10-15-current/`. Node microbenchmarks and the browser showcase/comparison were rerun at 1280×720; the higher resolutions were carried forward from the earlier run on the same date. The comparison scene has no 3840×2160 result. `website/src/data/benchmarks.js` was regenerated from these logs.
+- At 1280×720, 10,000 separate meshes ran at 60 fps on WAMR3D WebGPU with 13.2 ms CPU submission, versus 12 fps and 78.9 ms for three.js WebGPU. For 100,000 instanced bodies, WAMR3D ran at 33 fps with 25.6 ms CPU update, versus 10 fps and 80.5 ms for three.js WebGPU. In Node, one batched 10,000-transform update took 1.45 ms versus 2.72 ms for three.js; individual math operations remain slower across the Wasm boundary.
+- `npm run build --prefix website`: passed. Vite externalized Node's `fs/promises` import from the local package as expected for browser builds.
 
 ## Ported examples
 
-`examples/ports/` holds three.js games and scenes run on WAMR3D through `wamr3d/compat` with the import changed: Crossy Road and Stack (Hunor Márton Borbély), City 3D (Victor Vergara), and the official three.js examples `webgl_geometry_minecraft`, `webgl_lights_spotlights`, `webgl_interactive_cubes`, `webgl_buffergeometry`, `webgl_buffergeometry_points` and `webgl_buffergeometry_lines`, plus three reduced pages written for WAMR3D (`fluid-particles`, `water`, `car`). `?engine=three` runs the same code on three.js. `node examples/ports/check.mjs --three` drew frames without console errors for all twelve on both libraries on 2026-10-15.
+`examples/ports/` holds three.js games and scenes run on WAMR3D through `wamr3d/compat` with the import changed: Crossy Road and Stack (Hunor Márton Borbély), City 3D (Victor Vergara), and the official examples `webgl_geometry_minecraft` and `webgl_lights_spotlights`, plus three pages written for WAMR3D (`fluid-particles`, `water`, `car`). The four BufferGeometry and picking example ports were removed from the site and repository. `?engine=three` runs the remaining ported code on three.js.
 
-The ports still carry workarounds written when features were missing; they can now be removed: Phong and toon stand-ins in `city`, `spotlights` and `triangles`, the hand-built boxes instead of `Box3.setFromObject` in `crossy-road`, and the missing reflections in `water` and `car`.
+The ports still carry workarounds written when features were missing; they can now be removed: Phong and toon stand-ins in `city` and `spotlights`, the hand-built boxes instead of `Box3.setFromObject` in `crossy-road`, and the missing reflections in `water` and `car`.
 
 ## Undeveloped and incomplete work
 
