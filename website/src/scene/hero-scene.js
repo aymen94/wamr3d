@@ -7,6 +7,18 @@
 const BACKGROUND = { dark: 0x04050c, light: 0xf4f6fb };
 const PALETTE = [[0.64, 0.35, 1.0], [0.24, 0.35, 1.0], [0.13, 0.89, 1.0]];
 const FIELD_Y = -3.1;
+// Steps the pixel ratio drops through while the measured frame rate stays low.
+const PIXEL_RATIOS = [1.75, 1.25, 1];
+const LOW_FPS = 40;
+// Base colour of the field for a height ratio k, sampled once instead of mixed per box.
+const RAMP_STEPS = 64;
+const RAMP = new Float32Array((RAMP_STEPS + 1) * 3);
+for (let i = 0; i <= RAMP_STEPS; i++) {
+  const k = i / RAMP_STEPS;
+  const [a, b] = k < 0.5 ? [PALETTE[0], PALETTE[1]] : [PALETTE[1], PALETTE[2]];
+  const f = k < 0.5 ? k * 2 : (k - 0.5) * 2;
+  for (let j = 0; j < 3; j++) RAMP[i * 3 + j] = a[j] + (b[j] - a[j]) * f;
+}
 
 export async function startHeroScene(canvas, report = () => {}) {
   let W;
@@ -52,20 +64,34 @@ export async function startHeroScene(canvas, report = () => {}) {
   scene.add(cyanLight, violetLight);
 
   // Wave field.
-  const columns = small ? 34 : 64, rows = small ? 22 : 30, spacing = 0.46;
+  // A low-power field covers the same area with fewer, larger boxes.
+  const columns = small ? 34 : lowPower ? 44 : 64, rows = small ? 22 : lowPower ? 21 : 30;
+  const spacing = small ? 0.46 : (64 * 0.46) / columns, boxSize = 0.3 * (spacing / 0.46);
   const count = columns * rows;
   const field = new W.InstancedMesh(new W.BoxGeometry(1, 1, 1), new W.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35, metalness: 0.45 }), count);
   field.frustumCulled = false;
   const cells = new Float32Array(count * 2);
+  // Sine and cosine of each box's spatial wave phases, so a frame only needs the time
+  // phases: sin(p + q) = sin p cos q + cos p sin q.
+  const phases = new Float32Array(count * 6);
   const tint = new W.Color();
   for (let i = 0; i < count; i++) {
     const c = i % columns, r = Math.floor(i / columns);
-    cells[i * 2] = (c - (columns - 1) / 2) * spacing;
-    cells[i * 2 + 1] = -r * spacing + 2.5;
+    const x = (c - (columns - 1) / 2) * spacing, z = -r * spacing + 2.5;
+    cells[i * 2] = x;
+    cells[i * 2 + 1] = z;
+    phases.set([Math.sin(x * 0.55), Math.cos(x * 0.55), Math.sin(z * 0.45), Math.cos(z * 0.45), Math.sin((x + z) * 0.9), Math.cos((x + z) * 0.9)], i * 6);
     field.setColorAt(i, tint.setRGB(0.3, 0.4, 1));
   }
   const matrices = field.instanceMatrix.array;
   const colors = field.instanceColor.array;
+  // Only the height and the vertical position change per frame; the rest is written once.
+  for (let i = 0; i < count; i++) {
+    const o = i * 16;
+    matrices.fill(0, o, o + 16);
+    matrices[o] = boxSize; matrices[o + 10] = boxSize; matrices[o + 15] = 1;
+    matrices[o + 12] = cells[i * 2]; matrices[o + 14] = cells[i * 2 + 1];
+  }
   scene.add(field);
 
   // Brand cube: a dark metal core inside two edge frames, a ring and orbiting satellites.
@@ -137,6 +163,12 @@ export async function startHeroScene(canvas, report = () => {}) {
   }, { passive: true });
   addEventListener('scroll', () => { scroll = scrollY; if (reducedMotion) frame(performance.now()); }, { passive: true });
 
+  // Index into PIXEL_RATIOS; low-power devices start at the last step. Past the last step,
+  // the far rows of the field are dropped (rows are stored near to far), down to half.
+  let quality = lowPower ? PIXEL_RATIOS.length - 1 : 0;
+  let drawn = count;
+  const minDrawn = Math.ceil(rows / 2) * columns;
+
   // Inner pages set data-route; there the cube moves aside and the scene dims behind text.
   let aside = 0;
   const resize = () => {
@@ -147,14 +179,15 @@ export async function startHeroScene(canvas, report = () => {}) {
     core.userData.home = [wide ? 3.6 : 1.4, wide ? 0.35 : -1.4];
     core.position.set(core.userData.home[0] + aside * 2.2, core.userData.home[1], 0);
     core.scale.setScalar(wide ? 1 : 0.6);
-    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.75));
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, PIXEL_RATIOS[quality]));
     renderer.setSize(innerWidth, innerHeight, false);
     if (reducedMotion) frame(performance.now());
   };
   addEventListener('resize', resize, { passive: true });
 
   // FPS as actually measured in this page, shown in the hero badge.
-  let frames = 0, fpsClock = performance.now();
+  let frames = 0, fpsClock = performance.now(), slowReports = 0;
+  const started = performance.now();
 
   function frame(now) {
     const t = now / 1000;
@@ -219,34 +252,40 @@ export async function startHeroScene(canvas, report = () => {}) {
     // Wave field: heights from travelling waves, the pointer and click ripples.
     const hover = pointer.active && motion ? groundPoint() : null;
     for (let i = ripples.length - 1; i >= 0; i--) if (t - ripples[i].start > 4) ripples.splice(i, 1);
-    for (let i = 0; i < count; i++) {
-      const x = cells[i * 2], z = cells[i * 2 + 1];
-      let h = 0.5 + 0.35 * Math.sin(x * 0.55 + t * 0.9 * motion) * Math.cos(z * 0.45 + t * 0.6 * motion)
-        + 0.18 * Math.sin((x + z) * 0.9 - t * 1.4 * motion);
+    const qa = t * 0.9 * motion, qb = t * 0.6 * motion, qc = -t * 1.4 * motion;
+    const sa = Math.sin(qa), ca = Math.cos(qa), sb = Math.sin(qb), cb = Math.cos(qb), sc = Math.sin(qc), cc = Math.cos(qc);
+    // Ripple constants per frame; a box more than 3 units from a front gets under 2e-5 of it.
+    const fronts = ripples.map((ripple) => {
+      const age = t - ripple.start;
+      return { x: ripple.x, z: ripple.z, radius: age * 6, gain: ripple.strength * Math.max(0, 1 - age / 4) * 1.4 };
+    });
+    const glowBase = light ? 0.75 : 0.18, glowRange = light ? 0.25 : 0.6;
+    for (let i = 0; i < drawn; i++) {
+      const x = cells[i * 2], z = cells[i * 2 + 1], ph = i * 6;
+      let h = 0.5 + 0.35 * (phases[ph] * ca + phases[ph + 1] * sa) * (phases[ph + 3] * cb - phases[ph + 2] * sb)
+        + 0.18 * (phases[ph + 4] * cc + phases[ph + 5] * sc);
       if (hover) {
-        const dx = x - hover[0], dz = z - hover[1];
-        h += 1.1 * Math.exp(-(dx * dx + dz * dz) * 0.35);
+        const dx = x - hover[0], dz = z - hover[1], d2 = dx * dx + dz * dz;
+        if (d2 < 30) h += 1.1 * Math.exp(-d2 * 0.35);
       }
-      for (const ripple of ripples) {
+      for (let j = 0; j < fronts.length; j++) {
+        const ripple = fronts[j];
         const dx = x - ripple.x, dz = z - ripple.z;
-        const d = Math.sqrt(dx * dx + dz * dz);
-        const age = t - ripple.start;
-        const front = d - age * 6;
-        h += ripple.strength * Math.exp(-front * front * 1.2) * Math.max(0, 1 - age / 4) * 1.4;
+        const front = Math.sqrt(dx * dx + dz * dz) - ripple.radius;
+        if (front > -3 && front < 3) h += ripple.gain * Math.exp(-front * front * 1.2);
       }
-      h = Math.max(0.06, h);
+      if (h < 0.06) h = 0.06;
       const o = i * 16;
-      matrices[o] = 0.3; matrices[o + 5] = h; matrices[o + 10] = 0.3; matrices[o + 15] = 1;
-      matrices[o + 12] = x; matrices[o + 13] = FIELD_Y + h / 2; matrices[o + 14] = z;
+      matrices[o + 5] = h;
+      matrices[o + 13] = FIELD_Y + h / 2;
 
-      const k = Math.min(1, h / 1.6);
-      const [a, b] = k < 0.5 ? [PALETTE[0], PALETTE[1]] : [PALETTE[1], PALETTE[2]];
-      const f = k < 0.5 ? k * 2 : (k - 0.5) * 2;
+      const k = h < 1.6 ? h / 1.6 : 1;
+      const ramp = Math.round(k * RAMP_STEPS) * 3;
       // On the light page the low boxes stay pale instead of fading to black.
-      const glow = light ? 0.75 + k * 0.25 : 0.18 + k * 0.6;
-      colors[i * 3] = (a[0] + (b[0] - a[0]) * f) * glow;
-      colors[i * 3 + 1] = (a[1] + (b[1] - a[1]) * f) * glow;
-      colors[i * 3 + 2] = (a[2] + (b[2] - a[2]) * f) * glow;
+      const glow = glowBase + k * glowRange;
+      colors[i * 3] = RAMP[ramp] * glow;
+      colors[i * 3 + 1] = RAMP[ramp + 1] * glow;
+      colors[i * 3 + 2] = RAMP[ramp + 2] * glow;
     }
     field.instanceMatrix.needsUpdate = true;
     field.instanceColor.needsUpdate = true;
@@ -258,6 +297,21 @@ export async function startHeroScene(canvas, report = () => {}) {
       report({ state: 'running', api, fps: (frames * 1000) / (now - fpsClock), calls: renderer.info.render.calls, instances: count, objects: count + satellites.length + 4 });
       frames = 0;
       fpsClock = now;
+      // After the warm-up (pipeline compilation, page load), two slow reports in a row
+      // lower the pixel ratio one step, then shorten the field a quarter at a time.
+      if (now - started > 3000 && drawn > minDrawn) {
+        slowReports = fps < LOW_FPS ? slowReports + 1 : 0;
+        if (slowReports === 2) {
+          slowReports = 0;
+          if (quality < PIXEL_RATIOS.length - 1) {
+            quality++;
+            resize();
+          } else {
+            drawn = Math.max(minDrawn, drawn - Math.ceil(rows / 4) * columns);
+            field.count = drawn;
+          }
+        }
+      }
     }
   }
 

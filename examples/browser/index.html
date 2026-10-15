@@ -21,6 +21,10 @@
 	.ok { color: #6fd08c; } .bad { color: #ff6b6b; } .muted { color: #9aa1ab; }
 	label { display: block; margin-top: 8px; }
 	#hint { position: fixed; bottom: 12px; left: 12px; }
+	@media (max-width: 640px), (max-height: 500px) {
+		#panel { top: 8px; left: 8px; min-width: 0; max-width: calc(100vw - 16px); max-height: calc(100dvh - 60px); overflow: auto; box-sizing: border-box; padding: 6px 10px; font-size: 11px; }
+		#hint { left: 8px; right: 8px; bottom: 8px; font-size: 11px; }
+	}
 </style>
 </head>
 <body>

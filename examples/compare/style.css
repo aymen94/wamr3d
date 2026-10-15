@@ -8,3 +8,7 @@ a { color: #7fb0ff; }
 #panel td { padding: 1px 0; }
 #panel td:last-child { text-align: right; font-variant-numeric: tabular-nums; padding-left: 16px; }
 .muted { color: #9aa1ab; margin: 8px 0 0; }
+@media (max-width: 640px), (max-height: 500px) {
+	#panel { top: 8px; left: 8px; min-width: 0; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); overflow: auto; box-sizing: border-box; padding: 6px 10px; font-size: 11px; }
+	#panel td:last-child { padding-left: 10px; }
+}

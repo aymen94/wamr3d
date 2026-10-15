@@ -29,6 +29,9 @@ const projectFiles = () => ({
 			if (!mapped) return next();
 			let file = path.join(projectRoot, mapped);
 			if (!file.startsWith(projectRoot)) return next();
+			// Without a local engine build, serve the installed package, as the built site does.
+			if (mapped.startsWith('/dist/wamr3d/') && !fs.existsSync(file)) file = path.join(websiteRoot, 'node_modules', 'wamr3d', mapped.slice('/dist/wamr3d/'.length));
+			if (!file.startsWith(projectRoot)) return next();
 			if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, 'index.html');
 			if (!fs.existsSync(file)) return next();
 			response.setHeader('Content-Type', MIME[path.extname(file)] ?? 'application/octet-stream');
