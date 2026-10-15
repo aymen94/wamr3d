@@ -75,24 +75,56 @@ function bind() {
   const toggle = app.querySelector('[data-menu-toggle]');
   const menu = app.querySelector('[data-menu]');
   const rendererToggles = app.querySelectorAll('[data-renderer-toggle]');
-  let rendererPreference = 'auto';
-  try { rendererPreference = localStorage.getItem('wamr3d-renderer') === 'webgl' ? 'webgl' : 'auto'; } catch {}
+  let rendererPreference = 'webgl';
+  try {
+    const saved = localStorage.getItem('wamr3d-renderer');
+    if (['auto', 'webgpu', 'webgl'].includes(saved)) rendererPreference = saved;
+  } catch {}
   document.documentElement.dataset.rendererBackend = rendererPreference;
+  const backendName = (value) => ({ auto: 'Auto', webgpu: 'WebGPU', webgl: 'WebGL 2' })[value];
+  const desktopPopover = app.querySelector('[data-renderer-popover]');
   rendererToggles.forEach((button) => {
     const label = button.querySelector('[data-renderer-label]');
     const isMobileMenu = !!button.closest('[data-menu]');
-    if (label) {
-      label.textContent = isMobileMenu
-        ? rendererPreference === 'webgl' ? 'WebGL 2 · switch back to automatic' : 'Automatic · WebGPU / WebGL 2'
-        : rendererPreference === 'webgl' ? 'GPU: WebGL 2' : 'GPU: Auto';
+    if (label) label.textContent = isMobileMenu ? backendName(rendererPreference) : `GPU: ${backendName(rendererPreference)}`;
+    let popover = button.parentElement.querySelector('[data-renderer-popover]');
+    if (!popover) {
+      popover = document.createElement('div');
+      popover.className = 'glass absolute right-0 top-full z-50 mt-2 hidden w-full rounded-2xl p-2 shadow-2xl shadow-black/40';
+      popover.dataset.rendererPopover = '';
+      popover.id = button.getAttribute('aria-controls') || '';
+      popover.innerHTML = desktopPopover.innerHTML;
+      button.after(popover);
     }
-    button.setAttribute('aria-pressed', String(rendererPreference === 'webgl'));
     button.addEventListener('click', () => {
-      const next = rendererPreference === 'webgl' ? 'auto' : 'webgl';
-      try { localStorage.setItem('wamr3d-renderer', next); } catch {}
-      location.reload();
+      const open = popover.classList.toggle('hidden') === false;
+      button.setAttribute('aria-expanded', String(open));
     });
   });
+  app.querySelectorAll('[data-renderer-choice]').forEach((choice) => choice.addEventListener('click', () => {
+    try { localStorage.setItem('wamr3d-renderer', choice.dataset.rendererChoice); } catch {}
+    location.reload();
+  }));
+  app.querySelectorAll('[data-renderer-check]').forEach((check) => {
+    const selected = check.dataset.rendererCheck === rendererPreference;
+    check.textContent = selected ? '\u2713' : '';
+    if (selected) check.closest('[data-renderer-choice]')?.setAttribute('aria-pressed', 'true');
+  });
+  (async () => {
+    let adapter;
+    try { adapter = await navigator.gpu?.requestAdapter(); } catch {}
+    const available = !!adapter;
+    app.querySelectorAll('[data-webgpu-status]').forEach((status) => {
+      status.textContent = available ? 'Available in this browser' : 'Not available in your browser';
+    });
+    app.querySelectorAll('[data-renderer-choice="webgpu"]').forEach((choice) => { choice.disabled = !available; });
+    if (available && rendererPreference !== 'webgpu') {
+      app.querySelectorAll('[data-renderer-toggle]').forEach((button) => {
+        button.classList.add('renderer-webgpu-available');
+        button.title = 'WebGPU is available. Open to choose it.';
+      });
+    }
+  })();
   toggle?.addEventListener('click', () => {
     const open = menu.classList.toggle('hidden') === false;
     menu.classList.toggle('flex', open);

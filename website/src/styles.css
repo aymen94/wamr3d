@@ -102,6 +102,26 @@
 }
 
 @layer components {
+  .benchmark-fastest-bar { filter: drop-shadow(0 0 4px rgb(52 211 153 / 75%)); animation: benchmark-fast-pulse 1.2s ease-in-out infinite alternate; }
+  .benchmark-engine-name, .benchmark-ranked-title { display: flex; min-width: 0; align-items: center; }
+  .benchmark-place-slot { display: inline-flex; width: 1.5rem; flex: none; align-items: center; justify-content: flex-start; }
+  .benchmark-place { display: inline-flex; width: 1.15rem; height: 1.15rem; flex: none; align-items: center; justify-content: center; border: 1px solid; border-radius: 9999px; font-size: 12px; line-height: 1; }
+  .benchmark-place-1 { border-color: rgb(250 204 21 / 75%); background: rgb(250 204 21 / 12%); animation: benchmark-winner-ring 1.8s ease-in-out infinite; }
+  .benchmark-place-2 { border-color: rgb(203 213 225 / 75%); background: rgb(203 213 225 / 12%); }
+  .benchmark-place-3 { border-color: rgb(205 127 50 / 75%); background: rgb(205 127 50 / 12%); }
+  @keyframes benchmark-winner-ring {
+    0%, 100% { box-shadow: 0 0 0 0 rgb(250 204 21 / 0%); }
+    50% { box-shadow: 0 0 0 3px rgb(250 204 21 / 35%); }
+  }
+  @keyframes benchmark-fast-pulse {
+    from { filter: brightness(1); opacity: .82; }
+    to { filter: brightness(1.45); opacity: 1; }
+  }
+  .renderer-webgpu-available { animation: renderer-webgpu-prompt 2s ease-in-out infinite; }
+  @keyframes renderer-webgpu-prompt {
+    0%, 100% { box-shadow: 0 0 0 0 rgb(34 228 255 / 0%); }
+    50% { box-shadow: 0 0 0 4px rgb(34 228 255 / 28%); }
+  }
   .text-gradient {
     background: linear-gradient(100deg, var(--color-brand-violet), var(--color-brand-blue) 40%, var(--color-brand-cyan) 70%, var(--color-brand-violet));
     background-size: 200% auto;

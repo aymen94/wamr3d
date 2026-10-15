@@ -30,13 +30,14 @@ export async function startHeroScene(canvas, report = () => {}) {
     return report({ state: 'unsupported', reason: 'The WAMR3D module could not be loaded.' });
   }
 
-  const backend = document.documentElement.dataset.rendererBackend === 'webgl' ? 'webgl' : 'auto';
+  const preference = document.documentElement.dataset.rendererBackend;
+  const backend = ['auto', 'webgpu', 'webgl'].includes(preference) ? preference : 'auto';
   // Low-power hints: few cores, little memory, or a software adapter. Such devices start with a smaller field,
   // no MSAA and pixel ratio 1; every device steps its quality down if it runs slow.
   let softwareAdapter = false;
   try {
     // No powerPreference: only the software flag matters here.
-    const adapter = backend === 'auto' ? await navigator.gpu?.requestAdapter() : null;
+    const adapter = backend !== 'webgl' ? await navigator.gpu?.requestAdapter() : null;
     softwareAdapter = !!adapter && !!(adapter.info?.isFallbackAdapter ?? adapter.isFallbackAdapter);
   } catch {}
   const lowPower = softwareAdapter || (navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 4;
