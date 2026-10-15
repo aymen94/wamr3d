@@ -375,6 +375,63 @@ impl AttributeAccess for BufferAttribute {
         }
         self.array.set(index * self.item_size + component, value);
     }
+
+    fn apply_matrix4(&mut self, m: &Matrix4) {
+        let stride = self.item_size;
+        if let AttributeArray::Float32(values) = &mut self.array {
+            for vertex in values.chunks_exact_mut(stride) {
+                let mut value = Vector3::new(vertex[0], vertex[1], vertex[2]);
+                value.apply_matrix4(m);
+                vertex[0] = value.x;
+                vertex[1] = value.y;
+                vertex[2] = value.z;
+            }
+        } else {
+            for i in 0..self.count() {
+                let mut value = self.get_vector3(i);
+                value.apply_matrix4(m);
+                self.set_xyz(i, value.x, value.y, value.z);
+            }
+        }
+    }
+
+    fn apply_normal_matrix(&mut self, m: &Matrix3) {
+        let stride = self.item_size;
+        if let AttributeArray::Float32(values) = &mut self.array {
+            for vertex in values.chunks_exact_mut(stride) {
+                let mut value = Vector3::new(vertex[0], vertex[1], vertex[2]);
+                value.apply_normal_matrix(m);
+                vertex[0] = value.x;
+                vertex[1] = value.y;
+                vertex[2] = value.z;
+            }
+        } else {
+            for i in 0..self.count() {
+                let mut value = self.get_vector3(i);
+                value.apply_normal_matrix(m);
+                self.set_xyz(i, value.x, value.y, value.z);
+            }
+        }
+    }
+
+    fn transform_direction(&mut self, m: &Matrix4) {
+        let stride = self.item_size;
+        if let AttributeArray::Float32(values) = &mut self.array {
+            for vertex in values.chunks_exact_mut(stride) {
+                let mut value = Vector3::new(vertex[0], vertex[1], vertex[2]);
+                value.transform_direction(m);
+                vertex[0] = value.x;
+                vertex[1] = value.y;
+                vertex[2] = value.z;
+            }
+        } else {
+            for i in 0..self.count() {
+                let mut value = self.get_vector3(i);
+                value.transform_direction(m);
+                self.set_xyz(i, value.x, value.y, value.z);
+            }
+        }
+    }
 }
 
 /// One array shared by several attributes, `stride` elements per vertex. Lives in

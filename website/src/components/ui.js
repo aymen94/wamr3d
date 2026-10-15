@@ -42,7 +42,7 @@ export function header(active) {
   return `<header class="fixed inset-x-0 top-0 z-50 px-4 pt-4 sm:px-6">
     <nav class="glass mx-auto flex bg-ink-950/92 max-w-6xl items-center justify-between gap-4 rounded-2xl px-3 py-2.5 shadow-2xl shadow-black/40 sm:px-4" aria-label="Main">
       ${wordmark()}
-      <div class="hidden items-center gap-1 lg:flex">${navLinks.map(link).join('')}</div>
+      <div class="hidden items-center gap-1 lg:flex">${navLinks.map(link).join('')}<button type="button" data-renderer-toggle class="rounded-full px-3.5 py-2 text-sm font-medium text-slate-300 transition hover:bg-white/5 hover:text-white" aria-label="Switch hero renderer"><span data-renderer-label>GPU: Auto</span></button></div>
       <div class="flex items-center gap-1.5">
         <a href="${REPO}" class="hidden size-9 items-center justify-center rounded-full text-slate-300 transition hover:bg-white/10 hover:text-white sm:flex" aria-label="WAMR3D on GitHub" target="_blank" rel="noreferrer">${icons.github}</a>
         <a href="${NPM}" class="hidden size-9 items-center justify-center rounded-full text-slate-300 transition hover:bg-white/10 hover:text-white sm:flex" aria-label="wamr3d on npm" target="_blank" rel="noreferrer">${icons.npm}</a>
@@ -55,6 +55,7 @@ export function header(active) {
     </nav>
     <div id="mobile-menu" class="glass mx-auto mt-2 hidden max-w-6xl flex-col gap-1 rounded-2xl p-3 lg:hidden" data-menu>
       ${navLinks.map(([label, href]) => `<a href="${href}" class="rounded-xl px-4 py-3 text-base font-medium text-slate-200 hover:bg-white/10">${label}</a>`).join('')}
+      <button type="button" data-renderer-toggle class="flex w-full items-center justify-between rounded-xl bg-brand-cyan/5 px-4 py-3 text-left text-sm text-slate-200 transition hover:bg-brand-cyan/10"><span><span class="block font-semibold">Hero renderer</span><span data-renderer-label class="mt-0.5 block text-xs text-slate-400">Automatic · WebGPU / WebGL 2</span></span><span class="font-mono text-xs text-brand-cyan">Switch</span></button>
       <div class="mt-2 flex gap-2 border-t border-white/10 pt-3">
         <a href="${REPO}" target="_blank" rel="noreferrer" class="flex flex-1 items-center justify-center gap-2 rounded-xl bg-white/5 py-3 text-sm text-slate-200">${icons.github} GitHub</a>
         <a href="${NPM}" target="_blank" rel="noreferrer" class="flex flex-1 items-center justify-center gap-2 rounded-xl bg-white/5 py-3 text-sm text-slate-200">${icons.npm} npm</a>
@@ -74,6 +75,7 @@ export function footer() {
     </div>
     <div class="mx-auto flex max-w-6xl flex-col gap-2 border-t border-white/5 px-6 py-6 text-xs text-slate-400 sm:flex-row sm:justify-between">
       <span>Rust · WebAssembly · WebGPU. Checked against three.js</span>
+      <span class="inline-flex items-center gap-3">Built with <span class="origin-center scale-75">${miniCube}</span> WAMR3D</span>
       <span>An independent project, not affiliated with three.js.</span>
     </div>
   </footer>`;

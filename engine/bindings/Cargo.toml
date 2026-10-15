@@ -1,6 +1,6 @@
 [package]
 name = "wamr3d"
-version = "0.1.0"
+version = "0.5.0"
 edition = "2021"
 license = "MIT"
 description = "WAMR3D: WebAssembly bindings for the wamr-math and wamr-core crates"

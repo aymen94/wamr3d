@@ -124,16 +124,9 @@ fn raycast_mesh(world: &World, object: Entity, raycaster: &Raycaster, intersects
     raycast_triangles(object, geometry, material.side, &sphere, &transform.matrix_world, raycaster, intersects);
 }
 
-/// The geometry's bounding sphere, measured on a copy when it has none yet.
+/// The public bound, or its cached internal equivalent when it has not been requested.
 fn local_bounding_sphere(geometry: &BufferGeometry) -> Sphere {
-    match geometry.bounding_sphere {
-        Some(sphere) => sphere,
-        None => {
-            let mut measured = geometry.clone();
-            measured.compute_bounding_sphere();
-            measured.bounding_sphere.unwrap_or_default()
-        }
-    }
+    geometry.bounding_sphere.or_else(|| geometry.raycast_sphere()).unwrap_or_default()
 }
 
 /// The triangles of `geometry`, placed by `matrix_world`; `sphere` is the geometry's
@@ -224,14 +217,7 @@ fn raycast_line(world: &World, object: Entity, primitive: Primitive, raycaster: 
     let matrix_world = transform.matrix_world;
     let threshold = raycaster.params.line_threshold;
 
-    let mut sphere: Sphere = match geometry.bounding_sphere {
-        Some(sphere) => sphere,
-        None => {
-            let mut measured = geometry.clone();
-            measured.compute_bounding_sphere();
-            measured.bounding_sphere.unwrap_or_default()
-        }
-    };
+    let mut sphere = local_bounding_sphere(geometry);
     sphere.apply_matrix4(&matrix_world);
     sphere.radius += threshold;
     if !raycaster.ray.intersects_sphere(&sphere) {
@@ -308,14 +294,7 @@ fn raycast_points(world: &World, object: Entity, raycaster: &Raycaster, intersec
     let matrix_world = transform.matrix_world;
     let threshold = raycaster.params.points_threshold;
 
-    let mut sphere: Sphere = match geometry.bounding_sphere {
-        Some(sphere) => sphere,
-        None => {
-            let mut measured = geometry.clone();
-            measured.compute_bounding_sphere();
-            measured.bounding_sphere.unwrap_or_default()
-        }
-    };
+    let mut sphere = local_bounding_sphere(geometry);
     sphere.apply_matrix4(&matrix_world);
     sphere.radius += threshold;
     if !raycaster.ray.intersects_sphere(&sphere) {

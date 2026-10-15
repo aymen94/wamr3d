@@ -74,6 +74,25 @@ function bind() {
 
   const toggle = app.querySelector('[data-menu-toggle]');
   const menu = app.querySelector('[data-menu]');
+  const rendererToggles = app.querySelectorAll('[data-renderer-toggle]');
+  let rendererPreference = 'auto';
+  try { rendererPreference = localStorage.getItem('wamr3d-renderer') === 'webgl' ? 'webgl' : 'auto'; } catch {}
+  document.documentElement.dataset.rendererBackend = rendererPreference;
+  rendererToggles.forEach((button) => {
+    const label = button.querySelector('[data-renderer-label]');
+    const isMobileMenu = !!button.closest('[data-menu]');
+    if (label) {
+      label.textContent = isMobileMenu
+        ? rendererPreference === 'webgl' ? 'WebGL 2 · switch back to automatic' : 'Automatic · WebGPU / WebGL 2'
+        : rendererPreference === 'webgl' ? 'GPU: WebGL 2' : 'GPU: Auto';
+    }
+    button.setAttribute('aria-pressed', String(rendererPreference === 'webgl'));
+    button.addEventListener('click', () => {
+      const next = rendererPreference === 'webgl' ? 'auto' : 'webgl';
+      try { localStorage.setItem('wamr3d-renderer', next); } catch {}
+      location.reload();
+    });
+  });
   toggle?.addEventListener('click', () => {
     const open = menu.classList.toggle('hidden') === false;
     menu.classList.toggle('flex', open);

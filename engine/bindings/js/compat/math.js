@@ -50,8 +50,10 @@ function extend( Compat, Base, name ) {
 		if ( typeof method !== 'function' ) continue;
 		const arity = method.length;
 
-		Compat.prototype[ key ] = function ( ...args ) {
+		Compat.prototype[ key ] = function () {
 
+			// Reuse the arguments object instead of allocating a rest array on every call.
+			const args = arguments;
 			const target = args.length > arity ? args[ arity ] : null, offset = args[ arity + 1 ] || 0;
 			if ( args.length > arity ) args.length = arity;
 			let temporaries = null;
@@ -62,7 +64,18 @@ function extend( Compat, Base, name ) {
 
 			}
 
-			const result = method.apply( this, args );
+			let result;
+			switch ( args.length ) {
+
+				case 0: result = method.call( this ); break;
+				case 1: result = method.call( this, args[ 0 ] ); break;
+				case 2: result = method.call( this, args[ 0 ], args[ 1 ] ); break;
+				case 3: result = method.call( this, args[ 0 ], args[ 1 ], args[ 2 ] ); break;
+				case 4: result = method.call( this, args[ 0 ], args[ 1 ], args[ 2 ], args[ 3 ] ); break;
+				default: result = method.apply( this, args );
+
+			}
+
 			if ( temporaries ) for ( const t of temporaries ) t.free();
 
 			if ( result === undefined ) return NULLABLE.has( key ) ? null : this;

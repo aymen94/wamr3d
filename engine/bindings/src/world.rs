@@ -219,6 +219,14 @@ impl World {
         Ok(self.transform(object)?.matrix_world.elements.to_vec())
     }
 
+    /// Copies an object's world matrix into an existing matrix without allocating an
+    /// intermediate JavaScript typed array.
+    #[wasm_bindgen(js_name = copyMatrixWorld)]
+    pub fn copy_matrix_world(&self, object: u64, target: &mut Matrix4) -> Result<(), JsError> {
+        target.inner = self.transform(object)?.matrix_world;
+        Ok(())
+    }
+
     /// Writes the world matrices of many objects, 16 numbers each, into a buffer inside
     /// the module and returns its address, for a `Float32Array` view without a copy
     /// (for example as the instance matrices of an instanced mesh). The view is valid

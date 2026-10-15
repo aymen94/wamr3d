@@ -1,5 +1,6 @@
 use crate::arena::Handle;
 use crate::attribute::{AttributeAccess, AttributeArray, BufferAttribute};
+use std::cell::Cell;
 use wamr_math::{Box3, Matrix3, Matrix4, Quaternion, Sphere, Vector3};
 
 pub type GeometryHandle = Handle<BufferGeometry>;
@@ -30,7 +31,7 @@ impl Default for DrawRange {
 ///
 /// The geometry owns its attributes. Bounds are `None` until computed, and stale after
 /// the positions change unless a method here changed them.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default)]
 pub struct BufferGeometry {
     pub name: String,
     index: Option<BufferAttribute>,
@@ -39,10 +40,25 @@ pub struct BufferGeometry {
     pub groups: Vec<Group>,
     pub bounding_box: Option<Box3>,
     pub bounding_sphere: Option<Sphere>,
+    // Raycasting needs a bound even when callers have not requested the public one.
+    raycast_sphere: Cell<Option<Sphere>>,
     pub draw_range: DrawRange,
     /// `Some(n)` makes this an instanced geometry drawn `n` times; `Some(u32::MAX)`
     /// means "as many as the instanced attributes allow" (`Infinity` in three.js).
     pub instance_count: Option<u32>,
+}
+
+impl PartialEq for BufferGeometry {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+            && self.index == other.index
+            && self.attributes == other.attributes
+            && self.groups == other.groups
+            && self.bounding_box == other.bounding_box
+            && self.bounding_sphere == other.bounding_sphere
+            && self.draw_range == other.draw_range
+            && self.instance_count == other.instance_count
+    }
 }
 
 impl BufferGeometry {
@@ -142,6 +158,13 @@ impl BufferGeometry {
             tangent.needs_update();
         }
 
+        if self.bounding_sphere.is_none() {
+            if let Some(mut sphere) = self.raycast_sphere.get() {
+                sphere.apply_matrix4(matrix);
+                self.raycast_sphere.set(Some(sphere));
+            }
+        }
+
         if self.bounding_box.is_some() {
             self.compute_bounding_box();
         }
@@ -219,11 +242,63 @@ impl BufferGeometry {
     fn position_box(&self) -> Box3 {
         let mut b = Box3::default();
         if let Some(position) = self.get_attribute("position") {
-            for i in 0..position.count() {
-                b.expand_by_point(&position.get_vector3(i));
+            if let AttributeArray::Float32(values) = &position.array {
+                let stride = position.item_size;
+                for vertex in values.chunks_exact(stride) {
+                    let (x, y, z) = (vertex[0], vertex[1], vertex[2]);
+                    b.min.x = min_number(b.min.x, x);
+                    b.min.y = min_number(b.min.y, y);
+                    b.min.z = min_number(b.min.z, z);
+                    b.max.x = max_number(b.max.x, x);
+                    b.max.y = max_number(b.max.y, y);
+                    b.max.z = max_number(b.max.z, z);
+                }
+            } else {
+                for i in 0..position.count() {
+                    b.expand_by_point(&position.get_vector3(i));
+                }
             }
         }
         b
+    }
+
+    fn measure_bounding_sphere(&self) -> Sphere {
+        let mut sphere = Sphere::default();
+        if let Some(position) = self.get_attribute("position") {
+            let center = self.position_box().get_center();
+            let mut max_radius_sq = 0.0f32;
+            if let AttributeArray::Float32(values) = &position.array {
+                let stride = position.item_size;
+                for vertex in values.chunks_exact(stride) {
+                    let dx = center.x as f64 - vertex[0] as f64;
+                    let dy = center.y as f64 - vertex[1] as f64;
+                    let dz = center.z as f64 - vertex[2] as f64;
+                    let d = (dx * dx + dy * dy + dz * dz) as f32;
+                    max_radius_sq = if d.is_nan() || d > max_radius_sq { d } else { max_radius_sq };
+                }
+            } else {
+                for i in 0..position.count() {
+                    let d = center.distance_to_squared(&position.get_vector3(i));
+                    max_radius_sq = if d.is_nan() || d > max_radius_sq { d } else { max_radius_sq };
+                }
+            }
+            sphere.center = center;
+            sphere.radius = (max_radius_sq as f64).sqrt() as f32;
+        }
+        sphere
+    }
+
+    /// A cached local bound for raycasting when the public bounding sphere is unset.
+    pub fn raycast_sphere(&self) -> Option<Sphere> {
+        if let Some(sphere) = self.raycast_sphere.get() {
+            return Some(sphere);
+        }
+        if self.bounding_sphere.is_some() {
+            return None;
+        }
+        let sphere = self.measure_bounding_sphere();
+        self.raycast_sphere.set(Some(sphere));
+        Some(sphere)
     }
 
     /// Sets `bounding_box` from the positions. Without positions the box is empty.
@@ -236,22 +311,12 @@ impl BufferGeometry {
     /// one becomes the empty sphere.
     pub fn compute_bounding_sphere(&mut self) {
         let mut sphere = self.bounding_sphere.unwrap_or_default();
-
-        if let Some(position) = self.get_attribute("position") {
-            let center = self.position_box().get_center();
-
-            let mut max_radius_sq = 0.0f32;
-            for i in 0..position.count() {
-                let d = center.distance_to_squared(&position.get_vector3(i));
-                // NaN must win, as it does in `Math.max`
-                max_radius_sq = if d.is_nan() || d > max_radius_sq { d } else { max_radius_sq };
-            }
-
-            sphere.center = center;
-            sphere.radius = (max_radius_sq as f64).sqrt() as f32;
+        if self.has_attribute("position") {
+            sphere = self.measure_bounding_sphere();
         }
 
         self.bounding_sphere = Some(sphere);
+        self.raycast_sphere.set(Some(sphere));
     }
 
     /// Computes per-vertex tangents (xyz, and handedness in w) from an indexed geometry
@@ -443,6 +508,14 @@ impl BufferGeometry {
         geometry.groups.clone_from(&self.groups);
         geometry
     }
+}
+
+fn min_number(a: f32, b: f32) -> f32 {
+    if a.is_nan() || b.is_nan() { f32::NAN } else if a < b { a } else { b }
+}
+
+fn max_number(a: f32, b: f32) -> f32 {
+    if a.is_nan() || b.is_nan() { f32::NAN } else if a > b { a } else { b }
 }
 
 #[cfg(test)]

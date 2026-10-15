@@ -183,7 +183,9 @@ export class Object3D {
 	/** The world matrix: one `Matrix4` per object, refreshed from the engine on each access. */
 	get matrixWorld() {
 
-		return ( this._matrixWorld ??= new Matrix4() ).fromArray( w().matrixWorld( this.handle ) );
+		const matrix = this._matrixWorld ??= new Matrix4();
+		w().copyMatrixWorld( this.handle, matrix );
+		return matrix;
 
 	}
 
