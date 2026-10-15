@@ -18,12 +18,12 @@ const copyWebsiteAsset = async (from, to) => {
   await fs.copyFile(source, destination);
 };
 
-// The site ships the local build, the same package its pages and examples are developed against.
-const wasmPackage = path.join(projectRoot, 'dist', 'wamr3d');
+// Ship the published package installed by the website's lockfile.
+const wasmPackage = path.join(websiteRoot, 'node_modules', 'wamr3d');
 try {
   await fs.access(path.join(wasmPackage, 'wamr3d_wasm_bg.wasm'));
 } catch (error) {
-  throw new Error('The local wamr3d package is missing. Run `node engine/bindings/build.mjs` at the repository root first.', { cause: error });
+  throw new Error('The installed wamr3d package is missing. Run `npm ci --prefix website` first.', { cause: error });
 }
 
 await copyWebsiteAsset('images/favicon.ico', 'images/favicon.ico');
