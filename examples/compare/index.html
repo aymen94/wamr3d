@@ -18,6 +18,13 @@
 	iframe { flex: 1; border: 1px solid #2c3038; border-radius: 8px; width: 100%; }
 	select, button { background: #22262d; color: inherit; border: 1px solid #3a404a; border-radius: 6px; padding: 3px 8px; font: inherit; }
 	p { margin: 6px 0; max-width: 1100px; }
+	/* Narrow screens: the two scenes one above the other, the page scrolls. */
+	@media (max-width: 760px) {
+		body { padding: 10px; }
+		select { max-width: 100%; }
+		.row { flex-direction: column; height: auto; }
+		.row > div { height: 70dvh; min-height: 300px; flex: none; }
+	}
 </style>
 </head>
 <body>

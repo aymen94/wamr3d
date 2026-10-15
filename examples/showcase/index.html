@@ -36,13 +36,28 @@
 	.best { color: #6fd08c; }
 	#error { color: #ff7b7b; white-space: pre-wrap; max-width: 420px; }
 	a { color: #7fb0ff; }
+	.box-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+	#panel .box-head, button.toggle { display: none; }
+	/* Phones and short screens: the timings on top, the settings as a sheet at the bottom.
+	   Both fold to one line; the timings keep the frame rate visible. */
+	@media (max-width: 700px), (max-height: 500px) {
+		.box { box-sizing: border-box; font-size: 12px; padding: 8px 10px; }
+		#stats { top: max(8px, env(safe-area-inset-top)); left: 8px; right: 8px; width: auto; max-height: 45dvh; overflow: auto; }
+		#stats td .muted { display: none; }
+		#panel { top: auto; bottom: max(8px, env(safe-area-inset-bottom)); left: 8px; right: 8px; width: auto; max-height: 45dvh; }
+		#panel .box-head { display: flex; }
+		button.toggle { display: block; width: auto; margin: 0; padding: 2px 9px; flex: none; }
+		#stats.collapsed #summary, #stats.collapsed tr:not(:first-child), #stats.collapsed #results { display: none; }
+		#panel.collapsed > :not(.box-head) { display: none; }
+		#panel .box-head h2 { margin: 0; }
+	}
 </style>
 </head>
 <body>
 <div id="stage"></div>
 
 <div id="stats" class="box">
-	<h1 id="engine">loading…</h1>
+	<div class="box-head"><h1 id="engine">loading…</h1><button class="toggle" type="button" data-toggle="stats" aria-expanded="true">Less</button></div>
 	<div id="summary" class="muted"></div>
 	<table>
 		<tr><td>Frame rate</td><td id="fps">–</td></tr>
@@ -58,6 +73,7 @@
 </div>
 
 <div id="panel" class="box">
+	<div class="box-head"><h2>Settings</h2><button class="toggle" type="button" data-toggle="panel" aria-expanded="true">Hide</button></div>
 	<div id="controls"></div>
 	<button id="compare">Compare all four renderers</button>
 	<p class="muted" style="margin: 8px 0 0">
@@ -68,6 +84,21 @@
 	</p>
 </div>
 
+<script>
+	// Fold both boxes at start on a small screen; the buttons only show there.
+	const labels = { stats: [ 'More', 'Less' ], panel: [ 'Show', 'Hide' ] };
+	const fold = ( id, collapsed ) => {
+		const box = document.getElementById( id ), button = box.querySelector( '.toggle' );
+		box.classList.toggle( 'collapsed', collapsed );
+		button.textContent = labels[ id ][ collapsed ? 0 : 1 ];
+		button.setAttribute( 'aria-expanded', String( ! collapsed ) );
+	};
+	document.querySelectorAll( '.toggle' ).forEach( ( button ) => button.addEventListener( 'click', () => {
+		const id = button.dataset.toggle;
+		fold( id, ! document.getElementById( id ).classList.contains( 'collapsed' ) );
+	} ) );
+	if ( matchMedia( '(max-width: 700px), (max-height: 500px)' ).matches ) { fold( 'stats', true ); fold( 'panel', true ); }
+</script>
 <script type="module" src="./main.js"></script>
 </body>
 </html>

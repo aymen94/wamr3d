@@ -29,6 +29,31 @@ function panel() {
 
 }
 
+// The info box folds down to its title and a one-line summary. On a phone, or a screen
+// too short for it, it starts folded so it does not cover the scene or the game's own UI.
+function setupInfo() {
+
+	const info = document.getElementById( 'info' );
+	const title = info?.querySelector( 'h1' );
+	if ( ! title ) return;
+	const toggle = document.createElement( 'button' );
+	toggle.type = 'button';
+	toggle.className = 'info-toggle';
+	const set = ( collapsed ) => {
+
+		info.classList.toggle( 'collapsed', collapsed );
+		toggle.textContent = collapsed ? 'Info' : 'Hide';
+		toggle.setAttribute( 'aria-expanded', String( ! collapsed ) );
+
+	};
+	toggle.addEventListener( 'click', () => set( ! info.classList.contains( 'collapsed' ) ) );
+	title.append( toggle );
+	set( matchMedia( '(max-width: 640px), (max-height: 500px)' ).matches );
+
+}
+
+setupInfo();
+
 function row( label, key ) {
 
 	return `<dt>${label}</dt><dd data-metric="${key}">–</dd>`;
@@ -63,7 +88,8 @@ export async function loadLibrary() {
 		+ row( 'CPU per frame', 'frame' ) + row( 'CPU in render()', 'render' )
 		+ row( 'Draw calls', 'calls' ) + row( 'Triangles', 'triangles' )
 		+ row( 'Start-up', 'load' ) + row( 'JS heap', 'heap' )
-		+ '</dl>';
+		+ '</dl>'
+		+ '<div class="mini" data-metric="mini">–</div>';
 
 	const library = engine === 'three' ? await loadThreeWebGPU() : await import( '../../dist/wamr3d/compat.js' );
 	if ( engine === 'wamr3d' ) await library.init();
@@ -130,12 +156,14 @@ function report( count, elapsed ) {
 	show( 'render', metrics.renders ? ms( metrics.render / metrics.renders ) : '–' );
 
 	const info = metrics.renderer?.info?.render;
+	const calls = info ? ( info.drawCalls ?? info.calls ) : null;
 	if ( info ) {
 
-		show( 'calls', ( info.drawCalls ?? info.calls ).toLocaleString() );
+		show( 'calls', calls.toLocaleString() );
 		show( 'triangles', Math.round( info.triangles ).toLocaleString() );
 
 	}
+	show( 'mini', `${engine === 'three' ? 'three.js' : 'WAMR3D'} · ${Math.round( count * 1000 / elapsed )} fps${info ? ` · ${calls.toLocaleString()} calls` : ''}` );
 
 	if ( metrics.loaded ) show( 'load', `${Math.round( metrics.loaded - metrics.loadStart )} ms` );
 	const heap = performance.memory?.usedJSHeapSize;

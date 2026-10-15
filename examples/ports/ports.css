@@ -13,4 +13,19 @@ a { color: #7fb0ff; }
 #engine dt { color: #9aa1ab; }
 #engine dd { margin: 0; text-align: right; }
 .port-error { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: 480px; padding: 16px 20px; background: #3a1418; border: 1px solid #a33; border-radius: 8px; z-index: 5; }
-@media (max-width: 640px) { #info details { display: none; } }
+#info h1 { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.info-toggle { flex: none; padding: 2px 9px; background: #1b1f27; color: #cfd4db; border: 1px solid #2c3038; border-radius: 6px; font: 12px/1.4 system-ui, sans-serif; cursor: pointer; }
+.info-toggle:hover { background: #262b35; }
+#engine .mini { display: none; }
+/* Folded: one row with the title, a short summary and the toggle. */
+#info.collapsed { display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 12px; }
+#info.collapsed h1 { order: 2; margin: 0; font-size: 0; gap: 0; }
+#info.collapsed h1 .info-toggle { font-size: 12px; }
+#info.collapsed > :not(h1):not(#engine), #info.collapsed .engine-head, #info.collapsed .metrics { display: none; }
+#info.collapsed #engine { order: 1; margin: 0; padding: 0; border: 0; }
+#info.collapsed #engine .mini { display: block; color: #cfd4db; white-space: nowrap; }
+@media (max-width: 640px), (max-height: 500px) {
+	#info { top: max(8px, env(safe-area-inset-top)); left: max(8px, env(safe-area-inset-left)); max-width: calc(100vw - 16px); max-height: calc(100dvh - 140px); overflow: auto; padding: 8px 10px; font-size: 12px; box-sizing: border-box; }
+	#info details { display: none; }
+	#engine .metrics { gap: 0 10px; }
+}
