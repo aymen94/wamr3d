@@ -8,6 +8,9 @@ a { color: #7fb0ff; }
 #info details { margin-top: 4px; color: #9aa1ab; }
 #info summary { cursor: pointer; }
 #info ul { margin: 4px 0 0; padding-left: 18px; }
-#engine { position: fixed; top: 10px; right: 10px; padding: 8px 12px; background: rgba(12, 14, 18, 0.82); border: 1px solid #2c3038; border-radius: 8px; text-align: right; font-variant-numeric: tabular-nums; z-index: 2; }
+#engine { margin-top: 8px; padding-top: 8px; border-top: 1px solid #2c3038; font-variant-numeric: tabular-nums; }
+#engine .metrics { display: grid; grid-template-columns: auto auto; gap: 1px 14px; margin: 6px 0 0; }
+#engine dt { color: #9aa1ab; }
+#engine dd { margin: 0; text-align: right; }
 .port-error { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: 480px; padding: 16px 20px; background: #3a1418; border: 1px solid #a33; border-radius: 8px; z-index: 5; }
-@media (max-width: 640px) { #info details { display: none; } #engine { top: auto; bottom: 10px; } }
+@media (max-width: 640px) { #info details { display: none; } }
