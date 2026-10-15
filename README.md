@@ -1,4 +1,6 @@
-<img src="logo.png" alt="WAMR3D" width="240">
+<p align="center">
+  <img src="logo.png" alt="WAMR3D" width="240">
+</p>
 
 # WAMR3D
 

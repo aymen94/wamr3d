@@ -95,6 +95,7 @@ function bind() {
 
   app.querySelectorAll('[data-chart]').forEach(bindChart);
   app.querySelector('[data-demo-start]')?.addEventListener('click', startDemo);
+  if (!('gpu' in navigator)) app.querySelectorAll('[data-gpu-note]').forEach((note) => { note.hidden = false; });
   updateSceneStatus();
   reveal();
 }

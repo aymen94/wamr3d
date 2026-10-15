@@ -148,7 +148,7 @@ function performance() {
 
 function liveDemo() {
   const others = [
-    ['#/examples', 'Games and scenes', 'Stack, City 3D, a voxel world and official three.js examples, ported by changing the import.'],
+    ['#/examples', 'Games and scenes', 'Crossy Road, Stack, City 3D and a voxel world, ported by changing the import.'],
     ['./examples/showcase/', 'Showcase', 'Up to 100,000 animated bodies. Switch between WAMR3D and three.js and compare live timings.'],
     ['./examples/compare/', 'Side by side', 'The same scene on each engine, with timing overlays.']
   ];

@@ -49,18 +49,6 @@ const sections = [
       port('voxel-world', 'Procedural terrain', 'Voxel world', 'A 128 × 128 Minecraft-style landscape from Perlin noise, merged into a single textured mesh. Fly through it with the mouse and keyboard.', 'three.js authors', 'https://threejs.org/examples/#webgl_geometry_minecraft'),
       port('spotlights', 'Lights and shadows', 'Spotlights', 'Three coloured spot lights with PCF shadows, tweened to new cones and positions every five seconds. Drag to orbit.', 'three.js authors', 'https://threejs.org/examples/#webgl_lights_spotlights')
     ]
-  },
-  {
-    id: 'threejs-examples',
-    label: 'three.js examples',
-    title: 'Official examples, library swapped',
-    intro: 'Examples from threejs.org (r186). Each page lists what had to change besides the import, which is usually a material or add-on that WAMR3D does not have yet.',
-    items: [
-      port('interactive-cubes', '2,000 meshes · picking', 'Interactive cubes', 'Two thousand cubes picked with a Raycaster on every frame while the camera circles. Hover to highlight.', 'three.js authors', 'https://threejs.org/examples/#webgl_interactive_cubes'),
-      port('triangles', '160,000 triangles', 'BufferGeometry triangles', 'One geometry with 160,000 separate triangles, flat normals and vertex colours, lit by two lights through fog.', 'three.js authors', 'https://threejs.org/examples/#webgl_buffergeometry'),
-      port('points', '500,000 points', 'BufferGeometry points', 'Half a million vertex-coloured points in a single draw call, rotating in fog.', 'three.js authors', 'https://threejs.org/examples/#webgl_buffergeometry_points'),
-      port('lines', '10,000 vertices', 'BufferGeometry lines', 'A 10,000-vertex coloured line that blends towards a second random shape, with its position attribute updated every frame.', 'three.js authors', 'https://threejs.org/examples/#webgl_buffergeometry_lines')
-    ]
   }
 ];
 
@@ -86,6 +74,7 @@ function card(demo, i) {
 
 export function examples() {
   return shell(`${pageIntro({ label: 'Live demos', title: 'Real scenes.<br><span class="text-gradient">Runnable code.</span>', intro: 'Pages that measure the engine, demos built with WAMR3D, and games and scenes written for three.js that run on it with the import changed. Each port can switch to three.js r186 for comparison. The demos need a browser with WebGPU, such as current Chrome or Edge.' })}
+  <p data-gpu-note hidden class="relative mx-auto mb-8 max-w-6xl px-6 text-sm text-amber-300">This browser has no WebGPU, so the demos will not start here. Try current Chrome or Edge.</p>
   <div class="relative bg-gradient-to-b from-transparent via-ink-950/85 to-ink-950">
     <nav class="mx-auto flex max-w-6xl flex-wrap gap-2 px-6 pb-10" aria-label="Demo sections">
       ${sections.map((s) => `<a href="#/examples#${s.id}" class="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-white/10 hover:text-white">${s.label} <span class="ml-1 font-mono text-xs text-slate-400">${s.items.length}</span></a>`).join('')}
