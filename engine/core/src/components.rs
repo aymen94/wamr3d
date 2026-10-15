@@ -279,6 +279,8 @@ pub enum Primitive {
     LineSegments = 2,
     /// One point per vertex, one pixel in size.
     Points = 3,
+    /// Like `Line`, plus a segment from the last vertex back to the first.
+    LineLoop = 4,
 }
 
 #[cfg(test)]

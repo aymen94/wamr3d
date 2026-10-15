@@ -2,7 +2,7 @@
 //!
 //! A [`World`] owns objects, their components and the resources they use; everything
 //! is referred to by generational [`Handle`]s, so there are no reference cycles and a
-//! stale handle fails instead of reading freed memory. Behaviour follows three.js r186;
+//! stale handle fails instead of reading freed memory. Behaviour follows three.js;
 //! the mapping from its classes is in DECISIONS.md section 5.
 
 #![forbid(unsafe_code)]
@@ -27,5 +27,5 @@ pub use components::{Hierarchy, Primitive, Renderable, Transform, Visibility};
 pub use constants::{GpuType, Usage};
 pub use geometry::{BufferGeometry, DrawRange, GeometryHandle, Group};
 pub use layers::Layers;
-pub use resources::{Material, Shading, Side, Raycaster, RaycasterParams, RenderTarget, RenderTargetHandle, Timer, Uniform};
+pub use resources::{Material, Shading, Side, TextureMaps, Raycaster, RaycasterParams, RenderTarget, RenderTargetHandle, Timer, Uniform};
 pub use world::{CoreEvent, Entity, MaterialHandle, World};

@@ -46,9 +46,16 @@ run( tool( 'wasm-bindgen' ), [
 	path.join( engine, 'target', 'wasm32-unknown-unknown', 'release', 'wamr3d.wasm' )
 ] );
 
-for ( const file of [ 'index.js', 'index.d.ts', 'compat.js', 'compat.d.ts', 'webgpu.js', 'package.json', 'README.md' ] ) {
+for ( const file of [ 'index.js', 'index.d.ts', 'compat.js', 'compat.d.ts', 'webgpu.js', 'webgl.js', 'package.json', 'README.md' ] ) {
 
 	fs.copyFileSync( path.join( here, 'js', file ), path.join( dist, file ) );
+
+}
+
+// The modules behind compat.js and webgpu.js.
+for ( const folder of [ 'compat', 'webgpu' ] ) {
+
+	if ( fs.existsSync( path.join( here, 'js', folder ) ) ) fs.cpSync( path.join( here, 'js', folder ), path.join( dist, folder ), { recursive: true } );
 
 }
 

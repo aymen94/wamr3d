@@ -1,0 +1,476 @@
+//! The `Renderer` class: prepares frames for the WebGPU host (`webgpu.js`).
+
+use super::*;
+
+// ---------------------------------------------------------------- Renderer
+
+/// Prepares frames for the WebGPU host: culling, draw order, uniform data and shader.
+/// The host (`webgpu.js` in the package) issues the GPU calls.
+#[wasm_bindgen]
+#[derive(Default)]
+pub struct Renderer {
+    lighting: wamr_renderer::Lighting,
+    frame: wamr_renderer::Frame,
+    /// Per draw, the record in `geometry_state` that describes its geometry.
+    geometry_slots: Vec<u32>,
+    /// The same for the draws of each shadow pass.
+    shadow_geometry_slots: Vec<Vec<u32>>,
+    /// [`GEOMETRY_STATE_FIELDS`] numbers per distinct geometry of the frame.
+    geometry_state: Vec<u32>,
+    /// The distinct texture sets of the frame, `TEXTURE_SLOTS` ids each, so that the host
+    /// makes one bind group per set rather than per draw.
+    texture_sets: Vec<u32>,
+    /// Per draw, its set in `texture_sets`.
+    draw_texture_sets: Vec<u32>,
+}
+
+/// Vertex inputs of the shader in location order, with their floats per vertex. The
+/// host binds its vertex buffers in the same order.
+const VERTEX_ATTRIBUTES: [(&str, usize); 4] = [("position", 3), ("normal", 3), ("uv", 2), ("color", 3)];
+
+/// Slot index, generation, vertex count, a (version, address) pair per vertex input,
+/// index version, floats per colour (3 or 4).
+pub(crate) const GEOMETRY_STATE_FIELDS: usize = 3 + VERTEX_ATTRIBUTES.len() * 2 + 2;
+
+/// Appends what the host needs to keep the GPU copy of `handle` current. An input that
+/// is missing, not float, or of the wrong length gets address 0, and the host binds
+/// zeros in its place. An address is valid until the attribute is replaced or the
+/// geometry disposed; a view over it must be created after the last allocation, since
+/// memory growth detaches earlier views.
+fn push_geometry_state(out: &mut Vec<u32>, world: &wamr_core::World, handle: GeometryHandle) {
+    let start = out.len();
+    out.extend([handle.index(), handle.generation()]);
+    if let Some(geometry) = world.geometry(handle) {
+        let vertices = geometry.get_attribute("position").map_or(0, |a| a.count());
+        out.push(vertices as u32);
+        // colours may carry alpha; the renderer then marks the draw's pipeline
+        let color_size = geometry.get_attribute("color").map_or(3, |a| if a.item_size == 4 { 4 } else { 3 });
+        for (name, size) in VERTEX_ATTRIBUTES {
+            let size = if name == "color" { color_size } else { size };
+            let state = geometry.get_attribute(name).and_then(|a| match &a.array {
+                AttributeArray::Float32(values) if a.item_size == size && values.len() == vertices * size => Some([a.version, values.as_ptr() as usize as u32]),
+                _ => None,
+            });
+            out.extend(state.unwrap_or([0, 0]));
+        }
+        out.push(geometry.get_index().map_or(0, |index| index.version));
+        out.push(color_size as u32);
+    }
+    out.resize(start + GEOMETRY_STATE_FIELDS, 0);
+}
+
+#[wasm_bindgen]
+impl Renderer {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Renderer {
+        Renderer::default()
+    }
+
+    /// WGSL source of the mesh pipeline.
+    #[wasm_bindgen(js_name = shaderSource)]
+    pub fn shader_source() -> String {
+        wamr_renderer::shader_source()
+    }
+
+    /// WGSL source of the passes that prefilter an environment map (three.js PMREM).
+    #[wasm_bindgen(js_name = pmremShaderSource)]
+    pub fn pmrem_shader_source() -> String {
+        wamr_renderer::pmrem_shader_source()
+    }
+
+    /// Lights standard materials that use it with an equirectangular environment map:
+    /// the host's texture id, the source image width, and the rotation of sampling
+    /// directions as a 3x3 matrix (column-major, already inverted).
+    #[wasm_bindgen(js_name = setEnvironment)]
+    pub fn set_environment(&mut self, texture: u32, source_width: u32, rotation: &[f32]) {
+        let mut matrix = wamr_math::Matrix3::default();
+        if rotation.len() == 9 {
+            matrix.elements.copy_from_slice(rotation);
+        }
+        self.lighting.environment = Some(wamr_renderer::Environment { texture, source_width, rotation: matrix });
+    }
+
+    #[wasm_bindgen(js_name = clearEnvironment)]
+    pub fn clear_environment(&mut self) {
+        self.lighting.environment = None;
+    }
+
+    /// The environment of the last prepared frame: texture id, `lodMax`, width and height
+    /// of the prefiltered map; empty without one.
+    #[wasm_bindgen(js_name = environmentInfo)]
+    pub fn environment_info(&self) -> Vec<u32> {
+        self.frame.environment.map_or_else(Vec::new, |e| {
+            let (width, height) = e.layout_size();
+            vec![e.texture, e.lod_max(), width, height]
+        })
+    }
+
+    /// Draws a texture behind the scene (three.js `scene.background`): `kind` 0 for an
+    /// equirectangular image, 1 for the same blurred by `blurriness` (from its
+    /// prefiltered map), 2 for an image filling the frame. `source_width` is the image
+    /// width in pixels; `rotation` turns view directions (column-major 3x3, already
+    /// inverted).
+    #[wasm_bindgen(js_name = setBackground)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_background(&mut self, texture: u32, kind: u8, source_width: u32, intensity: f32, blurriness: f32, rotation: &[f32]) {
+        let mut matrix = wamr_math::Matrix3::default();
+        if rotation.len() == 9 {
+            matrix.elements.copy_from_slice(rotation);
+        }
+        let kind = match kind {
+            1 => wamr_renderer::BackgroundKind::Blurred,
+            2 => wamr_renderer::BackgroundKind::Screen,
+            _ => wamr_renderer::BackgroundKind::Equirectangular,
+        };
+        self.lighting.background = Some(wamr_renderer::Background { texture, kind, source_width, intensity, blurriness, rotation: matrix });
+    }
+
+    #[wasm_bindgen(js_name = clearBackground)]
+    pub fn clear_background(&mut self) {
+        self.lighting.background = None;
+    }
+
+    /// The background of the last prepared frame: texture id, kind, and `lodMax` of the
+    /// prefiltered map; empty without one.
+    #[wasm_bindgen(js_name = backgroundInfo)]
+    pub fn background_info(&self) -> Vec<u32> {
+        self.frame.background.map_or_else(Vec::new, |b| vec![b.texture, b.kind as u32, b.prefiltered().lod_max()])
+    }
+
+    /// Uniforms of the background pass of the last prepared frame (see
+    /// `backgroundShaderSource`); empty without a background.
+    #[wasm_bindgen(js_name = backgroundUniforms)]
+    pub fn background_uniforms(&self) -> Vec<f32> {
+        self.frame.background_uniforms.clone()
+    }
+
+    /// GLSL ES 3.00 source of a pass, for the WebGL 2 host (`webgl.js`): `mesh.vert`,
+    /// `mesh.frag`, `shadow.vert`, `shadow.frag`, `fullscreen.vert`, `background.frag`,
+    /// `output.frag`, `pmrem.vert`, `pmrem.equirect` or `pmrem.ggx`; empty for others.
+    #[wasm_bindgen(js_name = glslSource)]
+    pub fn glsl_source(name: &str) -> String {
+        wamr_renderer::glsl_source(name).unwrap_or_default()
+    }
+
+    /// WGSL source of the background pass.
+    #[wasm_bindgen(js_name = backgroundShaderSource)]
+    pub fn background_shader_source() -> String {
+        wamr_renderer::background_shader_source()
+    }
+
+    /// WGSL source of the output pass that tone-maps a linear frame onto the canvas.
+    #[wasm_bindgen(js_name = outputShaderSource)]
+    pub fn output_shader_source() -> String {
+        wamr_renderer::OUTPUT_SHADER.to_string()
+    }
+
+    /// WGSL source of the depth-only shadow pipeline.
+    #[wasm_bindgen(js_name = shadowShaderSource)]
+    pub fn shadow_shader_source() -> String {
+        wamr_renderer::SHADOW_SHADER.to_string()
+    }
+
+    /// Layers of the shadow texture array, the most shadow-casting lights per frame.
+    #[wasm_bindgen(js_name = maxShadows)]
+    pub fn max_shadows() -> u32 {
+        wamr_renderer::MAX_SHADOWS as u32
+    }
+
+    /// three.js `renderer.shadowMap.enabled`.
+    #[wasm_bindgen(js_name = setShadowsEnabled)]
+    pub fn set_shadows_enabled(&mut self, enabled: bool) {
+        self.lighting.shadows = enabled;
+    }
+
+    /// Gives the light added last a shadow. `orthographic` selects the projection:
+    /// `a, b, c, d` are left, right, top, bottom for an orthographic camera, or the
+    /// field of view in degrees and the aspect for a perspective one. The shadow camera
+    /// looks at the target. Ignored for point lights.
+    #[wasm_bindgen(js_name = setLastLightShadow)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_last_light_shadow(&mut self, orthographic: bool, a: f32, b: f32, c: f32, d: f32, near: f32, far: f32, target_x: f32, target_y: f32, target_z: f32, bias: f32, normal_bias: f32, intensity: f32, radius: f32, map_width: u32, map_height: u32) {
+        let projection = if orthographic {
+            wamr_renderer::ShadowProjection::Orthographic { left: a, right: b, top: c, bottom: d, near, far }
+        } else {
+            wamr_renderer::ShadowProjection::Perspective { fov: a, aspect: b, near, far }
+        };
+        if let Some(light) = self.lighting.lights.last_mut() {
+            light.shadow = Some(wamr_renderer::LightShadow { projection, target: wamr_math::Vector3::new(target_x, target_y, target_z), bias, normal_bias, intensity, radius, map_width, map_height });
+        }
+    }
+
+    /// Shadow passes of the last prepared frame.
+    #[wasm_bindgen(js_name = shadowCount)]
+    pub fn shadow_count(&self) -> u32 {
+        self.frame.shadows.len() as u32
+    }
+
+    /// Width and height of each layer of the shadow texture array.
+    #[wasm_bindgen(js_name = shadowMapSize)]
+    pub fn shadow_map_size(&self) -> Vec<u32> {
+        vec![self.frame.shadow_map_width, self.frame.shadow_map_height]
+    }
+
+    /// Layer, width and height of a pass's map, then its view-projection (16 floats).
+    #[wasm_bindgen(js_name = shadowPassInfo)]
+    pub fn shadow_pass_info(&self, pass: u32) -> Vec<f32> {
+        self.frame.shadows.get(pass as usize).map_or_else(Vec::new, |p| {
+            let mut out = vec![p.layer as f32, p.width as f32, p.height as f32];
+            out.extend(p.view_projection);
+            out
+        })
+    }
+
+    /// Like `drawInfo`, for the casters of a shadow pass.
+    #[wasm_bindgen(js_name = shadowDrawInfo)]
+    pub fn shadow_draw_info(&self, pass: u32) -> Vec<u32> {
+        self.frame.shadows.get(pass as usize).map_or_else(Vec::new, |p| p.draws.iter().flat_map(|d| [d.pipeline, 0, d.start, d.count, d.instances, d.instance_count]).collect())
+    }
+
+    /// Like `drawGeometrySlots`, for the casters of a shadow pass.
+    #[wasm_bindgen(js_name = shadowDrawGeometrySlots)]
+    pub fn shadow_draw_geometry_slots(&self, pass: u32) -> Vec<u32> {
+        self.shadow_geometry_slots.get(pass as usize).cloned().unwrap_or_default()
+    }
+
+    /// Object uniforms of a shadow pass (only the model matrix is read), same stride as
+    /// `objectUniforms`.
+    #[wasm_bindgen(js_name = shadowObjectUniforms)]
+    pub fn shadow_object_uniforms(&self, pass: u32) -> Vec<f32> {
+        self.frame.shadows.get(pass as usize).map_or_else(Vec::new, |p| p.object_uniforms.clone())
+    }
+
+    /// Index in `frameUniforms` of the tone mapping (a three.js constant, 0 for none);
+    /// the exposure follows `TONE_MAPPING_EXPOSURE_INDEX`.
+    #[wasm_bindgen(js_name = toneMappingIndex)]
+    pub fn tone_mapping_index() -> u32 {
+        wamr_renderer::TONE_MAPPING_INDEX as u32
+    }
+
+    #[wasm_bindgen(js_name = toneMappingExposureIndex)]
+    pub fn tone_mapping_exposure_index() -> u32 {
+        wamr_renderer::TONE_MAPPING_EXPOSURE_INDEX as u32
+    }
+
+    /// Bytes per object in `objectUniforms`.
+    #[wasm_bindgen(js_name = objectUniformSize)]
+    pub fn object_uniform_size() -> u32 {
+        (wamr_renderer::OBJECT_UNIFORM_FLOATS * 4) as u32
+    }
+
+    /// Bytes of each object's uniforms that the shader reads.
+    #[wasm_bindgen(js_name = objectBindingSize)]
+    pub fn object_binding_size() -> u32 {
+        (wamr_renderer::OBJECT_BINDING_FLOATS * 4) as u32
+    }
+
+    /// Lights beyond this many are ignored.
+    #[wasm_bindgen(js_name = maxLights)]
+    pub fn max_lights() -> u32 {
+        wamr_renderer::MAX_LIGHTS as u32
+    }
+
+    /// Fog: `kind` 0 none, 1 linear between `near` and `far`, 2 exponential squared
+    /// with `density`. The colour is linear.
+    #[wasm_bindgen(js_name = setFog)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_fog(&mut self, kind: u8, r: f32, g: f32, b: f32, near: f32, far: f32, density: f32) {
+        let kind = match kind {
+            1 => wamr_renderer::FogKind::Linear,
+            2 => wamr_renderer::FogKind::Exponential,
+            _ => wamr_renderer::FogKind::None,
+        };
+        self.lighting.fog = wamr_renderer::Fog { kind, color: wamr_math::Color::new(r, g, b), near, far, density };
+    }
+
+    /// Tone mapping of the output, as a three.js constant (0 none, 1 linear, 2 Reinhard,
+    /// 3 Cineon, 4 ACES filmic, 6 AgX, 7 neutral), and its exposure.
+    #[wasm_bindgen(js_name = setToneMapping)]
+    pub fn set_tone_mapping(&mut self, kind: u8, exposure: f32) {
+        self.lighting.tone_mapping = wamr_renderer::ToneMapping::from_u8(kind);
+        self.lighting.exposure = exposure;
+    }
+
+    #[wasm_bindgen(js_name = clearLights)]
+    pub fn clear_lights(&mut self) {
+        self.lighting.lights.clear();
+    }
+
+    /// Adds a directional light: direction towards the light, linear colour, intensity.
+    #[wasm_bindgen(js_name = addDirectionalLight)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_directional_light(&mut self, x: f32, y: f32, z: f32, r: f32, g: f32, b: f32, intensity: f32) {
+        let light = wamr_renderer::Light { direction: wamr_math::Vector3::new(x, y, z), color: wamr_math::Color::new(r, g, b), intensity, ..Default::default() };
+        self.lighting.lights.push(light);
+    }
+
+    /// Adds a point light at a world position. `distance` 0 means no cutoff.
+    #[wasm_bindgen(js_name = addPointLight)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_point_light(&mut self, x: f32, y: f32, z: f32, r: f32, g: f32, b: f32, intensity: f32, distance: f32, decay: f32) {
+        self.lighting.lights.push(wamr_renderer::Light {
+            kind: wamr_renderer::LightKind::Point,
+            position: wamr_math::Vector3::new(x, y, z),
+            color: wamr_math::Color::new(r, g, b),
+            intensity,
+            distance,
+            decay,
+            ..Default::default()
+        });
+    }
+
+    /// Adds a spot light at a world position shining at a world target. `angle` is the
+    /// cone's half angle in radians; `penumbra` (0..1) is the soft share of the cone.
+    #[wasm_bindgen(js_name = addSpotLight)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_spot_light(&mut self, x: f32, y: f32, z: f32, target_x: f32, target_y: f32, target_z: f32, r: f32, g: f32, b: f32, intensity: f32, distance: f32, decay: f32, angle: f32, penumbra: f32) {
+        self.lighting.lights.push(wamr_renderer::Light {
+            kind: wamr_renderer::LightKind::Spot,
+            position: wamr_math::Vector3::new(x, y, z),
+            direction: wamr_math::Vector3::new(x - target_x, y - target_y, z - target_z),
+            color: wamr_math::Color::new(r, g, b),
+            intensity,
+            distance,
+            decay,
+            cone_cos: (angle as f64).cos() as f32,
+            penumbra_cos: (angle as f64 * (1.0 - penumbra as f64)).cos() as f32,
+            shadow: None,
+        });
+    }
+
+    /// Replaces all lights with one directional light.
+    #[wasm_bindgen(js_name = setDirectionalLight)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_directional_light(&mut self, x: f32, y: f32, z: f32, r: f32, g: f32, b: f32, intensity: f32) {
+        self.lighting.lights.clear();
+        self.add_directional_light(x, y, z, r, g, b, intensity);
+    }
+
+    /// Ambient light from above (sky) and below (ground), linear colours.
+    #[wasm_bindgen(js_name = setAmbientLight)]
+    pub fn set_ambient_light(&mut self, sky_r: f32, sky_g: f32, sky_b: f32, ground_r: f32, ground_g: f32, ground_b: f32) {
+        self.lighting.sky = wamr_math::Color::new(sky_r, sky_g, sky_b);
+        self.lighting.ground = wamr_math::Color::new(ground_r, ground_g, ground_b);
+    }
+
+    /// Builds the frame for `camera` looking at the subtree of `root` and returns the
+    /// number of draws. World matrices must be up to date.
+    pub fn prepare(&mut self, world: &mut World, root: u64, camera: u64) -> Result<u32, JsError> {
+        self.frame = wamr_renderer::prepare_frame(&mut world.inner, entity(root), entity(camera), &self.lighting)
+            .ok_or_else(|| JsError::new("object is not a camera"))?;
+
+        self.geometry_slots.clear();
+        self.geometry_state.clear();
+        self.shadow_geometry_slots.clear();
+        let mut records: std::collections::HashMap<GeometryHandle, u32> = std::collections::HashMap::new();
+        let state = &mut self.geometry_state;
+        let mut slot_of = |geometry: GeometryHandle| -> u32 {
+            *records.entry(geometry).or_insert_with(|| {
+                let slot = (state.len() / GEOMETRY_STATE_FIELDS) as u32;
+                push_geometry_state(state, &world.inner, geometry);
+                slot
+            })
+        };
+        for draw in &self.frame.draws {
+            self.geometry_slots.push(slot_of(draw.geometry));
+        }
+        for pass in &self.frame.shadows {
+            self.shadow_geometry_slots.push(pass.draws.iter().map(|d| slot_of(d.geometry)).collect());
+        }
+
+        self.texture_sets.clear();
+        self.draw_texture_sets.clear();
+        let mut sets: std::collections::HashMap<[u32; wamr_renderer::TEXTURE_SLOTS], u32> = std::collections::HashMap::new();
+        for draw in &self.frame.draws {
+            let next = sets.len() as u32;
+            let set = *sets.entry(draw.textures).or_insert_with(|| {
+                self.texture_sets.extend(draw.textures);
+                next
+            });
+            self.draw_texture_sets.push(set);
+        }
+
+        Ok(self.frame.draws.len() as u32)
+    }
+
+    /// Numbers per record of `geometryState`.
+    #[wasm_bindgen(js_name = geometryStateSize)]
+    pub fn geometry_state_size() -> u32 {
+        GEOMETRY_STATE_FIELDS as u32
+    }
+
+    /// One record per distinct geometry of the last prepared frame: slot index and
+    /// generation of the handle, vertex count, then for position, normal, uv and colour
+    /// the attribute's version and the address of its floats (0 when the shader input
+    /// cannot use it), then the index version and the floats per colour (3 or 4).
+    /// Everything the host needs to decide what to upload, in one call.
+    #[wasm_bindgen(js_name = geometryState)]
+    pub fn geometry_state(&self) -> Vec<u32> {
+        self.geometry_state.clone()
+    }
+
+    /// Per draw, which record of `geometryState` describes its geometry.
+    #[wasm_bindgen(js_name = drawGeometrySlots)]
+    pub fn draw_geometry_slots(&self) -> Vec<u32> {
+        self.geometry_slots.clone()
+    }
+
+    /// Objects that had something to draw before culling, in the last prepared frame.
+    #[wasm_bindgen(js_name = candidateCount)]
+    pub fn candidate_count(&self) -> u32 {
+        self.frame.candidates as u32
+    }
+
+    #[wasm_bindgen(js_name = frameUniforms)]
+    pub fn frame_uniforms(&self) -> Vec<f32> {
+        self.frame.frame_uniforms.clone()
+    }
+
+    /// Address of the object uniform data inside the module's memory, for a view
+    /// without a copy. Valid until the next `prepare` or memory growth.
+    #[wasm_bindgen(js_name = objectUniformsPtr)]
+    pub fn object_uniforms_ptr(&self) -> u32 {
+        self.frame.object_uniforms.as_ptr() as u32
+    }
+
+    /// Number of floats at `objectUniformsPtr`.
+    #[wasm_bindgen(js_name = objectUniformsLength)]
+    pub fn object_uniforms_length(&self) -> u32 {
+        self.frame.object_uniforms.len() as u32
+    }
+
+    #[wasm_bindgen(js_name = objectUniforms)]
+    pub fn object_uniforms(&self) -> Vec<f32> {
+        self.frame.object_uniforms.clone()
+    }
+
+    /// The geometry handle of each draw, in draw order.
+    #[wasm_bindgen(js_name = drawGeometries)]
+    pub fn draw_geometries(&self) -> Vec<u64> {
+        self.frame.draws.iter().map(|d| d.geometry.to_bits()).collect()
+    }
+
+    /// Six numbers per draw, in draw order: pipeline state, colour texture id (0 for
+    /// none), first index or vertex, count, instance data id (0 for none) and number of
+    /// instances. Pipeline state bits: 0-1 side (0 front,
+    /// 1 back, 2 both), 2 alpha blending, 3 depth write, 4 depth test, 5-6 primitive
+    /// (0 triangles, 1 line strip, 2 line list).
+    #[wasm_bindgen(js_name = drawInfo)]
+    pub fn draw_info(&self) -> Vec<u32> {
+        self.frame.draws.iter().zip(&self.draw_texture_sets).flat_map(|(d, set)| [d.pipeline, *set, d.start, d.count, d.instances, d.instance_count]).collect()
+    }
+
+    /// The texture sets of the last prepared frame, `textureSlots()` ids each (colour,
+    /// normal, roughness, metalness, emissive, alpha and ambient-occlusion maps; 0 for
+    /// none). `drawInfo` gives each draw's set.
+    #[wasm_bindgen(js_name = textureSets)]
+    pub fn texture_sets(&self) -> Vec<u32> {
+        self.texture_sets.clone()
+    }
+
+    /// Texture ids per set in `textureSets`.
+    #[wasm_bindgen(js_name = textureSlots)]
+    pub fn texture_slots() -> u32 {
+        wamr_renderer::TEXTURE_SLOTS as u32
+    }
+}

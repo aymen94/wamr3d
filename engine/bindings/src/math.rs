@@ -1,5 +1,6 @@
-//! JavaScript classes for the math types beyond the three in `lib.rs`, the remaining
-//! methods of those three, and the scalar helpers.
+//! JavaScript classes for the math types beyond the three in `lib.rs` (including
+//! `Line3`, `Triangle`, `Spherical` and `Cylindrical`), the remaining methods of those
+//! three, and the scalar helpers.
 //!
 //! Every method forwards to `wamr-math`. The macros below only remove the repetition of
 //! writing those one-line forwards by hand.
@@ -607,304 +608,8 @@ mutate_with!(Color {
 });
 query!(Color { "equals" equals(c: Color) -> bool; });
 
-// ---------------------------------------------------------------- Box3
-
-class!(Box3, wamr_math::Box3);
-
-#[wasm_bindgen]
-impl Box3 {
-    /// An empty box.
-    #[wasm_bindgen(constructor)]
-    pub fn new() -> Box3 {
-        Box3::default()
-    }
-
-    #[wasm_bindgen(getter)]
-    pub fn min(&self) -> Vector3 {
-        wrap(self.inner.min)
-    }
-
-    #[wasm_bindgen(getter)]
-    pub fn max(&self) -> Vector3 {
-        wrap(self.inner.max)
-    }
-
-    /// The box around a flat list of xyz positions.
-    #[wasm_bindgen(js_name = setFromArray)]
-    pub fn set_from_array(&mut self, positions: &[f32]) {
-        self.inner.set_from_array(positions);
-    }
-
-    #[wasm_bindgen(js_name = getCenter)]
-    pub fn get_center(&self) -> Vector3 {
-        wrap(self.inner.get_center())
-    }
-
-    #[wasm_bindgen(js_name = getSize)]
-    pub fn get_size(&self) -> Vector3 {
-        wrap(self.inner.get_size())
-    }
-
-    #[wasm_bindgen(js_name = clampPoint)]
-    pub fn clamp_point(&self, point: &Vector3) -> Vector3 {
-        wrap(self.inner.clamp_point(&point.inner))
-    }
-
-    #[wasm_bindgen(js_name = getBoundingSphere)]
-    pub fn get_bounding_sphere(&self) -> Sphere {
-        Sphere { inner: self.inner.get_bounding_sphere() }
-    }
-}
-
-mutate!(Box3 {
-    "makeEmpty" make_empty();
-    "expandByScalar" expand_by_scalar(scalar: f32);
-});
-mutate_with!(Box3 {
-    "set" set(min: Vector3, max: Vector3);
-    "setFromCenterAndSize" set_from_center_and_size(center: Vector3, size: Vector3);
-    "expandByPoint" expand_by_point(point: Vector3);
-    "expandByVector" expand_by_vector(vector: Vector3);
-    "intersect" intersect(other: Box3);
-    "union" union(other: Box3);
-    "applyMatrix4" apply_matrix4(m: Matrix4);
-    "translate" translate(offset: Vector3);
-});
-query!(Box3 {
-    "isEmpty" is_empty() -> bool;
-    "containsPoint" contains_point(point: Vector3) -> bool;
-    "containsBox" contains_box(other: Box3) -> bool;
-    "intersectsBox" intersects_box(other: Box3) -> bool;
-    "intersectsSphere" intersects_sphere(sphere: Sphere) -> bool;
-    "intersectsPlane" intersects_plane(plane: Plane) -> bool;
-    "distanceToPoint" distance_to_point(point: Vector3) -> f32;
-    "equals" equals(other: Box3) -> bool;
-});
-
-// ---------------------------------------------------------------- Sphere
-
-class!(Sphere, wamr_math::Sphere);
-
-#[wasm_bindgen]
-impl Sphere {
-    #[wasm_bindgen(constructor)]
-    pub fn new(center: &Vector3, radius: f32) -> Sphere {
-        Sphere { inner: wamr_math::Sphere::new(center.inner, radius) }
-    }
-
-    #[wasm_bindgen(getter)]
-    pub fn center(&self) -> Vector3 {
-        wrap(self.inner.center)
-    }
-
-    #[wasm_bindgen(getter)]
-    pub fn radius(&self) -> f32 {
-        self.inner.radius
-    }
-
-    #[wasm_bindgen(setter)]
-    pub fn set_radius(&mut self, radius: f32) {
-        self.inner.radius = radius;
-    }
-
-    pub fn set(&mut self, center: &Vector3, radius: f32) {
-        self.inner.set(&center.inner, radius);
-    }
-
-    #[wasm_bindgen(js_name = clampPoint)]
-    pub fn clamp_point(&self, point: &Vector3) -> Vector3 {
-        wrap(self.inner.clamp_point(&point.inner))
-    }
-
-    #[wasm_bindgen(js_name = getBoundingBox)]
-    pub fn get_bounding_box(&self) -> Box3 {
-        Box3 { inner: self.inner.get_bounding_box() }
-    }
-}
-
-mutate!(Sphere { "makeEmpty" make_empty(); });
-mutate_with!(Sphere {
-    "applyMatrix4" apply_matrix4(m: Matrix4);
-    "translate" translate(offset: Vector3);
-    "expandByPoint" expand_by_point(point: Vector3);
-    "union" union(other: Sphere);
-});
-query!(Sphere {
-    "isEmpty" is_empty() -> bool;
-    "containsPoint" contains_point(point: Vector3) -> bool;
-    "distanceToPoint" distance_to_point(point: Vector3) -> f32;
-    "intersectsSphere" intersects_sphere(other: Sphere) -> bool;
-    "intersectsBox" intersects_box(other: Box3) -> bool;
-    "intersectsPlane" intersects_plane(plane: Plane) -> bool;
-    "equals" equals(other: Sphere) -> bool;
-});
-
-// ---------------------------------------------------------------- Plane
-
-class!(Plane, wamr_math::Plane);
-
-#[wasm_bindgen]
-impl Plane {
-    /// The plane `normal . p + constant = 0`.
-    #[wasm_bindgen(constructor)]
-    pub fn new(normal: &Vector3, constant: f32) -> Plane {
-        Plane { inner: wamr_math::Plane::new(normal.inner, constant) }
-    }
-
-    #[wasm_bindgen(getter)]
-    pub fn normal(&self) -> Vector3 {
-        wrap(self.inner.normal)
-    }
-
-    #[wasm_bindgen(getter)]
-    pub fn constant(&self) -> f32 {
-        self.inner.constant
-    }
-
-    #[wasm_bindgen(setter)]
-    pub fn set_constant(&mut self, constant: f32) {
-        self.inner.constant = constant;
-    }
-
-    #[wasm_bindgen(js_name = setFromCoplanarPoints)]
-    pub fn set_from_coplanar_points(&mut self, a: &Vector3, b: &Vector3, c: &Vector3) {
-        self.inner.set_from_coplanar_points(&a.inner, &b.inner, &c.inner);
-    }
-
-    #[wasm_bindgen(js_name = projectPoint)]
-    pub fn project_point(&self, point: &Vector3) -> Vector3 {
-        wrap(self.inner.project_point(&point.inner))
-    }
-
-    #[wasm_bindgen(js_name = coplanarPoint)]
-    pub fn coplanar_point(&self) -> Vector3 {
-        wrap(self.inner.coplanar_point())
-    }
-
-    /// Transforms the plane by an affine matrix.
-    #[wasm_bindgen(js_name = applyMatrix4)]
-    pub fn apply_matrix4(&mut self, m: &Matrix4) {
-        self.inner.apply_matrix4(&m.inner, None);
-    }
-}
-
-mutate!(Plane {
-    "setComponents" set_components(x: f32, y: f32, z: f32, w: f32);
-    "normalize" normalize();
-    "negate" negate();
-});
-mutate_with!(Plane {
-    "setFromNormalAndCoplanarPoint" set_from_normal_and_coplanar_point(normal: Vector3, point: Vector3);
-    "translate" translate(offset: Vector3);
-});
-query!(Plane {
-    "distanceToPoint" distance_to_point(point: Vector3) -> f32;
-    "distanceToSphere" distance_to_sphere(sphere: Sphere) -> f32;
-    "intersectsBox" intersects_box(other: Box3) -> bool;
-    "intersectsSphere" intersects_sphere(sphere: Sphere) -> bool;
-    "equals" equals(other: Plane) -> bool;
-});
-
-// ---------------------------------------------------------------- Ray
-
-class!(Ray, wamr_math::Ray);
-
-#[wasm_bindgen]
-impl Ray {
-    /// `direction` must be normalized.
-    #[wasm_bindgen(constructor)]
-    pub fn new(origin: &Vector3, direction: &Vector3) -> Ray {
-        Ray { inner: wamr_math::Ray::new(origin.inner, direction.inner) }
-    }
-
-    #[wasm_bindgen(getter)]
-    pub fn origin(&self) -> Vector3 {
-        wrap(self.inner.origin)
-    }
-
-    #[wasm_bindgen(getter)]
-    pub fn direction(&self) -> Vector3 {
-        wrap(self.inner.direction)
-    }
-
-    pub fn at(&self, t: f32) -> Vector3 {
-        wrap(self.inner.at(t))
-    }
-
-    #[wasm_bindgen(js_name = closestPointToPoint)]
-    pub fn closest_point_to_point(&self, point: &Vector3) -> Vector3 {
-        wrap(self.inner.closest_point_to_point(&point.inner))
-    }
-
-    /// The hit point, or `undefined`.
-    #[wasm_bindgen(js_name = intersectSphere)]
-    pub fn intersect_sphere(&self, sphere: &Sphere) -> Option<Vector3> {
-        self.inner.intersect_sphere(&sphere.inner).map(wrap)
-    }
-
-    /// The distance along the ray to the plane, or `undefined`.
-    #[wasm_bindgen(js_name = distanceToPlane)]
-    pub fn distance_to_plane(&self, plane: &Plane) -> Option<f32> {
-        self.inner.distance_to_plane(&plane.inner)
-    }
-
-    /// The hit point, or `undefined`.
-    #[wasm_bindgen(js_name = intersectPlane)]
-    pub fn intersect_plane(&self, plane: &Plane) -> Option<Vector3> {
-        self.inner.intersect_plane(&plane.inner).map(wrap)
-    }
-
-    /// The hit point, or `undefined`.
-    #[wasm_bindgen(js_name = intersectBox)]
-    pub fn intersect_box(&self, other: &Box3) -> Option<Vector3> {
-        self.inner.intersect_box(&other.inner).map(wrap)
-    }
-
-    /// The hit point on triangle `a`, `b`, `c`, or `undefined`.
-    #[wasm_bindgen(js_name = intersectTriangle)]
-    pub fn intersect_triangle(&self, a: &Vector3, b: &Vector3, c: &Vector3, backface_culling: bool) -> Option<Vector3> {
-        self.inner.intersect_triangle(&a.inner, &b.inner, &c.inner, backface_culling).map(wrap)
-    }
-}
-
-mutate!(Ray { "recast" recast(t: f32); });
-mutate_with!(Ray {
-    "set" set(origin: Vector3, direction: Vector3);
-    "lookAt" look_at(v: Vector3);
-    "applyMatrix4" apply_matrix4(m: Matrix4);
-});
-query!(Ray {
-    "distanceToPoint" distance_to_point(point: Vector3) -> f32;
-    "distanceSqToPoint" distance_sq_to_point(point: Vector3) -> f32;
-    "intersectsSphere" intersects_sphere(sphere: Sphere) -> bool;
-    "intersectsPlane" intersects_plane(plane: Plane) -> bool;
-    "intersectsBox" intersects_box(other: Box3) -> bool;
-    "equals" equals(other: Ray) -> bool;
-});
-
-// ---------------------------------------------------------------- Frustum
-
-class!(Frustum, wamr_math::Frustum);
-
-#[wasm_bindgen]
-impl Frustum {
-    #[wasm_bindgen(constructor)]
-    pub fn new() -> Frustum {
-        Frustum::default()
-    }
-
-    /// `m` is usually projection * view. `webgpu` selects clip-space depth 0..1.
-    #[wasm_bindgen(js_name = setFromProjectionMatrix)]
-    pub fn set_from_projection_matrix(&mut self, m: &Matrix4, webgpu: bool, reversed_depth: bool) {
-        self.inner.set_from_projection_matrix(&m.inner, coordinate_system(webgpu), reversed_depth);
-    }
-}
-
-query!(Frustum {
-    "intersectsSphere" intersects_sphere(sphere: Sphere) -> bool;
-    "intersectsBox" intersects_box(other: Box3) -> bool;
-    "containsPoint" contains_point(point: Vector3) -> bool;
-});
+mod shapes;
+pub use shapes::*;
 
 // ---------------------------------------------------------------- scalar helpers
 
@@ -983,6 +688,28 @@ mod tests {
         set_random_seed(0, 9);
         assert_eq!(first, (rand_int(1.0, 6.0), rand_float(0.0, 1.0), rand_float_spread(2.0), generate_uuid()));
         assert!((1.0..=6.0).contains(&first.0));
+    }
+
+    #[test]
+    fn line3_triangle_and_coordinate_classes_reach_the_math_crate() {
+        let line = Line3::new(&Vector3::new(0.0, 0.0, 0.0), &Vector3::new(2.0, 0.0, 0.0));
+        assert_eq!((line.distance(), line.get_center().x()), (2.0, 1.0));
+        assert_eq!(line.closest_point_to_point_parameter(&Vector3::new(3.0, 1.0, 0.0), true), 1.0);
+
+        let triangle = Triangle::new(&Vector3::new(0.0, 0.0, 0.0), &Vector3::new(1.0, 0.0, 0.0), &Vector3::new(0.0, 1.0, 0.0));
+        assert_eq!((triangle.get_area(), triangle.get_normal().z()), (0.5, 1.0));
+        assert!(triangle.contains_point(&Vector3::new(0.25, 0.25, 0.0)));
+        let degenerate = Triangle::new(&Vector3::new(0.0, 0.0, 0.0), &Vector3::new(1.0, 0.0, 0.0), &Vector3::new(2.0, 0.0, 0.0));
+        assert!(degenerate.get_barycoord(&Vector3::new(0.0, 0.0, 0.0)).is_none());
+
+        let mut spherical = Spherical::new(1.0, 0.0, 0.0);
+        spherical.set_from_vector3(&Vector3::new(0.0, 2.0, 0.0));
+        let mut v = Vector3::new(0.0, 0.0, 0.0);
+        v.set_from_spherical(&spherical);
+        assert_eq!((spherical.radius(), v.y()), (2.0, 2.0));
+        let mut cylindrical = Cylindrical::new(1.0, 0.0, 0.0);
+        cylindrical.set_from_cartesian_coords(0.0, 3.0, 4.0);
+        assert_eq!((cylindrical.radius(), cylindrical.y()), (4.0, 3.0));
     }
 
     #[test]

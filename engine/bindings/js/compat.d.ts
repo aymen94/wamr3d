@@ -20,9 +20,10 @@ export type ColorRepresentation = Color | number | string;
 /**
  * The engine's method set with chaining: methods that return nothing in the engine
  * class return `this` here, and a trailing `target` argument receives the result.
+ * Getters of engine values (`box.min`) give the classes of this module.
  */
 type Chained<Base, Self> = {
-	[ K in keyof Base ]: Base[ K ] extends ( ...args: infer A ) => infer R ? ( ...args: Loose<A> ) => ( [ R ] extends [ void ] ? Self : Adopted<R> ) : Base[ K ];
+	[ K in keyof Base ]: Base[ K ] extends ( ...args: infer A ) => infer R ? ( ...args: Loose<A> ) => ( [ R ] extends [ void ] ? Self : Adopted<R> ) : Adopted<Base[ K ]>;
 };
 
 // Arguments are the classes of this module, or values owned by an object (`mesh.position`).
@@ -30,13 +31,15 @@ type Loose<A extends unknown[]> = { [ I in keyof A ]: Given<A[ I ]> };
 type Given<T> =
 	T extends W.Quaternion ? Quaternion | ObjectQuaternion : T extends W.Vector3 ? Vector3 | ObjectVector3 : T extends W.Euler ? Euler | ObjectEuler :
 	T extends W.Matrix4 ? Matrix4 : T extends W.Matrix3 ? Matrix3 : T extends W.Vector2 ? Vector2 : T extends W.Vector4 ? Vector4 : T extends W.Color ? Color :
-	T extends W.Box3 ? Box3 : T extends W.Sphere ? Sphere : T extends W.Plane ? Plane : T extends W.Ray ? Ray : T;
+	T extends W.Box3 ? Box3 : T extends W.Sphere ? Sphere : T extends W.Plane ? Plane : T extends W.Ray ? Ray :
+	T extends W.Line3 ? Line3 : T extends W.Triangle ? Triangle : T extends W.Spherical ? Spherical : T extends W.Cylindrical ? Cylindrical : T;
 
 // Engine values come back as the classes of this module.
 type Adopted<R> =
 	R extends W.Vector3 ? Vector3 : R extends W.Quaternion ? Quaternion : R extends W.Matrix4 ? Matrix4 : R extends W.Euler ? Euler :
 	R extends W.Vector2 ? Vector2 : R extends W.Vector4 ? Vector4 : R extends W.Matrix3 ? Matrix3 : R extends W.Color ? Color :
-	R extends W.Box3 ? Box3 : R extends W.Sphere ? Sphere : R extends W.Plane ? Plane : R extends W.Ray ? Ray : R;
+	R extends W.Box3 ? Box3 : R extends W.Sphere ? Sphere : R extends W.Plane ? Plane : R extends W.Ray ? Ray :
+	R extends W.Line3 ? Line3 : R extends W.Triangle ? Triangle : R extends W.Spherical ? Spherical : R extends W.Cylindrical ? Cylindrical : R;
 
 interface Vec3Like { x: number; y: number; z: number }
 
@@ -122,13 +125,31 @@ export class Matrix4 extends Matrix4Base {
 
 }
 
-declare const ColorBase: new ( r: number, g: number, b: number ) => Chained<Omit<W.Color, 'getHSL'>, Color>;
+export const NoColorSpace: '';
+export const SRGBColorSpace: 'srgb';
+export const LinearSRGBColorSpace: 'srgb-linear';
+export type ColorSpace = '' | 'srgb' | 'srgb-linear';
+
+/** Colours are kept in the linear working colour space; `enabled` is always true. */
+export const ColorManagement: { enabled: boolean; readonly workingColorSpace: 'srgb-linear' };
+
+declare const ColorBase: new ( r: number, g: number, b: number ) => Chained<Omit<W.Color, 'getHSL' | 'setRGB' | 'setHex' | 'setStyle' | 'setHSL' | 'getHex' | 'getHexString' | 'getStyle'>, Color>;
 export class Color extends ColorBase {
 
 	constructor( r?: ColorRepresentation, g?: number, b?: number );
 	readonly isColor: true;
 	set( r: ColorRepresentation, g?: number, b?: number ): this;
-	getHSL( target?: { h?: number; s?: number; l?: number } ): { h: number; s: number; l: number };
+	/** Components in `colorSpace`, the linear working space by default. */
+	setRGB( r: number, g: number, b: number, colorSpace?: ColorSpace ): this;
+	/** sRGB by default. */
+	setHex( hex: number, colorSpace?: ColorSpace ): this;
+	setStyle( style: string, colorSpace?: ColorSpace ): this;
+	setHSL( h: number, s: number, l: number, colorSpace?: ColorSpace ): this;
+	getHex( colorSpace?: ColorSpace ): number;
+	getHexString( colorSpace?: ColorSpace ): string;
+	getStyle( colorSpace?: ColorSpace ): string;
+	getRGB<T extends { r: number; g: number; b: number }>( target: T, colorSpace?: ColorSpace ): T;
+	getHSL( target?: { h?: number; s?: number; l?: number }, colorSpace?: ColorSpace ): { h: number; s: number; l: number };
 	fromArray( array: ArrayLike<number>, offset?: number ): this;
 
 }
@@ -142,6 +163,9 @@ export class Box3 extends Box3Base {
 	getSize( target?: Vector3 ): Vector3;
 	clampPoint( point: Vector3, target?: Vector3 ): Vector3;
 	getBoundingSphere( target?: Sphere ): Sphere;
+	/** The world-space box around `object` and its descendants; with `precise`, from every vertex. */
+	setFromObject( object: Object3D, precise?: boolean ): this;
+	expandByObject( object: Object3D, precise?: boolean ): this;
 
 }
 
@@ -188,6 +212,58 @@ export class Frustum extends FrustumBase {
 
 }
 
+declare const Line3Base: new ( start: W.Vector3, end: W.Vector3 ) => Chained<Omit<W.Line3, 'getCenter' | 'delta' | 'at' | 'closestPointToPoint'>, Line3>;
+/** `start` and `end` read as copies; change them with `set`. */
+export class Line3 extends Line3Base {
+
+	constructor( start?: Vector3, end?: Vector3 );
+	readonly isLine3: true;
+	getCenter( target?: Vector3 ): Vector3;
+	delta( target?: Vector3 ): Vector3;
+	at( t: number, target?: Vector3 ): Vector3;
+	closestPointToPoint( point: Vector3, clampToLine: boolean, target?: Vector3 ): Vector3;
+
+}
+
+declare const TriangleBase: new ( a: W.Vector3, b: W.Vector3, c: W.Vector3 ) => Chained<Omit<W.Triangle, 'getMidpoint' | 'getNormal' | 'getPlane' | 'getBarycoord' | 'closestPointToPoint'>, Triangle>;
+/** `a`, `b` and `c` read as copies; change them with `set`. */
+export class Triangle extends TriangleBase {
+
+	constructor( a?: Vector3, b?: Vector3, c?: Vector3 );
+	readonly isTriangle: true;
+	getMidpoint( target?: Vector3 ): Vector3;
+	getNormal( target?: Vector3 ): Vector3;
+	getPlane( target?: Plane ): Plane;
+	getBarycoord( point: Vector3, target?: Vector3 ): Vector3 | null;
+	closestPointToPoint( point: Vector3, target?: Vector3 ): Vector3;
+	getInterpolation<T extends Vector2 | Vector3 | Vector4>( point: Vector3, v1: T, v2: T, v3: T, target: T ): T | null;
+	setFromPointsAndIndices( points: Vector3[], i0: number, i1: number, i2: number ): this;
+	setFromAttributeAndIndices( attribute: BufferAttribute | InterleavedBufferAttribute, i0: number, i1: number, i2: number ): this;
+	static getNormal( a: Vector3, b: Vector3, c: Vector3, target: Vector3 ): Vector3;
+	static getBarycoord( point: Vector3, a: Vector3, b: Vector3, c: Vector3, target: Vector3 ): Vector3 | null;
+	static containsPoint( point: Vector3, a: Vector3, b: Vector3, c: Vector3 ): boolean;
+	static getInterpolation<T extends Vector2 | Vector3 | Vector4>( point: Vector3, p1: Vector3, p2: Vector3, p3: Vector3, v1: T, v2: T, v3: T, target: T ): T | null;
+	static isFrontFacing( a: Vector3, b: Vector3, c: Vector3, direction: Vector3 ): boolean;
+
+}
+
+declare const SphericalBase: new ( radius: number, phi: number, theta: number ) => Chained<W.Spherical, Spherical>;
+/** Radius, polar angle `phi` from +Y and azimuth `theta` around Y. */
+export class Spherical extends SphericalBase {
+
+	constructor( radius?: number, phi?: number, theta?: number );
+	readonly isSpherical: true;
+
+}
+
+declare const CylindricalBase: new ( radius: number, theta: number, y: number ) => Chained<W.Cylindrical, Cylindrical>;
+export class Cylindrical extends CylindricalBase {
+
+	constructor( radius?: number, theta?: number, y?: number );
+	readonly isCylindrical: true;
+
+}
+
 /** `object.position`, `object.scale`, `object.up`: a Vector3 whose numbers live in the engine. */
 export type ObjectVector3 = Omit<Vector3, 'free' | typeof Symbol.dispose>;
 export type ObjectEuler = Omit<Euler, 'free' | typeof Symbol.dispose>;
@@ -213,6 +289,8 @@ export class Object3D {
 	/** The engine handle, for the low-level World API. */
 	readonly handle: bigint;
 	readonly id: number;
+	/** Made on first read. */
+	uuid: string;
 	type: string;
 	name: string;
 	parent: Object3D | null;
@@ -279,7 +357,16 @@ export class Group extends Object3D { readonly isGroup: true }
 export class Scene extends Object3D {
 
 	readonly isScene: true;
-	background: Color | null;
+	/** A colour, an equirectangular texture (`mapping = EquirectangularReflectionMapping`) drawn around the camera, or another texture stretched over the frame. */
+	background: Color | Texture | null;
+	/** An equirectangular texture that lights standard materials without their own `envMap`. */
+	environment: Texture | null;
+	environmentIntensity: number;
+	environmentRotation: Euler;
+	/** Above 0, an equirectangular background is read blurred from its prefiltered map. */
+	backgroundBlurriness: number;
+	backgroundIntensity: number;
+	backgroundRotation: Euler;
 	fog: Fog | FogExp2 | null;
 
 }
@@ -376,7 +463,7 @@ export class InstancedBufferAttribute {
 
 }
 
-/** One geometry drawn `count` times in a single draw call. Instances are not culled or picked one by one. */
+/** One geometry drawn `count` times in a single draw call. Instances are not culled one by one; `Raycaster` reports the `instanceId` it hit. */
 export class InstancedMesh<G extends BufferGeometry = BufferGeometry, M extends Material | Material[] = Material> extends Mesh<G, M> {
 
 	constructor( geometry: G, material: M, count: number );
@@ -388,6 +475,9 @@ export class InstancedMesh<G extends BufferGeometry = BufferGeometry, M extends 
 	getMatrixAt( index: number, matrix: Matrix4 ): Matrix4;
 	setColorAt( index: number, color: Color ): void;
 	getColorAt( index: number, color: Color ): Color;
+	/** Local box around the drawn instances; filled by `computeBoundingBox`. */
+	boundingBox: Box3 | null;
+	computeBoundingBox(): void;
 
 }
 
@@ -407,6 +497,27 @@ export class AxesHelper extends LineSegments<BufferGeometry, LineBasicMaterial> 
 export class LineSegments<G extends BufferGeometry = BufferGeometry, M extends Material = Material> extends Line<G, M> {
 
 	readonly isLineSegments: true;
+
+}
+
+/** A line through the geometry's vertices and back to the first, one pixel wide. */
+export class LineLoop<G extends BufferGeometry = BufferGeometry, M extends Material = Material> extends Line<G, M> {
+
+	readonly isLineLoop: true;
+
+}
+
+/** Shows one level by distance from the camera; with `autoUpdate` the renderer calls `update`. */
+export class LOD extends Object3D {
+
+	readonly isLOD: true;
+	readonly levels: { distance: number; hysteresis: number; object: Object3D }[];
+	autoUpdate: boolean;
+	addLevel( object: Object3D, distance?: number, hysteresis?: number ): this;
+	removeLevel( distance: number ): boolean;
+	getCurrentLevel(): number;
+	getObjectForDistance( distance: number ): Object3D | null;
+	update( camera: Camera ): void;
 
 }
 
@@ -459,18 +570,13 @@ export class SpotLight extends Light {
 
 }
 
-type NumberArray = number[] | Float32Array | Uint32Array | Uint16Array | Uint8Array | Int32Array | Int16Array | Int8Array;
+type NumberArray = number[] | Float32Array | Uint32Array | Uint16Array | Uint8Array | Uint8ClampedArray | Int32Array | Int16Array | Int8Array;
 
-export class BufferAttribute {
+/** Item accessors; values of `normalized` integer arrays read and write as 0..1 or -1..1. */
+interface AttributeAccessors {
 
-	constructor( array: NumberArray, itemSize: number, normalized?: boolean );
-	readonly isBufferAttribute: true;
-	array: NumberArray;
-	itemSize: number;
-	count: number;
-	version: number;
-	/** Set to true after changing `array` to send the new data to the engine. */
-	set needsUpdate( value: boolean );
+	getComponent( index: number, component: number ): number;
+	setComponent( index: number, component: number, value: number ): this;
 	getX( index: number ): number;
 	getY( index: number ): number;
 	getZ( index: number ): number;
@@ -478,34 +584,100 @@ export class BufferAttribute {
 	setX( index: number, x: number ): this;
 	setY( index: number, y: number ): this;
 	setZ( index: number, z: number ): this;
+	setW( index: number, w: number ): this;
 	setXY( index: number, x: number, y: number ): this;
 	setXYZ( index: number, x: number, y: number, z: number ): this;
 	setXYZW( index: number, x: number, y: number, z: number, w: number ): this;
 
 }
 
+/** The engine stores attributes as floats; integer arrays marked `normalized` are converted to 0..1 (or -1..1). */
+export interface BufferAttribute extends AttributeAccessors {}
+export class BufferAttribute {
+
+	constructor( array: NumberArray, itemSize: number, normalized?: boolean );
+	readonly isBufferAttribute: true;
+	name: string;
+	array: NumberArray;
+	itemSize: number;
+	normalized: boolean;
+	count: number;
+	version: number;
+	/** Set to true after changing `array` to send the new data to the engine. */
+	set needsUpdate( value: boolean );
+	setUsage( usage: number ): this;
+	clone(): this;
+
+}
+
 export class Float32BufferAttribute extends BufferAttribute {}
+export class Int8BufferAttribute extends BufferAttribute {}
+export class Uint8BufferAttribute extends BufferAttribute {}
+export class Uint8ClampedBufferAttribute extends BufferAttribute {}
+export class Int16BufferAttribute extends BufferAttribute {}
 export class Uint16BufferAttribute extends BufferAttribute {}
+export class Int32BufferAttribute extends BufferAttribute {}
 export class Uint32BufferAttribute extends BufferAttribute {}
+
+/** Attributes packed in one array, `stride` numbers per vertex. Each attribute is copied out to the engine; `needsUpdate` sends them all again. */
+export class InterleavedBuffer {
+
+	constructor( array: NumberArray, stride: number );
+	readonly isInterleavedBuffer: true;
+	array: NumberArray;
+	stride: number;
+	count: number;
+	version: number;
+	set needsUpdate( value: boolean );
+	setUsage( usage: number ): this;
+	set( value: ArrayLike<number>, offset?: number ): this;
+	clone(): InterleavedBuffer;
+
+}
+
+export interface InterleavedBufferAttribute extends AttributeAccessors {}
+export class InterleavedBufferAttribute {
+
+	constructor( interleavedBuffer: InterleavedBuffer, itemSize: number, offset: number, normalized?: boolean );
+	readonly isInterleavedBufferAttribute: true;
+	name: string;
+	data: InterleavedBuffer;
+	itemSize: number;
+	offset: number;
+	normalized: boolean;
+	readonly count: number;
+	readonly array: NumberArray;
+	set needsUpdate( value: boolean );
+	/** A plain `BufferAttribute` with this attribute's values. */
+	clone(): BufferAttribute;
+
+}
 
 export class BufferGeometry {
 
 	readonly isBufferGeometry: true;
 	readonly handle: bigint;
+	/** Made on first read. */
+	uuid: string;
 	type: string;
-	attributes: Record<string, BufferAttribute>;
+	name: string;
+	attributes: Record<string, BufferAttribute | InterleavedBufferAttribute>;
 	index: BufferAttribute | null;
+	drawRange: { start: number; count: number };
 	groups: { start: number; count: number; materialIndex: number }[];
 	boundingBox: Box3 | null;
 	boundingSphere: Sphere | null;
 	userData: Record<string, any>;
 
-	setAttribute( name: string, attribute: BufferAttribute ): this;
-	getAttribute( name: string ): BufferAttribute | undefined;
+	setAttribute( name: string, attribute: BufferAttribute | InterleavedBufferAttribute ): this;
+	getAttribute( name: string ): BufferAttribute | InterleavedBufferAttribute | undefined;
 	hasAttribute( name: string ): boolean;
+	deleteAttribute( name: string ): this;
+	setFromPoints( points: { x: number; y: number; z?: number }[] ): this;
 	setIndex( index: BufferAttribute | NumberArray ): this;
 	getIndex(): BufferAttribute | null;
 	addGroup( start: number, count: number, materialIndex?: number ): void;
+	clearGroups(): void;
 	setDrawRange( start: number, count: number ): void;
 	computeVertexNormals(): void;
 	computeTangents(): void;
@@ -519,6 +691,10 @@ export class BufferGeometry {
 	rotateZ( angle: number ): this;
 	center(): this;
 	toNonIndexed(): BufferGeometry;
+	/** Copies attributes (as new arrays), index, groups, draw range, bounding volumes and `userData`. */
+	copy( source: BufferGeometry ): this;
+	/** Built-in shapes are rebuilt from `parameters` and keep their class. */
+	clone(): this;
 	dispose(): void;
 
 }
@@ -580,15 +756,19 @@ export const NearestMipmapLinearFilter: 1005;
 export const LinearFilter: 1006;
 export const LinearMipmapNearestFilter: 1007;
 export const LinearMipmapLinearFilter: 1008;
-export const NoColorSpace: '';
-export const SRGBColorSpace: 'srgb';
+export const UVMapping: 300, CubeReflectionMapping: 301, CubeRefractionMapping: 302;
+export const EquirectangularReflectionMapping: 303, EquirectangularRefractionMapping: 304, CubeUVReflectionMapping: 306;
 
 export class Texture {
 
 	constructor( image?: ImageBitmap | HTMLImageElement | HTMLCanvasElement | OffscreenCanvas | { data: Uint8Array; width: number; height: number } | null );
 	readonly isTexture: true;
 	readonly id: number;
+	/** Made on first read. */
+	uuid: string;
 	name: string;
+	/** `EquirectangularReflectionMapping` for environment maps and panoramic backgrounds. */
+	mapping: number;
 	image: any;
 	version: number;
 	flipY: boolean;
@@ -602,7 +782,7 @@ export class Texture {
 	repeat: Vector2;
 	center: Vector2;
 	rotation: number;
-	colorSpace: '' | 'srgb';
+	colorSpace: ColorSpace;
 	set needsUpdate( value: boolean );
 	dispose(): void;
 
@@ -648,6 +828,8 @@ export class Material {
 	constructor( parameters?: MaterialParameters );
 	readonly isMaterial: true;
 	readonly handle: bigint;
+	/** Made on first read. */
+	uuid: string;
 	type: string;
 	name: string;
 	color: Color;
@@ -658,30 +840,128 @@ export class Material {
 	opacity: number;
 	depthTest: boolean;
 	depthWrite: boolean;
-	/** Multiply the colour by the geometry's `color` attribute (three floats per vertex). */
+	/** Multiply the colour by the geometry's `color` attribute (three floats per vertex, or four with alpha). */
 	vertexColors: boolean;
-	/** Accepted for compatibility. As with the three.js r186 WebGPU renderer, tone mapping is applied to the whole frame, so this has no effect on screen output. */
+	/** Accepted for compatibility. As with the three.js WebGPU renderer, tone mapping is applied to the whole frame, so this has no effect on screen output. */
 	toneMapped: boolean;
+	/** Fragments whose alpha is at or below this are discarded; 0 keeps them all. Not applied to shadows. */
+	alphaTest: number;
 	userData: Record<string, any>;
 	setValues( parameters: MaterialParameters ): void;
+	copy( source: Material ): this;
 	clone(): this;
 	dispose(): void;
 
 }
 
+/** Every map uses the colour map's uv transform (or the first map's, without `map`). */
+interface AlphaMap {
+
+	/** Alpha in the red channel, as three.js reads it (grey maps read the same in every channel). */
+	alphaMap: Texture | null;
+
+}
+
+interface OcclusionMap {
+
+	/** Ambient occlusion in the red channel; dims indirect light only. */
+	aoMap: Texture | null;
+	aoMapIntensity: number;
+
+}
+
+interface NormalMap {
+
+	/** Tangent space; the tangent frame comes from screen-space derivatives, not a `tangent` attribute. */
+	normalMap: Texture | null;
+	normalScale: Vector2;
+
+}
+
+interface LitMaps extends AlphaMap, OcclusionMap, NormalMap {
+
+	/** Multiplies `emissive`. */
+	emissiveMap: Texture | null;
+
+}
+
+interface Emissive {
+
+	/** Light the surface gives off, multiplied by `emissiveIntensity`. */
+	emissive: Color;
+	emissiveIntensity: number;
+
+}
+
 /** Shows its colour (and map) as is, without lighting. */
-export class MeshBasicMaterial extends Material {}
+export interface MeshBasicMaterial extends AlphaMap, OcclusionMap {}
+export class MeshBasicMaterial extends Material { readonly isMeshBasicMaterial: true }
 /** Diffuse (Lambert) lighting. */
-export class MeshLambertMaterial extends Material {}
-/** For `Line` and `LineSegments`. Lines are one pixel wide. */
+export interface MeshLambertMaterial extends Emissive, LitMaps {}
+export class MeshLambertMaterial extends Material { readonly isMeshLambertMaterial: true }
+/** Diffuse lighting plus a Blinn-Phong highlight. */
+export interface MeshPhongMaterial extends Emissive, LitMaps {}
+export class MeshPhongMaterial extends Material {
+
+	readonly isMeshPhongMaterial: true;
+	specular: Color;
+	shininess: number;
+
+}
+/** Diffuse lighting in two tones; `gradientMap` is not supported. */
+export interface MeshToonMaterial extends Emissive, LitMaps {}
+export class MeshToonMaterial extends Material {
+
+	readonly isMeshToonMaterial: true;
+	gradientMap: Texture | null;
+
+}
+/** The view-space normal as a colour. */
+export interface MeshNormalMaterial extends NormalMap {}
+export class MeshNormalMaterial extends Material { readonly isMeshNormalMaterial: true }
+/** For `Line`, `LineSegments` and `LineLoop`. Lines are one pixel wide. */
 export class LineBasicMaterial extends Material { readonly isLineBasicMaterial: true }
 
-/** Physically based direct lighting from `roughness` and `metalness`; no environment reflections yet. */
+/** Physically based lighting from `roughness` and `metalness`, with reflections of `envMap` or `scene.environment` (equirectangular). One environment map is drawn per frame. */
+export interface MeshStandardMaterial extends Emissive, LitMaps {}
 export class MeshStandardMaterial extends Material {
 
 	constructor( parameters?: MaterialParameters & { roughness?: number; metalness?: number } );
+	readonly isMeshStandardMaterial: true;
 	roughness: number;
 	metalness: number;
+	envMap: Texture | null;
+	envMapIntensity: number;
+	envMapRotation: Euler;
+	/** Roughness in the green channel, multiplying `roughness`. */
+	roughnessMap: Texture | null;
+	/** Metalness in the blue channel, multiplying `metalness`. */
+	metalnessMap: Texture | null;
+
+}
+
+/** Drawn as `MeshStandardMaterial`; the physical extensions are kept but not drawn (one warning when used). */
+export class MeshPhysicalMaterial extends MeshStandardMaterial {
+
+	readonly isMeshPhysicalMaterial: true;
+	clearcoat: number;
+	clearcoatRoughness: number;
+	ior: number;
+	reflectivity: number;
+	sheen: number;
+	sheenColor: Color;
+	sheenRoughness: number;
+	transmission: number;
+	thickness: number;
+	attenuationColor: Color;
+	attenuationDistance: number;
+	iridescence: number;
+	iridescenceIOR: number;
+	specularIntensity: number;
+	specularColor: Color;
+	dispersion: number;
+	anisotropy: number;
+	anisotropyRotation: number;
 
 }
 
@@ -699,7 +979,7 @@ export class Clock {
 }
 
 /** Present so that using it fails with a clear error. */
-/** One pixel per vertex, as with the three.js r186 WebGPU renderer. */
+/** One pixel per vertex, as with the three.js WebGPU renderer. */
 export class Points<G extends BufferGeometry = BufferGeometry, M extends Material = Material> extends Object3D {
 
 	constructor( geometry?: G, material?: M );
@@ -709,7 +989,7 @@ export class Points<G extends BufferGeometry = BufferGeometry, M extends Materia
 
 }
 
-/** A quad facing the camera, sized by its scale. Not picked by `Raycaster` yet. */
+/** A quad facing the camera, sized by its scale. `Raycaster` needs its `camera` (set by `setFromCamera`) to pick it. */
 export class Sprite<M extends Material = SpriteMaterial> extends Object3D {
 
 	constructor( material?: M );
@@ -730,6 +1010,7 @@ export class PointsMaterial extends Material {
 
 }
 
+export interface SpriteMaterial extends AlphaMap {}
 export class SpriteMaterial extends Material {
 
 	constructor( parameters?: MaterialParameters & { rotation?: number; sizeAttenuation?: boolean } );
@@ -749,7 +1030,7 @@ export interface RenderTargetOptions {
 	generateMipmaps?: boolean;
 	minFilter?: number;
 	magFilter?: number;
-	colorSpace?: '' | 'srgb';
+	colorSpace?: ColorSpace;
 
 }
 
@@ -770,7 +1051,7 @@ export class RenderTarget {
 export class WebGLRenderTarget extends RenderTarget {}
 
 type NotAvailable = new ( ...args: any[] ) => never;
-export const WebGLRenderer: NotAvailable, RectAreaLight: NotAvailable, LineLoop: NotAvailable, SkinnedMesh: NotAvailable, LOD: NotAvailable, MeshPhongMaterial: NotAvailable, MeshPhysicalMaterial: NotAvailable, MeshToonMaterial: NotAvailable, MeshNormalMaterial: NotAvailable, ShaderMaterial: NotAvailable, IcosahedronGeometry: NotAvailable, CapsuleGeometry: NotAvailable, AnimationMixer: NotAvailable, CubeTextureLoader: NotAvailable, ObjectLoader: NotAvailable;
+export const RectAreaLight: NotAvailable, SkinnedMesh: NotAvailable, ShaderMaterial: NotAvailable, IcosahedronGeometry: NotAvailable, CapsuleGeometry: NotAvailable, AnimationMixer: NotAvailable, CubeTextureLoader: NotAvailable, ObjectLoader: NotAvailable;
 
 export interface Intersection {
 
@@ -785,6 +1066,8 @@ export interface Intersection {
 	barycoord: Vector3 | null;
 	uv?: Vector2;
 	normal?: Vector3;
+	/** For an `InstancedMesh`: the instance that was hit. */
+	instanceId?: number;
 
 }
 
@@ -809,11 +1092,27 @@ export interface WebGPURendererParameters {
 	canvas?: HTMLCanvasElement;
 	antialias?: boolean;
 	powerPreference?: 'high-performance' | 'low-power';
+	/** `'auto'` (default): WebGPU, else WebGL 2, else a software WebGPU adapter. `'webgpu'` or `'webgl'`: only that API. */
+	backend?: 'auto' | 'webgpu' | 'webgl';
+	/** As in three.js: the same as `backend: 'webgl'`. */
+	forceWebGL?: boolean;
 
 }
 
-/** Draws a scene with WebGPU. `await renderer.init()` before the first `render`. */
+/** What draws the frames: WebGPU (`'webgpu'`, or `'webgpu-software'` on the browser's software adapter) or WebGL 2. */
+export interface RenderBackend {
+
+	readonly name: 'webgpu' | 'webgpu-software' | 'webgl';
+	readonly isWebGPUBackend?: true;
+	readonly isWebGLBackend?: true;
+
+}
+
+/** Draws a scene with WebGPU, or WebGL 2 where WebGPU is missing. `await renderer.init()` before the first `render`. */
 export class WebGPURenderer {
+
+	/** The backend drawing the frames, once `init()` has finished; otherwise null. */
+	readonly backend: RenderBackend | null;
 
 	/** Draws into `target` until set back to null (the canvas). */
 	setRenderTarget( target: RenderTarget | null ): void;
@@ -824,7 +1123,8 @@ export class WebGPURenderer {
 	toneMappingExposure: number;
 
 	constructor( parameters?: WebGPURendererParameters );
-	readonly isWebGPURenderer: true;
+	/** False on `WebGLRenderer`. */
+	readonly isWebGPURenderer: boolean;
 	domElement: HTMLCanvasElement;
 	info: { render: { calls: number; triangles: number }; memory: { geometries: number } };
 	init(): Promise<this>;
@@ -838,5 +1138,12 @@ export class WebGPURenderer {
 	renderAsync( scene: Scene, camera: Camera ): Promise<void>;
 	setAnimationLoop( callback: ( ( time: number ) => void ) | null ): void;
 	dispose(): void;
+
+}
+
+/** The same renderer drawing with WebGL 2, for code written for three.js's `WebGLRenderer`; it starts `init()` itself. */
+export class WebGLRenderer extends WebGPURenderer {
+
+	readonly isWebGLRenderer: true;
 
 }

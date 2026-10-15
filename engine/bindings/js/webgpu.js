@@ -5,10 +5,9 @@
 // geometry and textures up to date.
 
 import { Renderer, memory } from './index.js';
+import { HDR_FORMAT, HDR_KEY, LINEAR, MIPMAPPED, MIP_LINEAR, RGBA8_KEY, SINGLE_KEY, WRAPS } from './webgpu/formats.js';
+import { createEnvironmentPasses } from './webgpu/environment.js';
 
-const WRAPS = { 1000: 'repeat', 1001: 'clamp-to-edge', 1002: 'mirror-repeat' };
-// Texture filter constants: nearest 1003, linear 1006, and their mipmapped variants.
-const LINEAR = new Set( [ 1006, 1007, 1008 ] ), MIPMAPPED = new Set( [ 1004, 1005, 1007, 1008 ] ), MIP_LINEAR = new Set( [ 1005, 1008 ] );
 const UNUSED_FRAMES = 300;
 
 // Vertex inputs of the shader, in location order: name, floats per vertex. The same
@@ -22,45 +21,12 @@ const VERTEX_BUFFERS = [
 	{ arrayStride: 64, stepMode: 'instance', attributes: [ 0, 1, 2, 3 ].map( ( column ) => ( { shaderLocation: 4 + column, offset: column * 16, format: 'float32x4' } ) ) },
 	{ arrayStride: 12, stepMode: 'instance', attributes: [ { shaderLocation: 8, offset: 0, format: 'float32x3' } ] }
 ];
+const VERTEX_COLOR_SLOT = 3;
+// The same with colours of four floats (alpha included).
+const VERTEX_BUFFERS_RGBA = VERTEX_BUFFERS.map( ( buffer, slot ) => ( slot === VERTEX_COLOR_SLOT ? { arrayStride: 16, attributes: [ { shaderLocation: slot, offset: 0, format: 'float32x4' } ] } : buffer ) );
 const MATRIX_SLOT = ATTRIBUTES.length, COLOR_SLOT = ATTRIBUTES.length + 1, DRAW_FIELDS = 6;
-// With tone mapping the scene is drawn into this linear format, then tone-mapped onto the canvas.
-const HDR_FORMAT = 'rgba16float', HDR_KEY = 1 << 10;
-// Render targets hold linear colour without encoding (three.js NoColorSpace); RGBA8_KEY
-// marks pipelines for such a target, SINGLE_KEY those without multisampling.
-const RGBA8_KEY = 1 << 11, SINGLE_KEY = 1 << 12;
-
-// Prefiltered environments (three.js PMREM): smallest face of the detailed levels, and
-// the extra, ever blurrier levels kept at that size.
-const LOD_MIN = 4, EXTRA_LODS = 6;
-const FACE_ORDER = [ 3, 1, 5, 0, 4, 2 ];
-
-// The quads of one level of the cube-UV layout, with the direction each texel stands
-// for: positions are clip coordinates, then the direction (6 floats per vertex).
-function cubeUVLevel( size ) {
-
-	const texel = 1 / ( size - 2 ), min = - texel, max = 1 + texel;
-	const uv = [ min, min, max, min, max, max, min, min, max, max, min, max ];
-	const data = new Float32Array( 6 * 6 * 6 );
-
-	for ( let face = 0; face < 6; face ++ ) {
-
-		const x = ( face % 3 ) * 2 / 3 - 1, y = face > 2 ? 0 : - 1;
-		const corners = [ x, y, x + 2 / 3, y, x + 2 / 3, y + 1, x, y, x + 2 / 3, y + 1, x, y + 1 ];
-		const index = FACE_ORDER[ face ];
-
-		for ( let vertex = 0; vertex < 6; vertex ++ ) {
-
-			const u = uv[ vertex * 2 ] * 2 - 1, v = uv[ vertex * 2 + 1 ] * 2 - 1;
-			const direction = [ [ 1, v, u ], [ - u, 1, - v ], [ - u, v, 1 ], [ - 1, v, - u ], [ - u, - 1, v ], [ u, v, - 1 ] ][ index ];
-			data.set( [ corners[ vertex * 2 ], corners[ vertex * 2 + 1 ], 0, ...direction ], ( index * 6 + vertex ) * 6 );
-
-		}
-
-	}
-
-	return data;
-
-}
+// Engine pipeline-key bits: a line strip closed back to its first vertex, and colours of four floats.
+const LOOP_KEY = 1 << 7, RGBA_COLOR_KEY = 1 << 8;
 
 const BLIT = `
 @group(0) @binding(0) var source: texture_2d<f32>;
@@ -77,10 +43,14 @@ struct Output { @builtin(position) position: vec4<f32>, @location(0) uv: vec2<f3
     return textureSample(source, source_sampler, input.uv);
 }`;
 
-export async function createBackend( canvas, { antialias = true, powerPreference = 'high-performance' } = {} ) {
+/**
+ * `fallbackAdapter` asks for the browser's software adapter, where it has one: slow, but
+ * it draws without a usable GPU.
+ */
+export async function createBackend( canvas, { antialias = true, powerPreference = 'high-performance', fallbackAdapter = false } = {} ) {
 
 	if ( ! globalThis.navigator?.gpu ) throw new Error( 'WAMR3D: WebGPU is not available in this browser' );
-	const adapter = await navigator.gpu.requestAdapter( { powerPreference } );
+	const adapter = await navigator.gpu.requestAdapter( fallbackAdapter ? { forceFallbackAdapter: true } : { powerPreference } );
 	if ( ! adapter ) throw new Error( 'WAMR3D: no WebGPU adapter found' );
 	const device = await adapter.requestDevice();
 
@@ -98,7 +68,12 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 
 	const frameLayout = device.createBindGroupLayout( { entries: [ { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: {} } ] } );
 	const objectLayout = device.createBindGroupLayout( { entries: [ { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { hasDynamicOffset: true, minBindingSize: objectBindingBytes } } ] } );
-	const textureLayout = device.createBindGroupLayout( { entries: [ { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: {} }, { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: {} } ] } );
+	// A texture and its sampler per slot: colour, normal, roughness, metalness, emissive,
+	// alpha and ambient-occlusion maps (the order of `Renderer.textureSets`).
+	const TEXTURE_SLOTS = Renderer.textureSlots();
+	const textureLayout = device.createBindGroupLayout( { entries: Array.from( { length: TEXTURE_SLOTS * 2 }, ( _, binding ) => ( binding % 2 === 0
+		? { binding, visibility: GPUShaderStage.FRAGMENT, texture: {} }
+		: { binding, visibility: GPUShaderStage.FRAGMENT, sampler: {} } ) ) } );
 	// Group 3 holds what the whole frame samples: the shadow maps and the environment.
 	const shadowLayout = device.createBindGroupLayout( { entries: [
 		{ binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth', viewDimension: '2d-array' } },
@@ -117,9 +92,8 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 	const shadowPipelineLayout = device.createPipelineLayout( { bindGroupLayouts: [ shadowCameraLayout, objectLayout ] } );
 	const shadowPipelines = new Map();
 	let shadowTexture = device.createTexture( { size: [ 1, 1, 1 ], format: SHADOW_FORMAT, usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT } );
-	const environmentSampler = device.createSampler( { magFilter: 'linear', minFilter: 'linear' } );
-	const noEnvironment = device.createTexture( { size: [ 1, 1 ], format: HDR_FORMAT, usage: GPUTextureUsage.TEXTURE_BINDING } );
-	const noEnvironmentView = noEnvironment.createView();
+	const environmentPasses = createEnvironmentPasses( device, { format, samples, texture, textureOf: ( id ) => textures.get( id )?.texture ?? null, frame: () => frameNumber } );
+	const { sampler: environmentSampler, empty: noEnvironmentView, environment, background, backgroundPipeline } = environmentPasses;
 	let environmentView = noEnvironmentView, shadowGroup = null;
 
 	function frameTexturesGroup() {
@@ -135,131 +109,6 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 
 	frameTexturesGroup();
 
-	// Prefiltered environment maps by source texture id, rebuilt when the source changes.
-	const environments = new Map();
-	let pmrem = null;
-
-	function prefilter( source, gpuSource, lodMax ) {
-
-		if ( ! pmrem ) {
-
-			const pmremModule = device.createShaderModule( { code: Renderer.pmremShaderSource() } );
-			const vertex = { module: pmremModule, entryPoint: 'vertex', buffers: [ { arrayStride: 24, attributes: [ { shaderLocation: 0, offset: 0, format: 'float32x3' }, { shaderLocation: 1, offset: 12, format: 'float32x3' } ] } ] };
-			pmrem = {
-				equirect: device.createRenderPipeline( { layout: 'auto', vertex, fragment: { module: pmremModule, entryPoint: 'equirect', targets: [ { format: HDR_FORMAT } ] } } ),
-				ggx: device.createRenderPipeline( { layout: 'auto', vertex, fragment: { module: pmremModule, entryPoint: 'ggx', targets: [ { format: HDR_FORMAT } ] } } ),
-				sampler: device.createSampler( { magFilter: 'linear', minFilter: 'linear' } ),
-				levels: new Map()
-			};
-
-		}
-
-		const cubeSize = 2 ** lodMax, width = 3 * Math.max( cubeSize, 16 * 7 ), height = 4 * cubeSize;
-		const total = lodMax - LOD_MIN + 1 + EXTRA_LODS, sizes = [];
-		for ( let i = 0, lod = lodMax; i < total; i ++ ) {
-
-			sizes.push( 2 ** lod );
-			if ( lod > LOD_MIN ) lod --;
-
-		}
-
-		const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING;
-		const cubeUV = device.createTexture( { size: [ width, height ], format: HDR_FORMAT, usage } );
-		const pingPong = device.createTexture( { size: [ width, height ], format: HDR_FORMAT, usage } );
-		const cubeView = cubeUV.createView(), pingView = pingPong.createView();
-		const passes = 1 + 2 * ( total - 1 );
-		const settings = device.createBuffer( { size: 256 * passes, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
-		const filter = ( value ) => ( LINEAR.has( value ?? 1006 ) ? 'linear' : 'nearest' );
-		const sourceSampler = device.createSampler( { magFilter: filter( source.magFilter ), minFilter: filter( source.minFilter ), addressModeU: WRAPS[ source.wrapS ] ?? 'clamp-to-edge', addressModeV: WRAPS[ source.wrapT ] ?? 'clamp-to-edge' } );
-
-		const level = ( size ) => {
-
-			let buffer = pmrem.levels.get( size );
-			if ( ! buffer ) {
-
-				const data = cubeUVLevel( size );
-				buffer = device.createBuffer( { size: data.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST } );
-				device.queue.writeBuffer( buffer, 0, data );
-				pmrem.levels.set( size, buffer );
-
-			}
-
-			return buffer;
-
-		};
-
-		const encoder = device.createCommandEncoder();
-		const draw = ( pass, pipeline, sourceView, sampler, levelSize, target, clear, x, y, w, h ) => {
-
-			const group = device.createBindGroup( { layout: pipeline.getBindGroupLayout( 0 ), entries: [
-				{ binding: 0, resource: { buffer: settings, offset: pass * 256, size: 32 } },
-				{ binding: 1, resource: sourceView },
-				{ binding: 2, resource: sampler }
-			] } );
-			const renderPass = encoder.beginRenderPass( { colorAttachments: [ { view: target, loadOp: clear ? 'clear' : 'load', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 } } ] } );
-			renderPass.setViewport( x, y, w, h, 0, 1 );
-			renderPass.setScissorRect( x, y, w, h );
-			renderPass.setPipeline( pipeline );
-			renderPass.setBindGroup( 0, group );
-			renderPass.setVertexBuffer( 0, level( levelSize ) );
-			renderPass.draw( 36 );
-			renderPass.end();
-
-		};
-
-		const uniforms = new Float32Array( 64 * passes );
-		const set = ( pass, roughness, mip ) => uniforms.set( [ roughness, mip, 1 / width, 1 / height, lodMax, 0, 0, 0 ], pass * 64 );
-		set( 0, 0, 0 );
-		draw( 0, pmrem.equirect, gpuSource.createView(), sourceSampler, sizes[ 0 ], cubeView, true, 0, 0, 3 * cubeSize, 2 * cubeSize );
-
-		// Each level is convolved from the one before into the ping-pong target, then
-		// copied back (roughness 0 reads one texel), as three.js does.
-		for ( let out = 1, pass = 1; out < total; out ++, pass += 2 ) {
-
-			const target = out / ( total - 1 ), previous = ( out - 1 ) / ( total - 1 );
-			const roughness = Math.sqrt( target * target - previous * previous ) * target * 1.25;
-			const size = sizes[ out ];
-			const x = 3 * size * ( out > lodMax - LOD_MIN ? out - lodMax + LOD_MIN : 0 ), y = 4 * ( cubeSize - size );
-			set( pass, roughness, lodMax - ( out - 1 ) );
-			set( pass + 1, 0, lodMax - out );
-			draw( pass, pmrem.ggx, cubeView, pmrem.sampler, size, pingView, out === 1, x, y, 3 * size, 2 * size );
-			draw( pass + 1, pmrem.ggx, pingView, pmrem.sampler, size, cubeView, false, x, y, 3 * size, 2 * size );
-
-		}
-
-		device.queue.writeBuffer( settings, 0, uniforms );
-		device.queue.submit( [ encoder.finish() ] );
-		pingPong.destroy();
-		settings.destroy();
-		return cubeUV;
-
-	}
-
-	// The prefiltered map of the frame's environment, or the empty one while the source
-	// is not ready.
-	function environment( info, sources ) {
-
-		if ( info.length === 0 ) return noEnvironmentView;
-		const [ id, lodMax ] = info, source = sources?.get( id );
-		texture( id, sources );
-		const gpuSource = textures.get( id )?.texture;
-		if ( ! source || ! gpuSource ) return null;
-
-		let entry = environments.get( id );
-		if ( entry && entry.version === source.version && entry.lodMax === lodMax ) {
-
-			entry.checked = frameNumber;
-			return entry.view;
-
-		}
-
-		entry?.texture.destroy();
-		const cubeUV = prefilter( source, gpuSource, lodMax );
-		entry = { version: source.version, lodMax, texture: cubeUV, view: cubeUV.createView(), checked: frameNumber };
-		environments.set( id, entry );
-		return entry.view;
-
-	}
 	let shadowCameras = null, shadowCameraGroup = null, shadowObjects = null, shadowObjectGroup = null, shadowObjectCapacity = 0;
 
 	// Casters draw their back faces (three.js draws the opposite of `material.side`).
@@ -379,7 +228,8 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 
 	// Pipelines are created the first time a state is drawn and kept. The key is the
 	// engine's pipeline state: bits 0-1 side, 2 blending, 3 depth write, 4 depth test,
-	// 5-6 primitive; HDR_KEY marks pipelines that draw into the linear target.
+	// 5-6 topology, 7 line loop, 8 colours of four floats; HDR_KEY marks pipelines that
+	// draw into the linear target.
 	const pipelines = new Map();
 
 	function pipeline( key ) {
@@ -397,7 +247,7 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 			layout,
 			vertex: {
 				module, entryPoint: 'vertex',
-				buffers: VERTEX_BUFFERS
+				buffers: key & RGBA_COLOR_KEY ? VERTEX_BUFFERS_RGBA : VERTEX_BUFFERS
 			},
 			fragment: { module, entryPoint: 'fragment', targets: [ { format: key & HDR_KEY ? HDR_FORMAT : key & RGBA8_KEY ? 'rgba8unorm' : format, blend } ] },
 			primitive: { topology, frontFace: 'ccw', cullMode: [ 'back', 'front', 'none' ][ key & 3 ], stripIndexFormat: topology === 'line-strip' ? 'uint32' : undefined },
@@ -414,7 +264,7 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 	let depthTexture = null, colorTexture = null, depthView = null, colorView = null, targetWidth = 0, targetHeight = 0;
 	// The linear target of a tone-mapped frame, its multisampled companion, and the output pass.
 	let hdrTexture = null, hdrMultisample = null, hdrView = null, hdrMultisampleView = null, outputGroup = null, outputPipeline = null, outputSettings = null;
-	// Bound in place of an attribute a geometry does not have.
+	// Bound in place of an attribute a geometry does not have; sized for the widest input.
 	let zeros = null, zeroBytes = 16;
 	const geometries = new Map(), textures = new Map(), blits = new Map(), instanced = new Map();
 	// Per-frame lists, kept between frames so that drawing does not allocate them.
@@ -428,7 +278,9 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 	let frameNumber = 0, drawingInto = 0;
 	const info = { calls: 0, shadowCalls: 0, triangles: 0, candidates: 0, geometries: 0, textures: 0, pipelines: 0, uploads: 0 };
 
-	function textureGroup( gpuTexture, source ) {
+	// The view and sampler of a texture, made once per upload. Bind groups are made per
+	// set of textures (see `textureSetGroup`) and remember the bindings they were made from.
+	function textureBinding( gpuTexture, source ) {
 
 		const filter = ( value ) => ( LINEAR.has( value ?? 1006 ) ? 'linear' : 'nearest' );
 		const sampler = device.createSampler( {
@@ -436,7 +288,7 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 			mipmapFilter: MIP_LINEAR.has( source?.minFilter ) ? 'linear' : 'nearest',
 			addressModeU: WRAPS[ source?.wrapS ] ?? 'clamp-to-edge', addressModeV: WRAPS[ source?.wrapT ] ?? 'clamp-to-edge'
 		} );
-		return device.createBindGroup( { layout: textureLayout, entries: [ { binding: 0, resource: gpuTexture.createView() }, { binding: 1, resource: sampler } ] } );
+		return { view: gpuTexture.createView(), sampler };
 
 	}
 
@@ -484,10 +336,10 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 
 	const white = createTexture( 1, 1, false );
 	device.queue.writeTexture( { texture: white }, new Uint8Array( [ 255, 255, 255, 255 ] ), {}, [ 1, 1 ] );
-	const whiteGroup = textureGroup( white, null );
+	const whiteBinding = textureBinding( white, null );
 
-	// A material's colour texture. Uploaded when the source's version changes; a source
-	// that is not ready yet (an image still loading) draws as white.
+	// A material's texture. Uploaded when the source's version changes; a source that is
+	// not ready yet (an image still loading) draws as white.
 	function texture( id, sources ) {
 
 		const source = id === 0 ? null : sources?.get( id );
@@ -495,18 +347,18 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 		if ( source?.isRenderTargetTexture ) {
 
 			// Not while drawing into the same target; not before it was drawn once.
-			if ( id === drawingInto ) return whiteGroup;
-			return renderTargets.get( id )?.group ?? whiteGroup;
+			if ( id === drawingInto ) return whiteBinding;
+			return renderTargets.get( id )?.binding ?? whiteBinding;
 
 		}
 
 		const image = source?.image;
-		if ( ! image || ! ( image.data || image.width > 0 ) ) return whiteGroup;
+		if ( ! image || ! ( image.data || image.width > 0 ) ) return whiteBinding;
 
 		let entry = textures.get( id );
-		if ( ! entry ) textures.set( id, entry = { texture: null, group: null, version: - 1, checked: 0 } );
+		if ( ! entry ) textures.set( id, entry = { texture: null, binding: null, version: - 1, checked: 0 } );
 		entry.checked = frameNumber;
-		if ( entry.version === source.version ) return entry.group;
+		if ( entry.version === source.version ) return entry.binding;
 
 		const { width, height } = image, srgb = source.colorSpace === 'srgb';
 		const levels = source.generateMipmaps !== false && MIPMAPPED.has( source.minFilter ) ? Math.floor( Math.log2( Math.max( width, height ) ) ) + 1 : 1;
@@ -522,8 +374,30 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 		else device.queue.copyExternalImageToTexture( { source: image, flipY: source.flipY !== false }, { texture: entry.texture }, [ width, height ] );
 		if ( levels > 1 ) generateMipmaps( entry.texture );
 
-		entry.group = textureGroup( entry.texture, source );
+		entry.binding = textureBinding( entry.texture, source );
 		entry.version = source.version;
+		return entry.binding;
+
+	}
+
+	// One bind group per distinct set of textures, kept while each of its textures keeps
+	// the binding it was made with.
+	const textureSets = new Map(), setGroups = [];
+
+	function textureSetGroup( sets, set, sources ) {
+
+		const ids = sets.subarray( set * TEXTURE_SLOTS, ( set + 1 ) * TEXTURE_SLOTS ), key = ids.join( ',' );
+		const bindings = Array.from( ids, ( id ) => texture( id, sources ) );
+		let entry = textureSets.get( key );
+
+		if ( ! entry || entry.bindings.some( ( binding, i ) => binding !== bindings[ i ] ) ) {
+
+			const group = device.createBindGroup( { layout: textureLayout, entries: bindings.flatMap( ( binding, i ) => [ { binding: 2 * i, resource: binding.view }, { binding: 2 * i + 1, resource: binding.sampler } ] ) } );
+			textureSets.set( key, entry = { bindings, group, checked: 0 } );
+
+		}
+
+		entry.checked = frameNumber;
 		return entry.group;
 
 	}
@@ -570,7 +444,7 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 			width, height, float, multisampled, color, colorMultisample, depth,
 			view: color.createView(), multisampleView: colorMultisample?.createView() ?? null, depthView: depth.createView(),
 			variant: ( float ? HDR_KEY : RGBA8_KEY ) | ( multisampled ? 0 : SINGLE_KEY ),
-			group: null, release() {
+			binding: null, release() {
 
 				color.destroy();
 				colorMultisample?.destroy();
@@ -578,7 +452,7 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 
 			}
 		};
-		entry.group = textureGroup( color, target.texture );
+		entry.binding = textureBinding( color, target.texture );
 		renderTargets.set( target.id, entry );
 		return entry;
 
@@ -632,27 +506,29 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 
 		}
 
-		if ( ! entry ) geometries.set( slot, entry = { generation, buffers: [ null, null, null, null ], versions: [ - 1, - 1, - 1, - 1 ], index: null, indexVersion: - 1, checked: 0 } );
+		if ( ! entry ) geometries.set( slot, entry = { generation, handle: BigInt( generation ) << 32n | BigInt( slot ), buffers: [ null, null, null, null ], versions: [ - 1, - 1, - 1, - 1 ], sizes: [ 0, 0, 0, 0 ], index: null, indexVersion: - 1, loops: null, checked: 0 } );
 		entry.checked = frameNumber;
+		const colorSize = state[ o + 4 + ATTRIBUTES.length * 2 ];
 
 		for ( let i = 0, p = o + 3; i < ATTRIBUTES.length; i ++, p += 2 ) {
 
-			const version = state[ p ], address = state[ p + 1 ];
+			const version = state[ p ], address = state[ p + 1 ], size = i === VERTEX_COLOR_SLOT ? colorSize : ATTRIBUTES[ i ][ 1 ];
 
 			if ( address === 0 ) {
 
 				entry.buffers[ i ]?.destroy();
 				entry.buffers[ i ] = null;
 				entry.versions[ i ] = - 1;
-				zeroBytes = Math.max( zeroBytes, vertices * 12 );
+				zeroBytes = Math.max( zeroBytes, vertices * 16 );
 				continue;
 
 			}
 
-			if ( version === entry.versions[ i ] ) continue;
+			if ( version === entry.versions[ i ] && size === entry.sizes[ i ] ) continue;
 			// Created per upload: the index read below may grow the module's memory.
-			entry.buffers[ i ] = upload( new Float32Array( memory().buffer, address, vertices * ATTRIBUTES[ i ][ 1 ] ), entry.buffers[ i ], GPUBufferUsage.VERTEX );
+			entry.buffers[ i ] = upload( new Float32Array( memory().buffer, address, vertices * size ), entry.buffers[ i ], GPUBufferUsage.VERTEX );
 			entry.versions[ i ] = version;
+			entry.sizes[ i ] = size;
 
 		}
 
@@ -660,7 +536,7 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 
 		if ( indexVersion !== entry.indexVersion ) {
 
-			const index = world.getIndex( BigInt( generation ) << 32n | BigInt( slot ) );
+			const index = world.getIndex( entry.handle );
 
 			if ( index.length === 0 ) {
 
@@ -717,17 +593,55 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 
 	}
 
+	// The index of a line loop over `count` vertices from `start`: those vertices (through
+	// the geometry's index, if any), then the first one again. Kept per geometry until its
+	// index changes.
+	function loopIndex( world, entry, start, count ) {
+
+		if ( entry.loops === null || entry.loopsVersion !== entry.indexVersion ) {
+
+			if ( entry.loops ) for ( const buffer of entry.loops.values() ) buffer.destroy();
+			entry.loops = new Map();
+			entry.loopsVersion = entry.indexVersion;
+
+		}
+
+		const key = start + ':' + count;
+		let buffer = entry.loops.get( key );
+		if ( buffer ) return buffer;
+
+		const data = new Uint32Array( count + 1 );
+
+		if ( entry.index ) {
+
+			const index = world.getIndex( entry.handle );
+			for ( let i = 0; i < count; i ++ ) data[ i ] = index[ start + i ];
+
+		} else {
+
+			for ( let i = 0; i < count; i ++ ) data[ i ] = start + i;
+
+		}
+
+		data[ count ] = data[ 0 ];
+		buffer = upload( data, null, GPUBufferUsage.INDEX );
+		entry.loops.set( key, buffer );
+		return buffer;
+
+	}
+
 	function release( entry ) {
 
 		if ( entry.release ) return entry.release();
 		for ( const buffer of entry.buffers ) buffer?.destroy();
 		entry.index?.destroy();
+		if ( entry.loops ) for ( const buffer of entry.loops.values() ) buffer.destroy();
 
 	}
 
 	return {
 
-		device, format, info,
+		name: fallbackAdapter ? 'webgpu-software' : 'webgpu', isWebGPUBackend: true, device, format, info,
 
 		/**
 		 * `instanceSources` maps instance ids to `{ matrix, matrixVersion, color, colorVersion }`
@@ -771,10 +685,14 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 			distinct.length = records;
 			for ( let r = 0; r < records; r ++ ) distinct[ r ] = geometry( world, geometryState, r * GEOMETRY_FIELDS );
 
+			const sets = renderer.textureSets();
+			setGroups.length = sets.length / TEXTURE_SLOTS;
+			for ( let set = 0; set < setGroups.length; set ++ ) setGroups[ set ] = textureSetGroup( sets, set, sources );
+
 			for ( let i = 0, o = 0; i < count; i ++, o += DRAW_FIELDS ) {
 
 				entries[ i ] = distinct[ slots[ i ] ];
-				groups[ i ] = texture( draws[ o + 1 ], sources );
+				groups[ i ] = setGroups[ draws[ o + 1 ] ];
 				perInstance[ i ] = instances( draws[ o + 4 ], draws[ o + 5 ], instanceSources );
 
 			}
@@ -805,6 +723,8 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 
 			}
 
+			const backdrop = background( renderer, sources );
+
 			const encoder = device.createCommandEncoder();
 			const shadowCalls = drawShadows( encoder, renderer, sources, instanceSources );
 			// Tone mapping applies only to what is drawn to the canvas, as in three.js.
@@ -822,6 +742,14 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 				} ],
 				depthStencilAttachment: { view: offscreen ? offscreen.depthView : depthView, depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'discard' }
 			} );
+
+			if ( backdrop ) {
+
+				pass.setPipeline( backgroundPipeline( variant ) );
+				pass.setBindGroup( 0, backdrop );
+				pass.draw( 3 );
+
+			}
 
 			pass.setBindGroup( 0, frameGroup );
 			pass.setBindGroup( 3, shadowGroup );
@@ -851,7 +779,19 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 
 				if ( groups[ i ] !== map ) pass.setBindGroup( 2, map = groups[ i ] );
 				pass.setBindGroup( 1, objectGroup, [ i * stride ] );
-				if ( entry.index ) pass.drawIndexed( vertices, copies, start );
+
+				if ( key & LOOP_KEY ) {
+
+					if ( vertices > 0 ) {
+
+						pass.setIndexBuffer( loopIndex( world, entry, start, vertices ), 'uint32' );
+						pass.drawIndexed( vertices + 1, copies, 0 );
+						// the geometry's own index buffer is bound again by the next draw
+						bound = null;
+
+					}
+
+				} else if ( entry.index ) pass.drawIndexed( vertices, copies, start );
 				else pass.draw( vertices, copies, start );
 				if ( ( key >> 5 & 3 ) === 0 ) triangles += vertices / 3 * copies;
 
@@ -895,6 +835,12 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 					if ( frameNumber - entry.checked < UNUSED_FRAMES ) continue;
 					entry.texture?.destroy();
 					textures.delete( id );
+
+				}
+
+				for ( const [ key, entry ] of textureSets ) {
+
+					if ( frameNumber - entry.checked >= UNUSED_FRAMES ) textureSets.delete( key );
 
 				}
 
@@ -949,10 +895,7 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 			shadowTexture.destroy();
 			shadowCameras?.destroy();
 			shadowObjects?.destroy();
-			noEnvironment.destroy();
-			for ( const entry of environments.values() ) entry.texture.destroy();
-			environments.clear();
-			if ( pmrem ) for ( const buffer of pmrem.levels.values() ) buffer.destroy();
+			environmentPasses.dispose();
 			context.unconfigure();
 			device.destroy();
 

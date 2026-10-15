@@ -34,6 +34,35 @@ pub struct Material {
     /// `environmentIntensity`; the caller resolves which).
     pub uses_environment: bool,
     pub env_map_intensity: f32,
+    /// Light the surface gives off whatever the lighting, in the linear working colour
+    /// space, already multiplied by three.js `emissiveIntensity`. Ignored by
+    /// `Shading::Unlit` and `Shading::Normal`, as in three.js.
+    pub emissive: Color,
+    /// `Shading::Phong` only: colour of the highlight (three.js `specular`).
+    pub specular: Color,
+    /// `Shading::Phong` only: sharpness of the highlight.
+    pub shininess: f32,
+    /// Further textures, as ids the renderer's host resolves; 0 means none.
+    pub maps: TextureMaps,
+    /// Scales the x and y of the tangent-space `maps.normal` (three.js `normalScale`).
+    pub normal_scale: [f32; 2],
+    /// Strength of `maps.ao` (three.js `aoMapIntensity`).
+    pub ao_map_intensity: f32,
+    /// Fragments whose alpha is below this are discarded; 0 keeps them all.
+    pub alpha_test: f32,
+}
+
+/// The textures of a material besides the colour map, read as three.js reads them:
+/// the normal in rgb, roughness in g, metalness in b, emitted light in rgb, alpha in r and
+/// ambient occlusion in r. All use one uv transform.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TextureMaps {
+    pub normal: u32,
+    pub roughness: u32,
+    pub metalness: u32,
+    pub emissive: u32,
+    pub alpha: u32,
+    pub ao: u32,
 }
 
 impl Default for Material {
@@ -56,6 +85,13 @@ impl Default for Material {
             size_attenuation: true,
             uses_environment: false,
             env_map_intensity: 1.0,
+            emissive: Color::new(0.0, 0.0, 0.0),
+            specular: Color::new(0.0, 0.0, 0.0),
+            shininess: 30.0,
+            maps: TextureMaps::default(),
+            normal_scale: [1.0, 1.0],
+            ao_map_intensity: 1.0,
+            alpha_test: 0.0,
         }
     }
 }
@@ -71,6 +107,12 @@ pub enum Shading {
     Unlit = 1,
     /// Physically based: diffuse plus a roughness/metalness specular term.
     Standard = 2,
+    /// Diffuse plus a Blinn-Phong highlight from `specular` and `shininess`.
+    Phong = 3,
+    /// The view-space normal packed into a colour, ignoring lights and `color`.
+    Normal = 4,
+    /// Diffuse lighting quantized into two tones.
+    Toon = 5,
 }
 
 /// Which faces of a triangle count: those wound counter-clockwise towards the viewer

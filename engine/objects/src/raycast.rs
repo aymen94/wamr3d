@@ -38,6 +38,8 @@ pub struct Intersection {
     /// Interpolated vertex normal in local space, flipped to face the ray, if the
     /// geometry has a `normal` attribute.
     pub normal: Option<Vector3>,
+    /// For a hit found by [`intersect_instances`]: the instance that was hit.
+    pub instance_id: Option<u32>,
 }
 
 fn check_triangle(
@@ -92,6 +94,7 @@ fn check_triangle(
         barycoord,
         uv,
         normal,
+        instance_id: None,
     })
 }
 
@@ -99,8 +102,9 @@ fn raycast_mesh(world: &World, object: Entity, raycaster: &Raycaster, intersects
     let Some(renderable) = world.renderable(object) else {
         return;
     };
-    if renderable.sprite.is_some() {
-        // Picking a sprite needs the camera it faces; not supported yet.
+    if renderable.sprite.is_some() || renderable.instances != 0 {
+        // A sprite faces a camera, and instance matrices are kept by the host: both are
+        // picked by the caller (see `intersect_instances`).
         return;
     }
     if renderable.primitive == Primitive::Points {
@@ -108,7 +112,7 @@ fn raycast_mesh(world: &World, object: Entity, raycaster: &Raycaster, intersects
         return;
     }
     if renderable.primitive != Primitive::Mesh {
-        raycast_line(world, object, renderable.primitive == Primitive::LineSegments, raycaster, intersects);
+        raycast_line(world, object, renderable.primitive, raycaster, intersects);
         return;
     }
     let (Some(geometry), Some(material), Some(transform)) =
@@ -116,17 +120,37 @@ fn raycast_mesh(world: &World, object: Entity, raycaster: &Raycaster, intersects
     else {
         return;
     };
-    let matrix_world = transform.matrix_world;
+    let sphere = local_bounding_sphere(geometry);
+    raycast_triangles(object, geometry, material.side, &sphere, &transform.matrix_world, raycaster, intersects);
+}
 
-    // test with bounding sphere in world space
-    let mut sphere: Sphere = match geometry.bounding_sphere {
+/// The geometry's bounding sphere, measured on a copy when it has none yet.
+fn local_bounding_sphere(geometry: &BufferGeometry) -> Sphere {
+    match geometry.bounding_sphere {
         Some(sphere) => sphere,
         None => {
             let mut measured = geometry.clone();
             measured.compute_bounding_sphere();
             measured.bounding_sphere.unwrap_or_default()
         }
-    };
+    }
+}
+
+/// The triangles of `geometry`, placed by `matrix_world`; `sphere` is the geometry's
+/// bounding sphere in local space.
+fn raycast_triangles(
+    object: Entity,
+    geometry: &BufferGeometry,
+    side: Side,
+    sphere: &Sphere,
+    matrix_world: &Matrix4,
+    raycaster: &Raycaster,
+    intersects: &mut Vec<Intersection>,
+) {
+    let matrix_world = *matrix_world;
+
+    // test with bounding sphere in world space
+    let mut sphere = *sphere;
     sphere.apply_matrix4(&matrix_world);
 
     // check distance from ray origin to bounding sphere
@@ -160,7 +184,7 @@ fn raycast_mesh(world: &World, object: Entity, raycaster: &Raycaster, intersects
     let start = geometry.draw_range.start as usize;
 
     let mut test = |i: usize, vertices: [usize; 3]| {
-        if let Some(mut hit) = check_triangle(object, geometry, material.side, raycaster, &local_ray, &matrix_world, vertices) {
+        if let Some(mut hit) = check_triangle(object, geometry, side, raycaster, &local_ray, &matrix_world, vertices) {
             hit.face_index = (i / 3) as u32;
             intersects.push(hit);
         }
@@ -187,7 +211,7 @@ fn raycast_mesh(world: &World, object: Entity, raycaster: &Raycaster, intersects
     }
 }
 
-fn raycast_line(world: &World, object: Entity, segments: bool, raycaster: &Raycaster, intersects: &mut Vec<Intersection>) {
+fn raycast_line(world: &World, object: Entity, primitive: Primitive, raycaster: &Raycaster, intersects: &mut Vec<Intersection>) {
     let Some(renderable) = world.renderable(object) else {
         return;
     };
@@ -229,34 +253,43 @@ fn raycast_line(world: &World, object: Entity, segments: bool, raycaster: &Rayca
     let end = count.min(geometry.draw_range.start.saturating_add(geometry.draw_range.count) as usize);
     let vertex = |i: usize| index.map_or(i, |index| index.array.get(i) as usize);
 
-    let mut i = start;
-    while i + 1 < end {
-        let (a, b) = (position.get_vector3(vertex(i)), position.get_vector3(vertex(i + 1)));
+    let mut check = |a: usize, b: usize, line_index: usize| {
+        let (a, b) = (position.get_vector3(a), position.get_vector3(b));
         let (mut on_ray, mut on_segment) = (Vector3::default(), Vector3::default());
         let distance_sq = local_ray.distance_sq_to_segment(&a, &b, Some(&mut on_ray), Some(&mut on_segment));
-
-        if distance_sq as f64 <= threshold_sq {
-            // back to world space for the distance along the ray
-            on_ray.apply_matrix4(&matrix_world);
-            let distance = raycaster.ray.origin.distance_to(&on_ray);
-
-            if distance >= raycaster.near && distance <= raycaster.far {
-                on_segment.apply_matrix4(&matrix_world);
-                intersects.push(Intersection {
-                    distance,
-                    point: on_segment,
-                    object,
-                    line_index: Some(i as u32),
-                    face_index: 0,
-                    face: Face { a: 0, b: 0, c: 0, normal: Vector3::default(), material_index: 0 },
-                    barycoord: Vector3::default(),
-                    uv: None,
-                    normal: None,
-                });
-            }
+        if distance_sq as f64 > threshold_sq {
+            return;
         }
+        // back to world space for the distance along the ray
+        on_ray.apply_matrix4(&matrix_world);
+        let distance = raycaster.ray.origin.distance_to(&on_ray);
+        if distance < raycaster.near || distance > raycaster.far {
+            return;
+        }
+        on_segment.apply_matrix4(&matrix_world);
+        intersects.push(Intersection {
+            distance,
+            point: on_segment,
+            object,
+            line_index: Some(line_index as u32),
+            face_index: 0,
+            face: Face { a: 0, b: 0, c: 0, normal: Vector3::default(), material_index: 0 },
+            barycoord: Vector3::default(),
+            uv: None,
+            normal: None,
+            instance_id: None,
+        });
+    };
 
-        i += if segments { 2 } else { 1 };
+    let step = if primitive == Primitive::LineSegments { 2 } else { 1 };
+    let mut i = start;
+    while i + 1 < end {
+        check(vertex(i), vertex(i + 1), i);
+        i += step;
+    }
+    // the closing segment is tested even for a single vertex, as three.js does
+    if primitive == Primitive::LineLoop && end > start {
+        check(vertex(end - 1), vertex(start), end - 1);
     }
 }
 
@@ -325,6 +358,7 @@ fn raycast_points(world: &World, object: Entity, raycaster: &Raycaster, intersec
             barycoord: Vector3::default(),
             uv: None,
             normal: None,
+            instance_id: None,
         });
     }
 }
@@ -353,6 +387,37 @@ fn sort(intersects: &mut [Intersection]) {
 pub fn intersect_object(world: &World, raycaster: &Raycaster, object: Entity, recursive: bool) -> Vec<Intersection> {
     let mut intersects = Vec::new();
     collect(world, raycaster, object, recursive, &mut intersects);
+    sort(&mut intersects);
+    intersects
+}
+
+/// Hits of the ray on the instances of the mesh `object`, nearest first. `matrices`
+/// holds one column-major matrix (16 floats) per instance, each placing the instance
+/// within the object; each hit carries its `instance_id`. The object's layers are not
+/// tested, as with [`intersect_object`] on a single object.
+pub fn intersect_instances(world: &World, raycaster: &Raycaster, object: Entity, matrices: &[f32]) -> Vec<Intersection> {
+    let mut intersects = Vec::new();
+    let Some(renderable) = world.renderable(object) else {
+        return intersects;
+    };
+    let (Some(geometry), Some(material), Some(transform)) =
+        (world.geometry(renderable.geometry), world.material(renderable.material), world.transform(object))
+    else {
+        return intersects;
+    };
+    if renderable.primitive != Primitive::Mesh {
+        return intersects;
+    }
+    let sphere = local_bounding_sphere(geometry);
+    let mut instance = Matrix4::default();
+    let mut matrix_world = Matrix4::default();
+    let mut found = Vec::new();
+    for (id, elements) in matrices.chunks_exact(16).enumerate() {
+        instance.elements.copy_from_slice(elements);
+        matrix_world.multiply_matrices(&transform.matrix_world, &instance);
+        raycast_triangles(object, geometry, material.side, &sphere, &matrix_world, raycaster, &mut found);
+        intersects.extend(found.drain(..).map(|hit| Intersection { instance_id: Some(id as u32), ..hit }));
+    }
     sort(&mut intersects);
     intersects
 }
@@ -433,6 +498,51 @@ mod tests {
         assert_eq!(hit.normal, Some(Vector3::new(0.0, 0.0, 1.0)));
         assert!(hit.uv.is_some());
         assert!((hit.barycoord.x + hit.barycoord.y + hit.barycoord.z - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn instances_are_hit_one_by_one_and_skipped_by_intersect_object() {
+        let (mut world, root, mesh) = scene(Side::Front);
+        let mut renderable = *world.renderable(mesh).unwrap();
+        renderable.instances = 1;
+        renderable.instance_count = 2;
+        world.set_renderable(mesh, Some(renderable));
+        assert!(intersect_object(&world, &forward(), root, true).is_empty());
+
+        // instance 0 sits 5 units to the side, instance 1 3 units nearer the ray origin
+        let mut matrices = [0.0f32; 32];
+        for (i, offset) in [(0, [5.0, 0.0, 0.0]), (1, [0.0, 0.0, 3.0])] {
+            let m = &mut matrices[i * 16..i * 16 + 16];
+            m[0] = 1.0;
+            m[5] = 1.0;
+            m[10] = 1.0;
+            m[15] = 1.0;
+            m[12..15].copy_from_slice(&offset);
+        }
+        let hits = intersect_instances(&world, &forward(), mesh, &matrices);
+        assert_eq!(hits.iter().map(|h| (h.instance_id, h.distance, h.object)).collect::<Vec<_>>(), [(Some(1), 6.0, mesh)]);
+    }
+
+    #[test]
+    fn a_line_loop_is_also_hit_on_its_closing_segment() {
+        let mut world = World::new();
+        let mut geometry = BufferGeometry::new();
+        // an open "U": the closing segment runs along y = 1 from (1, 1) back to (-1, 1)
+        let points = vec![-1.0, 1.0, -10.0, -1.0, -1.0, -10.0, 1.0, -1.0, -10.0, 1.0, 1.0, -10.0];
+        geometry.set_attribute("position", wamr_core::BufferAttribute::new(wamr_core::AttributeArray::Float32(points), 3, false));
+        let geometry = world.create_geometry(geometry);
+        let material = world.create_material(Material::default());
+        let line = world.create_object();
+        world.set_renderable(line, Some(Renderable { primitive: Primitive::Line, ..Renderable::mesh(geometry, material) }));
+        world.update_matrix_world(line, false);
+
+        let mut raycaster = Raycaster::new(Vector3::new(0.0, 1.0, 0.0), Vector3::new(0.0, 0.0, -1.0), 0.0, f32::INFINITY);
+        raycaster.params.line_threshold = 0.1;
+        assert!(intersect_object(&world, &raycaster, line, false).is_empty());
+
+        world.set_renderable(line, Some(Renderable { primitive: Primitive::LineLoop, ..Renderable::mesh(geometry, material) }));
+        let hits = intersect_object(&world, &raycaster, line, false);
+        assert_eq!(hits.iter().map(|h| (h.line_index, h.distance)).collect::<Vec<_>>(), [(Some(3), 10.0)]);
     }
 
     #[test]

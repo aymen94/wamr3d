@@ -9,7 +9,7 @@ pub mod raycast;
 mod round;
 
 pub use round::{circle_geometry, cone_geometry, cylinder_geometry, ring_geometry, torus_geometry};
-pub use raycast::{intersect_object, intersect_objects, set_from_camera, Face, Intersection};
+pub use raycast::{intersect_instances, intersect_object, intersect_objects, set_from_camera, Face, Intersection};
 
 use wamr_core::{AttributeArray, BufferAttribute, BufferGeometry};
 

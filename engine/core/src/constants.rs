@@ -1,4 +1,4 @@
-//! Numeric constants shared with three.js. The values match three.js r186
+//! Numeric constants shared with three.js. The values match three.js
 //! (DECISIONS.md D16), so they can cross the binding layer unchanged.
 
 /// How often a buffer's contents are expected to change. A hint for the GPU backend.
