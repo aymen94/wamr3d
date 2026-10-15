@@ -13,6 +13,8 @@ The latest benchmark run (2026-10-14, four canvas resolutions, one run per confi
 
 `examples/ports/` holds three.js games and scenes run on WAMR3D through `wamr3d/compat` with the import changed: Crossy Road and Stack (Hunor Márton Borbély), City 3D (Victor Vergara), and the official r186 examples `webgl_geometry_minecraft`, `webgl_lights_spotlights`, `webgl_interactive_cubes`, `webgl_buffergeometry`, `webgl_buffergeometry_points` and `webgl_buffergeometry_lines`. `?engine=three` runs the same code on three.js r186 from the CDN. Each page lists what changed besides the import. `node examples/ports/check.mjs [--three]` drives them in headless Chrome; on 2026-10-15 all nine drew frames without console errors on both libraries. The gaps the ports had to work around are listed under "Object API and geometry" below.
 
+Three more pages in `examples/ports/` are reduced versions written for WAMR3D, not ports, because the originals need missing features: `fluid-particles` (after `webgpu_compute_particles_fluid`; CPU simulation instead of TSL compute), `water` (after `webgl_gpgpu_water`; CPU height field instead of `GPUComputationRenderer` and `ShaderMaterial`) and `car` (after `webgl_materials_car`; primitives instead of the glTF model, `MeshStandardMaterial` instead of `MeshPhysicalMaterial`). On 2026-10-15 all three drew frames without console errors on both libraries. `webgl_loader_gltf` has no page: it needs a glTF loader and environment maps in the object API.
+
 ## Undeveloped and incomplete work
 
 ### Renderer and materials

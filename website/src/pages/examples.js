@@ -2,8 +2,21 @@ import { icon, pageIntro, repoFile, shell } from '../components/ui.js';
 
 // Ported pages run on WAMR3D; `?engine=three` runs the same code on three.js r186.
 const port = (dir, tag, title, body, credit, original) => ({ href: `./examples/ports/${dir}/`, compare: `./examples/ports/${dir}/?engine=three`, image: `./images/examples/${dir}.jpg`, source: `examples/ports/${dir}/main.js`, tag, title, body, credit, original });
+// Reduced demos written for WAMR3D after an official example whose code could not run on it.
+const inspired = (...args) => ({ ...port(...args), creditLabel: 'Idea from' });
 
 const sections = [
+  {
+    id: 'inspired',
+    label: 'Inspired by three.js',
+    title: 'Reduced versions, written for WAMR3D',
+    intro: 'Official examples that need features WAMR3D does not have yet: glTF models, physical materials, custom shaders or GPU compute. These pages are new code that recreates the idea with what WAMR3D supports, and each one lists how it differs from the original.',
+    items: [
+      inspired('fluid-particles', '4,000 particles · CPU simulation', 'Fluid particles', 'Liquid sloshing in a tilting tank, simulated in JavaScript and drawn as one InstancedMesh coloured by speed. Move the pointer to tilt it, double-click to splash.', 'three.js example webgpu_compute_particles_fluid', 'https://threejs.org/examples/#webgpu_compute_particles_fluid'),
+      inspired('water', '128 × 128 height field', 'Water', 'A wave equation updating the positions and normals of a pool surface every frame, with rain, pointer ripples, floating balls and shadows.', 'three.js example webgl_gpgpu_water', 'https://threejs.org/examples/#webgl_gpgpu_water'),
+      inspired('car', 'Colour pickers · tone mapping', 'Car', 'A car built from primitives on a moving grid, with spinning wheels and live body, details and glass colours.', 'three.js example webgl_materials_car', 'https://threejs.org/examples/#webgl_materials_car')
+    ]
+  },
   {
     id: 'engine',
     label: 'Engine and measurements',
@@ -55,7 +68,7 @@ function card(demo, i) {
   const art = demo.image
     ? `<img src="${demo.image}" alt="" loading="lazy" width="640" height="360" class="absolute inset-0 size-full object-cover transition duration-700 group-hover:scale-105"><div class="absolute inset-0 bg-gradient-to-t from-ink-950/85 via-ink-950/10 to-transparent"></div>`
     : `<div class="absolute inset-0 bg-gradient-to-br ${demo.art}"></div>`;
-  const credit = demo.credit ? `<p class="mt-3 text-xs text-slate-400">Original by <a href="${demo.original}" target="_blank" rel="noreferrer" class="pointer-events-auto relative z-10 text-slate-300 underline-offset-4 hover:text-white hover:underline">${demo.credit}</a></p>` : '';
+  const credit = demo.credit ? `<p class="mt-3 text-xs text-slate-400">${demo.creditLabel ?? 'Original by'} <a href="${demo.original}" target="_blank" rel="noreferrer" class="pointer-events-auto relative z-10 text-slate-300 underline-offset-4 hover:text-white hover:underline">${demo.credit}</a></p>` : '';
   const compare = demo.compare ? `<a href="${demo.compare}" target="_blank" rel="noreferrer" class="pointer-events-auto inline-flex items-center gap-1 text-slate-400 transition hover:text-white">On three.js ${icon('arrow')}</a>` : '';
   return `<article class="glass gradient-border group relative flex flex-col overflow-hidden rounded-3xl transition duration-500 hover:-translate-y-1" data-reveal style="--reveal-delay:${(i % 3) * 70}ms">
     <div class="grid-backdrop relative aspect-[16/9] overflow-hidden">${art}<span class="absolute bottom-4 left-5 font-mono text-[11px] uppercase tracking-[0.2em] text-white/90">${demo.tag}</span></div>
@@ -72,7 +85,7 @@ function card(demo, i) {
 }
 
 export function examples() {
-  return shell(`${pageIntro({ label: 'Live demos', title: 'Real scenes.<br><span class="text-gradient">Runnable code.</span>', intro: 'Games and scenes written for three.js, running on WAMR3D with the import changed, plus pages that measure the engine. Each port can switch to three.js r186 for comparison. The demos need a browser with WebGPU, such as current Chrome or Edge.' })}
+  return shell(`${pageIntro({ label: 'Live demos', title: 'Real scenes.<br><span class="text-gradient">Runnable code.</span>', intro: 'Games and scenes written for three.js, running on WAMR3D with the import changed, reduced versions of examples it cannot run yet, and pages that measure the engine. Each port can switch to three.js r186 for comparison. The demos need a browser with WebGPU, such as current Chrome or Edge.' })}
   <div class="relative bg-gradient-to-b from-transparent via-ink-950/85 to-ink-950">
     <nav class="mx-auto flex max-w-6xl flex-wrap gap-2 px-6 pb-10" aria-label="Demo sections">
       ${sections.map((s) => `<a href="#/examples#${s.id}" class="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-white/10 hover:text-white">${s.label} <span class="ml-1 font-mono text-xs text-slate-400">${s.items.length}</span></a>`).join('')}

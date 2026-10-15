@@ -1,0 +1,39 @@
+node v24.19.0, win32 x64; 5 warm-up runs, 25 samples per workload
+
+start-up (one time, not included below)
+  wamr3d: import 5.7 ms, init (compile + instantiate 490 KiB of wasm) 25.4 ms
+  three:  import 3430.4 ms (unbundled source modules)
+
+workload                                                              side      median ms    min ms    max ms   ns/op   wamr3d/three
+Matrix4.multiplyMatrices                                              three       6.561      5.869     9.577     32.8   
+                                                                      wamr3d      8.083      8.050     8.670     40.4   1.23x
+Matrix4.invert (copy + invert)                                        three       6.897      6.872     7.895     34.5   
+                                                                      wamr3d     10.841     10.261    14.963     54.2   1.57x
+Vector3.applyMatrix4                                                  three       1.963      1.961     2.032      9.8   
+                                                                      wamr3d      6.633      6.591     9.226     33.2   3.38x
+Vector3.applyQuaternion                                               three       1.693      1.687     1.840      8.5   
+                                                                      wamr3d      6.483      6.415     7.978     32.4   3.83x
+boundary: getter (v.x)                                                three       1.476      1.413     1.658      7.4   
+                                                                      wamr3d      2.372      2.281     3.516     11.9   1.61x
+boundary: call with a handle (isAlive / .visible)                     three       1.492      1.390     2.313      7.5   
+                                                                      wamr3d      3.474      3.433     3.597     17.4   2.33x
+scene: update 10,000 world matrices (transforms unchanged, forced)    three       1.570      1.270     2.043    157.0   
+                                                                      wamr3d      0.598      0.596     0.645     59.8   0.38x
+scene: set 10,000 transforms + update, one call per property          three       3.238      2.607     3.928    323.8   
+                                                                      wamr3d      2.984      2.901     4.371    298.4   0.92x
+scene: set 10,000 transforms + update, one batched call               three       3.321      2.751     4.194    332.1   
+                                                                      wamr3d      1.495      1.425     1.541    149.5   0.45x
+scene: read back 10,000 world matrices into one Float32Array          three       1.013      0.961     2.018    101.3   
+                                                                      wamr3d      0.294      0.243     0.448     29.4   0.29x
+scene: create + parent + destroy 10,000 objects                       three      39.468     26.190    75.062   3946.8   
+                                                                      wamr3d      1.753      1.602     2.613    175.3   0.04x
+geometry: computeVertexNormals                                        three      11.244     10.481    13.369    170.2   
+                                                                      wamr3d      9.266      8.906     9.654    140.3   0.82x
+geometry: computeBoundingSphere                                       three       1.100      1.077     5.121     16.7   
+                                                                      wamr3d      2.537      2.479     2.689     38.4   2.31x
+geometry: applyMatrix4 (positions + normals)                          three       3.005      2.928     3.383     45.5   
+                                                                      wamr3d      7.128      6.930     7.845    107.9   2.37x
+geometry: upload positions + index (copy into the engine)             three       0.542      0.465     2.558      8.2   
+                                                                      wamr3d      0.523      0.510     0.640      7.9   0.96x
+
+wamr3d/three is the ratio of median times: below 1 means WAMR3D was faster, above 1 slower.

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Car · WAMR3D demo</title>
+<link rel="icon" href="../../../favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="../../../favicon-32x32.png">
+<link rel="apple-touch-icon" href="../../../apple-touch-icon.png">
+<link rel="stylesheet" href="../ports.css">
+<style>
+	#controls { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; gap: 18px; padding: 10px 16px; background: rgba(12, 14, 18, 0.82); border: 1px solid #2c3038; border-radius: 8px; z-index: 2; }
+	#controls label { display: flex; flex-direction: column; align-items: center; gap: 4px; color: #b7bdc6; }
+	#controls input { width: 44px; height: 28px; padding: 0; border: 0; background: none; cursor: pointer; }
+</style>
+</head>
+<body>
+<aside id="info">
+	<h1>Car</h1>
+	<p>A car on a moving grid with spinning wheels. Pick the body, details and glass colours below, drag to orbit.</p>
+	<p>Inspired by the <a href="https://threejs.org/examples/#webgl_materials_car" target="_blank" rel="noreferrer">three.js example <code>webgl_materials_car</code></a>. This is a reduced version written for WAMR3D, not a port of its code.</p>
+	<details>
+		<summary>How it differs from the original</summary>
+		<ul>
+			<li>The original loads a Ferrari 458 model (glTF with Draco compression). WAMR3D has no glTF loader yet, so this car is built from boxes and cylinders in code.</li>
+			<li><code>MeshPhysicalMaterial</code> (clear coat, glass transmission) and the HDR environment are not available. The paint is a <code>MeshStandardMaterial</code> under ordinary lights and the glass is transparent.</li>
+			<li>A blurred canvas texture stands in for the baked shadow texture.</li>
+		</ul>
+	</details>
+</aside>
+<div id="controls">
+	<label><input id="body-color" type="color" value="#ff0000">Body</label>
+	<label><input id="details-color" type="color" value="#ffffff">Details</label>
+	<label><input id="glass-color" type="color" value="#ffffff">Glass</label>
+</div>
+<script type="module" src="./main.js"></script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Water · WAMR3D demo</title>
+<link rel="icon" href="../../../favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="../../../favicon-32x32.png">
+<link rel="apple-touch-icon" href="../../../apple-touch-icon.png">
+<link rel="stylesheet" href="../ports.css">
+</head>
+<body>
+<aside id="info">
+	<h1>Water</h1>
+	<p>A 128 × 128 height field with waves, rain and floating balls. Move the pointer over the pool to make ripples, drag to orbit.</p>
+	<p>Inspired by the <a href="https://threejs.org/examples/#webgl_gpgpu_water" target="_blank" rel="noreferrer">three.js example <code>webgl_gpgpu_water</code></a>. This is a reduced version written for WAMR3D, not a port of its code.</p>
+	<details>
+		<summary>How it differs from the original</summary>
+		<ul>
+			<li>The original computes the height field on the GPU with <code>GPUComputationRenderer</code> and draws it with a custom <code>ShaderMaterial</code>; WAMR3D has neither. Here the wave equation runs in JavaScript and updates the positions and normals of a plain <code>BufferGeometry</code> every frame.</li>
+			<li>The water is a <code>MeshStandardMaterial</code> without reflections, since environment maps are not wired into the object API yet. Balls stand in for the floating objects.</li>
+		</ul>
+	</details>
+</aside>
+<script type="module" src="./main.js"></script>
+</body>
+</html>

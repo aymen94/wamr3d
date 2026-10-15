@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fluid particles · WAMR3D demo</title>
+<link rel="icon" href="../../../favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="../../../favicon-32x32.png">
+<link rel="apple-touch-icon" href="../../../apple-touch-icon.png">
+<link rel="stylesheet" href="../ports.css">
+</head>
+<body>
+<aside id="info">
+	<h1>Fluid particles</h1>
+	<p>About 4,000 particles of liquid in a tilting tank, coloured by speed. Move the pointer sideways to tilt the tank, double-click to splash, drag to orbit.</p>
+	<p>Inspired by the <a href="https://threejs.org/examples/#webgpu_compute_particles_fluid" target="_blank" rel="noreferrer">three.js example <code>webgpu_compute_particles_fluid</code></a>. This is a reduced version written for WAMR3D, not a port of its code.</p>
+	<details>
+		<summary>How it differs from the original</summary>
+		<ul>
+			<li>The original simulates on the GPU with TSL compute shaders, which WAMR3D does not have. Here the simulation runs in JavaScript on the CPU (<code>fluid.js</code>), with fewer particles.</li>
+			<li>The particles are drawn as one <code>InstancedMesh</code> of small spheres, with instance colours from their speed.</li>
+		</ul>
+	</details>
+</aside>
+<script type="module" src="./main.js"></script>
+</body>
+</html>
