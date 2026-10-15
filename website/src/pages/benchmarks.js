@@ -47,6 +47,12 @@ function compareTable() {
 export function benchmarks() {
   const logs = repoFile(meta.dir);
   const canvasNote = resolutions.map((r) => `${resLabel(r)} → ${(meta.canvases[r] ?? ['not recorded']).map(resLabel).join(', ')}`).join('; ');
+  const matrixReadback = lowLevel.find(([name]) => name === 'scene: read back 10,000 world matrices into one Float32Array');
+  const webgpuAt10k = compare['1280x720'] ?? [];
+  const wamrSubmission = webgpuAt10k.find((row) => row.engine === 'native' && row.objects >= 10000);
+  const threeSubmission = webgpuAt10k.find((row) => row.engine === 'three-webgpu' && row.objects >= 10000);
+  const matrixNote = matrixReadback ? `Reading 10,000 world matrices into one Float32Array took ${matrixReadback[2]} ms in WAMR3D against ${matrixReadback[1]} ms in three.js (${(matrixReadback[1] / matrixReadback[2]).toFixed(1)}× faster).` : 'Reading world matrices into one Float32Array is measured below.';
+  const submissionNote = wamrSubmission && threeSubmission ? `At about 10,000 objects and 1280×720, WAMR3D WebGPU submitted a frame ${(threeSubmission.submit / wamrSubmission.submit).toFixed(1)}× faster than three.js WebGPU (${wamrSubmission.submit.toFixed(1)} ms against ${threeSubmission.submit.toFixed(1)} ms).` : 'The table compares frame timing at each available resolution.';
   const setup = [
     ['Hardware', `${meta.cpu}; ${meta.gpu}`],
     ['Browser and OS', `${meta.chrome}, headless (<code class="font-mono">--headless=new</code>, GPU enabled, ANGLE on Direct3D 11), ${meta.os}; Node.js ${meta.node}`],
@@ -66,13 +72,13 @@ export function benchmarks() {
     </section>
 
     <section class="mx-auto max-w-6xl px-6 py-24">
-      ${sectionHead({ label: 'Comparison scene', title: 'Same code, different engines', intro: 'One scene, written once, run on each engine.' })}
+      ${sectionHead({ label: 'Comparison scene', title: 'Same code, different engines', intro: `${submissionNote} One scene, written once, run on each engine.` })}
       <div data-reveal>${compareTable()}</div>
       ${more('What the numbers say', `<ul class="list-disc space-y-2 pl-5 marker:text-brand-cyan">${findings.compare.map((t) => `<li>${t}</li>`).join('')}</ul><p class="mt-4">3 s warm-up, 8 s sample, one engine per page load. The last two rows of each group both draw with the three.js WebGL renderer, so only their transforms differ. Script: <code class="font-mono">examples/compare/measure.mjs --gpu</code>.</p>`)}
     </section>
 
     <section class="mx-auto max-w-6xl px-6 py-24">
-      ${sectionHead({ label: 'Low-level API', title: 'Where WebAssembly pays', intro: 'Right of centre: WAMR3D faster. Left: slower.' })}
+      ${sectionHead({ label: 'Low-level API', title: 'Where WebAssembly pays', intro: `${matrixNote} The table also shows where individual calls cost more across the Wasm boundary.` })}
       <div data-reveal>${speedTable(lowLevel, 'Low-level API benchmark: WAMR3D speed against three.js')}</div>
       ${more('Details', `<p>Node.js, no GPU, 5 warm-up runs and 25 samples per workload (<code class="font-mono">bench/bench.mjs</code>).${startup ? ` Compiling and instantiating ${startup.wasmKiB} KiB of WebAssembly took ${startup.wamrInit} ms.` : ''}</p><p class="mt-2">The create + parent + destroy row is not an equal comparison: three.js leaves freeing to the garbage collector, outside the timed region. Read it as “object churn is cheap here”, not as a speed-up.</p>`)}
     </section>
