@@ -244,6 +244,21 @@ impl Default for Visibility {
     }
 }
 
+/// The skeleton a skinned mesh deforms with (three.js `SkinnedMesh` and `Skeleton`).
+/// `bones[i]` moves the vertices weighted to bone `i`; `bone_inverses[i]` is the inverse
+/// of that bone's world matrix in the bind pose. A missing bone counts as the identity.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Skin {
+    pub bones: Vec<Option<Entity>>,
+    pub bone_inverses: Vec<Matrix4>,
+    /// The mesh's world matrix when it was bound to the skeleton.
+    pub bind_matrix: Matrix4,
+    /// Used only when `detached` (three.js `DetachedBindMode`); attached meshes use the
+    /// inverse of their current world matrix, so their own transform does not move them.
+    pub bind_matrix_inverse: Matrix4,
+    pub detached: bool,
+}
+
 /// What an object draws. Both handles point into the owning `World`; either may be
 /// dead if the resource was disposed.
 #[derive(Clone, Copy, Debug, PartialEq)]

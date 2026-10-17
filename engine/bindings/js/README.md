@@ -2,7 +2,7 @@
 
 Unlock your imagination without limits: a high-performance 3D engine that runs as native WebAssembly, with a Rust core, its own WebGPU renderer and the three.js API you already know. The engine provides scene graph, transforms, cameras, geometry processing, culling and draw ordering; drive it from JavaScript through three.js-style classes or batched low-level calls. The object API keeps user-facing transforms in JavaScript and synchronizes them with the engine in batches.
 
-Behaviour is checked against three.js, value by value and pixel by pixel. `scene.environment`, `envMap` and texture backgrounds work with equirectangular textures, and materials take normal, roughness, metalness, emissive, alpha and ambient-occlusion maps. Cube textures, point-light shadows, area lights, post-processing, most loaders, animation, audio and controls are not available; where WebGPU is missing it draws with WebGL 2. See [Not available yet](https://github.com/aymen94/wamr3d/blob/main/MIGRATION.md#4-not-available-yet).
+Behaviour is checked against three.js, value by value and pixel by pixel. It covers three.js's core classes: skinned and morphed meshes, every material including physical transmission and iridescence, shader materials (GLSL, on WebGL 2), area lights and light probes, basic, PCF and VSM shadows, several environment maps per frame, post-processing, curves and extruded shapes, the animation system, loaders, audio and helpers, plus add-ons for controls, post-processing and wide lines under `wamr3d/addons/`. GLTFLoader is not available yet; see [STATUS.md](https://github.com/aymen94/wamr3d/blob/main/STATUS.md).
 
 ## Install
 
@@ -94,21 +94,21 @@ Differences to watch for:
 |---|---|
 | Works without setup | `await init()` once, and `await renderer.init()` before the first `render` (`setAnimationLoop` waits for you) |
 | `WebGLRenderer` | Works: the same renderer drawing with WebGL 2 |
-| `MeshStandardMaterial` with environment and many maps | `color`, `map`, `roughness`, `metalness`, `emissive`, the normal, roughness, metalness, emissive, alpha and ambient-occlusion maps (one shared uv transform), `alphaTest`, `envMap` (or `scene.environment`, equirectangular, one per frame), `side`, `transparent`, `opacity`, `depthTest`, `depthWrite`, `vertexColors`. Unsupported parameters are stored, have no effect and log one warning |
-| `MeshPhysicalMaterial` | Drawn as `MeshStandardMaterial`; clearcoat, sheen, transmission and the other extensions log one warning |
-| Any number of lights | Up to 16 directional, point and spot lights combined, plus ambient and hemisphere lights |
-| Shadows from any light | Directional and spot lights support PCF shadows, up to 4 shadow-casting lights per frame. Point-light shadows are not available; other shadow-map types draw as PCF |
-| `PointsMaterial.size` | Points are one pixel; `size` has no effect, as in three.js's WebGPU renderer |
+| `MeshStandardMaterial` with environment and many maps | Every map, each with its own uv transform and uv set; vertex tangents; up to 12 distinct textures per material |
+| `MeshPhysicalMaterial` | Clearcoat, sheen, the specular layer, iridescence, anisotropy, transmission with thickness, attenuation and dispersion, and the maps of every layer |
+| Any number of lights | Up to 16 directional, point, spot and area lights combined, plus ambient, hemisphere lights and light probes |
+| Shadows from any light | Directional, spot and point lights; `BasicShadowMap`, `PCFShadowMap` (`PCFSoftShadowMap` draws as PCF) or `VSMShadowMap` |
+| `PointsMaterial.size` | Points above one pixel are drawn as squares, sized as three.js's WebGLRenderer sizes them |
 | Screen tone mapping and `material.toneMapped` | The supported tone-mapping modes apply to the whole screen frame; `material.toneMapped` has no effect on screen output |
 | `WebGPURenderer` falls back to WebGL 2 | The same: WebGPU where available, WAMR3D's own WebGL 2 renderer otherwise; `backend: 'webgpu' \| 'webgl'` or `forceWebGL` pins one ([MIGRATION.md](https://github.com/aymen94/wamr3d/blob/main/MIGRATION.md#choosing-the-backend)) |
-| A missing class is `undefined` | Unsupported classes (`SkinnedMesh`, `ShaderMaterial`, ...) throw "not available yet" |
-| `object.matrix.elements[ 12 ] = 5` | `matrixWorld`, `matrix.elements`, `box.min` and similar are copies. Use `position`, `rotation`, `scale` or the value's methods |
+| `ShaderMaterial` | GLSL draws on WebGL 2; on WebGPU it draws unlit, as three.js's WebGPURenderer takes no GLSL |
+| `object.matrix.elements[ 12 ] = 5` | Takes effect with `matrixAutoUpdate = false`, as in three.js; `matrixWorld` is read from the engine and refreshed by the next update. Vectors, matrices, quaternions, boxes, spheres and colours are plain JavaScript values |
 | `attribute.array` is the data | Set `attribute.needsUpdate = true` after changing it, as in three.js |
 | Garbage collected | Also here; `dispose()` releases engine objects at once |
 
-The WebGPU renderer supports meshes, lines, line loops, points, sprites and instancing; basic, Lambert, Phong, toon, normal and standard materials with emissive light and three.js's physically based lighting; colour, normal, roughness, metalness, emissive, alpha and ambient-occlusion maps; environment lighting and texture backgrounds; fog; up to 16 directional, point and spot lights; directional and spot PCF shadows; tone mapping; render targets; geometry groups; frustum culling; draw ranges; and 4× MSAA. Points are one pixel, and shadow casters are meshes only. `Raycaster` picks single instances (`instanceId`) and sprites.
+The renderer (WebGPU, or WebGL 2) draws meshes (filled or wireframe, skinned, morphed), lines and points of any width, sprites and instancing; every three.js material type with three.js's lighting; 24 kinds of map; environment lighting from equirectangular, cube or render-target textures; area lights and light probes; basic, PCF and VSM shadows; tone mapping; render targets with depth textures; blending modes; and full-screen effects for post-processing.
 
-Available classes include `Scene`, `Group`, `Object3D`, `Mesh`, `InstancedMesh`, `Line`, `LineSegments`, `LineLoop`, `Points`, `Sprite`, `LOD`, `PointsMaterial`, `SpriteMaterial`, `RenderTarget` (also `WebGLRenderTarget`), `PerspectiveCamera`, `OrthographicCamera`, `BufferGeometry`, typed and interleaved attributes, eight shape geometries, `MeshBasicMaterial`, `MeshLambertMaterial`, `MeshPhongMaterial`, `MeshToonMaterial`, `MeshNormalMaterial`, `MeshStandardMaterial`, `MeshPhysicalMaterial`, `LineBasicMaterial`, textures, five lights, `Fog`, `FogExp2`, `Raycaster`, `Clock`, `GridHelper`, `AxesHelper` and the math types (`Vector2/3/4`, `Quaternion`, `Euler`, `Matrix3/4`, `Color`, `Box3`, `Sphere`, `Plane`, `Ray`, `Frustum`, `Line3`, `Triangle`, `Spherical`, `Cylindrical`, `MathUtils`).
+Available classes include the scene graph, cameras, lights, every geometry (with `ShapeGeometry`, `ExtrudeGeometry`, `TubeGeometry`, `EdgesGeometry`, `WireframeGeometry`), every material (with `ShaderMaterial` and `RawShaderMaterial`), `SkinnedMesh`, `Skeleton`, `Bone`, textures and render targets, curves and shapes, the animation classes, the loaders (`FileLoader`, `ImageLoader`, `TextureLoader`, `ObjectLoader`, ...), the audio classes, the helpers, `Raycaster`, `Controls` and the math classes. Add-ons: `wamr3d/addons/controls/OrbitControls.js` and the other controls, `wamr3d/addons/postprocessing/EffectComposer.js` and its passes, `wamr3d/addons/lines/Line2.js` and its classes.
 
 **Full guide:** [MIGRATION.md](https://github.com/aymen94/wamr3d/blob/main/MIGRATION.md): the complete class list, the low-level API mapping, batching patterns and what is not available yet.
 

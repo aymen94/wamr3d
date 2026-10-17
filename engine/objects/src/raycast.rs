@@ -120,8 +120,45 @@ fn raycast_mesh(world: &World, object: Entity, raycaster: &Raycaster, intersects
     else {
         return;
     };
+    if let Some(mut posed) = skinned(world, object, geometry) {
+        posed.compute_bounding_sphere();
+        let sphere = posed.bounding_sphere.unwrap_or_default();
+        raycast_triangles(object, &posed, material.side, &sphere, &transform.matrix_world, raycaster, intersects);
+        return;
+    }
     let sphere = local_bounding_sphere(geometry);
     raycast_triangles(object, geometry, material.side, &sphere, &transform.matrix_world, raycaster, intersects);
+}
+
+/// A copy of a skinned mesh's geometry with its positions in the current pose, as
+/// three.js `SkinnedMesh.raycast` tests them (`applyBoneTransform`). `None` for a mesh
+/// without a skin or skinning attributes.
+fn skinned(world: &World, object: Entity, geometry: &BufferGeometry) -> Option<BufferGeometry> {
+    world.skin(object)?;
+    let (index, weight) = (geometry.get_attribute("skinIndex")?, geometry.get_attribute("skinWeight")?);
+    let mut matrices = Vec::new();
+    let bones = world.skin_matrices(object, &mut matrices);
+    let position = geometry.get_attribute("position")?;
+    let mut posed = geometry.clone();
+    let mut out = Vec::with_capacity(position.count() * 3);
+    for v in 0..position.count() {
+        let p = position.get_vector3(v);
+        let mut sum = [0.0f64; 3];
+        for k in 0..4 {
+            let w = weight.get_component(v, k) as f64;
+            let bone = index.get_component(v, k) as usize;
+            if w == 0.0 || bone >= bones {
+                continue;
+            }
+            let m = &matrices[bone * 16..bone * 16 + 16];
+            for (axis, total) in sum.iter_mut().enumerate() {
+                *total += w * (m[axis] as f64 * p.x as f64 + m[4 + axis] as f64 * p.y as f64 + m[8 + axis] as f64 * p.z as f64 + m[12 + axis] as f64);
+            }
+        }
+        out.extend(sum.map(|c| c as f32));
+    }
+    posed.set_attribute("position", wamr_core::BufferAttribute::new(wamr_core::AttributeArray::Float32(out), 3, false));
+    Some(posed)
 }
 
 /// The public bound, or its cached internal equivalent when it has not been requested.

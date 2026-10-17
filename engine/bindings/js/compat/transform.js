@@ -63,9 +63,7 @@ function delegate( Class, Value ) {
 
 			const value = this.clone(), result = value[ key ]( ...args );
 			if ( result !== value ) return result;
-			this.copy( value );
-			value.free();
-			return this;
+			return this.copy( value );
 
 		};
 
@@ -90,6 +88,22 @@ export class BoundVector3 extends Bound {
 	copy( v ) {
 
 		return this._write( 3, v.x, v.y, v.z );
+
+	}
+
+	// Without the temporary value the delegated methods make: animation writes these every frame.
+	fromArray( array, offset = 0 ) {
+
+		return this._write( 3, array[ offset ], array[ offset + 1 ], array[ offset + 2 ] );
+
+	}
+
+	toArray( array = [], offset = 0 ) {
+
+		array[ offset ] = this.x;
+		array[ offset + 1 ] = this.y;
+		array[ offset + 2 ] = this.z;
+		return array;
 
 	}
 
@@ -160,6 +174,22 @@ export class BoundQuaternion extends Bound {
 	copy( q ) {
 
 		return this._write( 4, q.x, q.y, q.z, q.w );
+
+	}
+
+	fromArray( array, offset = 0 ) {
+
+		return this._write( 4, array[ offset ], array[ offset + 1 ], array[ offset + 2 ], array[ offset + 3 ] );
+
+	}
+
+	toArray( array = [], offset = 0 ) {
+
+		array[ offset ] = this.x;
+		array[ offset + 1 ] = this.y;
+		array[ offset + 2 ] = this.z;
+		array[ offset + 3 ] = this.w;
+		return array;
 
 	}
 

@@ -44,7 +44,8 @@ export function cubeUVLevel( size ) {
  */
 export function createEnvironmentPasses( device, { format, samples, texture, textureOf, frame } ) {
 
-	const environmentSampler = device.createSampler( { magFilter: 'linear', minFilter: 'linear' } );
+	// trilinear: the transmission copy, which shares it, has mip levels
+	const environmentSampler = device.createSampler( { magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear' } );
 	const noEnvironment = device.createTexture( { size: [ 1, 1 ], format: HDR_FORMAT, usage: GPUTextureUsage.TEXTURE_BINDING } );
 	const noEnvironmentView = noEnvironment.createView();
 
@@ -85,7 +86,7 @@ export function createEnvironmentPasses( device, { format, samples, texture, tex
 
 		}
 
-		const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING;
+		const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC;
 		const cubeUV = device.createTexture( { size: [ width, height ], format: HDR_FORMAT, usage } );
 		const pingPong = device.createTexture( { size: [ width, height ], format: HDR_FORMAT, usage } );
 		const cubeView = cubeUV.createView(), pingView = pingPong.createView();
@@ -157,31 +158,65 @@ export function createEnvironmentPasses( device, { format, samples, texture, tex
 
 	}
 
-	// The prefiltered map of the frame's environment, or the empty one while the source
-	// is not ready.
-	function environment( info, sources ) {
+	// The prefiltered map of one environment at `lodMax`, or null while its source is not ready.
+	function prefiltered( id, lodMax, sources ) {
 
-		if ( info.length === 0 ) return noEnvironmentView;
-		const [ id, lodMax ] = info, source = sources?.get( id );
+		const source = sources?.get( id );
 		texture( id, sources );
 		const gpuSource = textureOf( id );
 		if ( ! source || ! gpuSource ) return null;
+		const key = id + ':' + lodMax;
+		let entry = environments.get( key );
 
-		let entry = environments.get( id );
-		if ( entry && entry.version === source.version && entry.lodMax === lodMax ) {
+		if ( entry && entry.version === source.version ) {
 
 			entry.checked = frame();
-			return entry.view;
+			return entry;
 
 		}
 
 		entry?.texture.destroy();
 		const cubeUV = prefilter( source, gpuSource, lodMax );
-		entry = { version: source.version, lodMax, texture: cubeUV, view: cubeUV.createView(), checked: frame() };
-		environments.set( id, entry );
-		return entry.view;
+		entry = { version: source.version, lodMax, texture: cubeUV, view: cubeUV.createView(), checked: frame(), stamp: ++ stamps };
+		environments.set( key, entry );
+		return entry;
 
 	}
+
+	let stamps = 0, stack = null;
+
+	// The frame's environments stacked in one texture, in the order of `info` (the
+	// renderer's `environmentInfo`: lodMax, width and height of one map, texture ids). A
+	// single environment is its own map; several are copied into bands of one texture,
+	// again only when one of them changed. The empty map while none is ready.
+	function environment( info, sources ) {
+
+		if ( info.length === 0 ) return noEnvironmentView;
+		const lodMax = info[ 0 ], width = info[ 1 ], height = info[ 2 ], ids = info.subarray ? info.subarray( 3 ) : info.slice( 3 );
+		const maps = Array.from( ids, ( id ) => prefiltered( id, lodMax, sources ) );
+		if ( maps.some( ( map ) => map === null ) ) return null;
+		if ( maps.length === 1 ) return maps[ 0 ].view;
+
+		const key = ids.join( ',' ) + ':' + lodMax + ':' + maps.map( ( map ) => map.stamp ).join( ',' );
+		if ( stack && stack.key === key ) return stack.view;
+		const size = [ width, height * maps.length ];
+
+		if ( ! stack || stack.texture.width !== size[ 0 ] || stack.texture.height !== size[ 1 ] ) {
+
+			stack?.texture.destroy();
+			const texture_ = device.createTexture( { size, format: HDR_FORMAT, usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST } );
+			stack = { texture: texture_, view: texture_.createView(), key: '' };
+
+		}
+
+		const encoder = device.createCommandEncoder();
+		maps.forEach( ( map, k ) => encoder.copyTextureToTexture( { texture: map.texture }, { texture: stack.texture, origin: [ 0, k * height, 0 ] }, [ width, height, 1 ] ) );
+		device.queue.submit( [ encoder.finish() ] );
+		stack.key = key;
+		return stack.view;
+
+	}
+
 	// The background pass (a texture as three.js `scene.background`): one pipeline per kind
 	// of target, and a bind group that follows the texture shown.
 	const backgroundLayout = device.createBindGroupLayout( { entries: [
@@ -224,7 +259,7 @@ export function createEnvironmentPasses( device, { format, samples, texture, tex
 
 		if ( kind === 1 ) {
 
-			view = environment( [ id, lodMax ], sources );
+			view = prefiltered( id, lodMax, sources )?.view ?? null;
 			sampler = environmentSampler;
 
 		} else {
@@ -278,6 +313,7 @@ export function createEnvironmentPasses( device, { format, samples, texture, tex
 			backgroundBuffer?.destroy();
 			for ( const entry of environments.values() ) entry.texture.destroy();
 			environments.clear();
+			stack?.texture.destroy();
 			if ( pmrem ) for ( const buffer of pmrem.levels.values() ) buffer.destroy();
 
 		}

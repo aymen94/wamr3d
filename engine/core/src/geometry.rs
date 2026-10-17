@@ -288,6 +288,11 @@ impl BufferGeometry {
         sphere
     }
 
+    /// Forgets the cached raycasting bound, after positions were changed in place.
+    pub fn clear_raycast_cache(&mut self) {
+        self.raycast_sphere.set(None);
+    }
+
     /// A cached local bound for raycasting when the public bounding sphere is unset.
     pub fn raycast_sphere(&self) -> Option<Sphere> {
         if let Some(sphere) = self.raycast_sphere.get() {
@@ -460,11 +465,11 @@ impl BufferGeometry {
 
         if let Some(attribute) = self.get_attribute_mut("normal") {
             for (i, n) in normals.iter().enumerate() {
+                let mut n = *n;
+                n.normalize();
                 attribute.set_xyz(i, n.x, n.y, n.z);
             }
         }
-
-        self.normalize_normals();
 
         if let Some(attribute) = self.get_attribute_mut("normal") {
             attribute.needs_update();

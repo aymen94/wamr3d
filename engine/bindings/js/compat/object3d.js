@@ -1,8 +1,9 @@
 // Object3D, groups, scenes and fog.
 
 import * as W from '../index.js';
-import { ALL_PARTS, OBJECT, POSITION, QUATERNION, ROTATION, SCALE, UP, finalizer, lazyUUID, objects, touched, w, world } from './engine.js';
-import { Color, Euler, Matrix4, Quaternion, Vector3 } from './math.js';
+import { ALL_PARTS, OBJECT, POSITION, QUATERNION, ROTATION, SCALE, UP, finalizer, lazyUUID, objects, peek, readFloats, readStamp, touched, w, world } from './engine.js';
+import { Color, Euler, Matrix4, Quaternion, Vector3, engineVector } from './math.js';
+import { withEvents } from './events.js';
 import { BoundEuler, BoundLayers, BoundQuaternion, BoundVector3 } from './transform.js';
 
 const AXES = {};
@@ -13,13 +14,17 @@ function axis( name ) {
 
 }
 
-export function vector( v ) {
+let nextId = 1;
+const readout = [ 0, 0, 0, 0 ];
 
-	return v instanceof W.Vector3 ? v : new Vector3( v.x, v.y, v.z );
+// A world-space value of `object` (0 position, 1 quaternion, 2 scale, 3 direction) into
+// `target`, read from the engine without allocating.
+function worldValue( object, what, target ) {
+
+	if ( ! readFloats( w().worldValuePtr( object.handle, what ), readout, what === 1 ? 4 : 3 ) ) throw new Error( 'WAMR3D: object handle is not alive' );
+	return target.fromArray( readout );
 
 }
-
-let nextId = 1;
 
 
 export class Object3D {
@@ -34,6 +39,7 @@ export class Object3D {
 		this._matrixAutoUpdate = true;
 		this._matrix = null;
 		this._matrixWorld = null;
+		this._matrixWorldStamp = - 1;
 		this._matrixTouched = false;
 		this.matrixWorldNeedsUpdate = false;
 		this.id = nextId ++;
@@ -97,7 +103,7 @@ export class Object3D {
 
 		value = !! value;
 		if ( value === this._matrixAutoUpdate ) return;
-		if ( ! value ) ( this._matrix ??= new Matrix4() ).fromArray( w().matrix( this.handle ) );
+		if ( ! value ) readFloats( w().matrixPtr( this.handle ), ( this._matrix ??= new Matrix4() ).elements, 16 );
 		w().setMatrixAutoUpdate( this.handle, value );
 		this._matrixAutoUpdate = value;
 
@@ -161,7 +167,7 @@ export class Object3D {
 
 		if ( this._matrixAutoUpdate ) {
 
-			matrix.fromArray( w().matrix( this.handle ) );
+			readFloats( w().matrixPtr( this.handle ), matrix.elements, 16 );
 
 		} else if ( ! this._matrixTouched ) {
 
@@ -183,8 +189,17 @@ export class Object3D {
 	/** The world matrix: one `Matrix4` per object, refreshed from the engine on each access. */
 	get matrixWorld() {
 
-		const matrix = this._matrixWorld ??= new Matrix4();
-		w().copyMatrixWorld( this.handle, matrix );
+		const matrix = this._matrixWorld ??= new Matrix4(), stamp = readStamp();
+
+		// read again only when the engine may have changed it since the last read; world
+		// matrices change only through engine calls, not through pending transform writes
+		if ( stamp === 0 || stamp !== this._matrixWorldStamp ) {
+
+			readFloats( peek().matrixWorldPtr( this.handle ), matrix.elements, 16 );
+			this._matrixWorldStamp = stamp;
+
+		}
+
 		return matrix;
 
 	}
@@ -266,7 +281,7 @@ export class Object3D {
 
 	rotateOnAxis( axis_, angle ) {
 
-		w().rotateOnAxis( this.handle, vector( axis_ ), angle );
+		w().rotateOnAxis( this.handle, engineVector( axis_ ), angle );
 		this._stale = ALL_PARTS;
 		return this;
 
@@ -292,7 +307,7 @@ export class Object3D {
 
 	translateOnAxis( axis_, distance ) {
 
-		w().translateOnAxis( this.handle, vector( axis_ ), distance );
+		w().translateOnAxis( this.handle, engineVector( axis_ ), distance );
 		this._stale = ALL_PARTS;
 		return this;
 
@@ -338,25 +353,25 @@ export class Object3D {
 
 	getWorldPosition( target = new Vector3() ) {
 
-		return target.fromArray( w().getWorldPosition( this.handle ) );
+		return worldValue( this, 0, target );
 
 	}
 
 	getWorldQuaternion( target = new Quaternion() ) {
 
-		return target.fromArray( w().getWorldQuaternion( this.handle ) );
+		return worldValue( this, 1, target );
 
 	}
 
 	getWorldScale( target = new Vector3() ) {
 
-		return target.fromArray( w().getWorldScale( this.handle ) );
+		return worldValue( this, 2, target );
 
 	}
 
 	getWorldDirection( target = new Vector3() ) {
 
-		return target.fromArray( w().getWorldDirection( this.handle ) );
+		return worldValue( this, 3, target );
 
 	}
 
@@ -471,6 +486,7 @@ export class Object3D {
 }
 
 Object3D.prototype.isObject3D = true;
+withEvents( Object3D );
 lazyUUID( Object3D );
 
 export class Group extends Object3D {

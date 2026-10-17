@@ -27,7 +27,6 @@ pub fn clamp(value: f32, min: f32, max: f32) -> f32 {
 }
 
 fn euclidean_modulo_wide(n: f64, m: f64) -> f64 {
-    // https://en.wikipedia.org/wiki/Modulo_operation
     ((n % m) + m) % m
 }
 
@@ -41,7 +40,6 @@ pub fn map_linear(x: f32, a1: f32, a2: f32, b1: f32, b2: f32) -> f32 {
 }
 
 pub fn inverse_lerp(x: f32, y: f32, value: f32) -> f32 {
-    // https://www.gamedev.net/tutorials/programming/general-and-gameplay-programming/inverse-lerp-a-super-useful-yet-often-overlooked-function-r5230/
     if x != y {
         ((value as f64 - x as f64) / (y as f64 - x as f64)) as f32
     } else {
@@ -62,7 +60,6 @@ pub fn damp(x: f32, y: f32, lambda: f32, dt: f32) -> f32 {
 }
 
 pub fn pingpong(x: f32, length: f32) -> f32 {
-    // https://www.desmos.com/calculator/vcsjnyz7x4
     let length = length as f64;
     (length - (euclidean_modulo_wide(x as f64, length * 2.0) - length).abs()) as f32
 }
@@ -205,17 +202,10 @@ pub enum ProperEulerOrder {
 pub fn set_quaternion_from_proper_euler(q: &mut Quaternion, a: f32, b: f32, c: f32, order: ProperEulerOrder) {
     let (a, b, c) = (a as f64, b as f64, c as f64);
 
-    let c2 = (b / 2.0).cos();
-    let s2 = (b / 2.0).sin();
-
-    let c13 = ((a + c) / 2.0).cos();
-    let s13 = ((a + c) / 2.0).sin();
-
-    let c1_3 = ((a - c) / 2.0).cos();
-    let s1_3 = ((a - c) / 2.0).sin();
-
-    let c3_1 = ((c - a) / 2.0).cos();
-    let s3_1 = ((c - a) / 2.0).sin();
+    let (s2, c2) = (b / 2.0).sin_cos();
+    let (s13, c13) = ((a + c) / 2.0).sin_cos();
+    let (s1_3, c1_3) = ((a - c) / 2.0).sin_cos();
+    let (s3_1, c3_1) = (-s1_3, c1_3);
 
     q.set_wide(match order {
         ProperEulerOrder::XYX => [c2 * s13, s2 * c1_3, s2 * s1_3, c2 * c13],

@@ -1,7 +1,7 @@
 use crate::arena::{Arena, Column, Handle};
 use crate::attribute::{InterleavedBuffer, InterleavedBufferHandle};
 use crate::camera::Camera;
-use crate::components::{Hierarchy, Renderable, Transform, Visibility};
+use crate::components::{Hierarchy, Renderable, Skin, Transform, Visibility};
 use crate::geometry::{BufferGeometry, GeometryHandle};
 use crate::resources::{Material, RenderTarget, RenderTargetHandle};
 use wamr_math::{Matrix4, Quaternion, Vector3};
@@ -101,6 +101,7 @@ pub struct World {
     renderables: Column<Renderable>,
     cameras: Column<Camera>,
     material_lists: Column<Vec<MaterialHandle>>,
+    skins: Column<Skin>,
 
     geometries: Shared<BufferGeometry>,
     materials: Shared<Material>,
@@ -152,6 +153,7 @@ impl World {
         self.names.take(entity.index());
         self.cameras.take(entity.index());
         self.material_lists.take(entity.index());
+        self.skins.take(entity.index());
         self.entities.remove(entity);
 
         self.events.push(CoreEvent::ObjectDisposed { entity });
@@ -197,6 +199,9 @@ impl World {
         }
         let renderable = self.renderables.get(index).copied();
         self.set_renderable(copy, renderable);
+        if let Some(skin) = self.skins.get(index).cloned() {
+            self.skins.set(copy.index(), skin);
+        }
 
         if recursive {
             for child in self.children(source).to_vec() {
@@ -504,6 +509,52 @@ impl World {
         if let (Some(camera), Some(t)) = (self.cameras.get_mut(entity.index()), self.transforms.get(entity.index())) {
             camera.update_view(&t.matrix_world);
         }
+    }
+
+    // ---- skins
+
+    pub fn skin(&self, entity: Entity) -> Option<&Skin> {
+        self.is_alive(entity).then(|| self.skins.get(entity.index())).flatten()
+    }
+
+    /// Makes the object a skinned mesh, or an ordinary one again with `None`.
+    pub fn set_skin(&mut self, entity: Entity, skin: Option<Skin>) {
+        if !self.is_alive(entity) {
+            return;
+        }
+        match skin {
+            Some(skin) => drop(self.skins.set(entity.index(), skin)),
+            None => drop(self.skins.take(entity.index())),
+        }
+    }
+
+    /// Appends, per bone of the object's skin, the matrix that takes a vertex from the
+    /// mesh's bind pose to its current pose in the mesh's local space: the bind-matrix
+    /// inverse times the bone's world matrix times its inverse bind matrix times the bind
+    /// matrix. Vertices are skinned by the weighted sum of these, so the shader needs
+    /// neither bind matrix. World matrices must be up to date. Returns the bone count
+    /// (0 for an object without a skin).
+    pub fn skin_matrices(&self, entity: Entity, out: &mut Vec<f32>) -> usize {
+        let Some(skin) = self.skin(entity) else {
+            return 0;
+        };
+        let mut bind_inverse = skin.bind_matrix_inverse;
+        if !skin.detached {
+            if let Some(t) = self.transform(entity) {
+                bind_inverse = t.matrix_world;
+                bind_inverse.invert();
+            }
+        }
+        for (i, bone) in skin.bones.iter().enumerate() {
+            let mut m = bone.and_then(|b| self.transform(b)).map_or_else(Matrix4::default, |t| t.matrix_world);
+            if let Some(inverse) = skin.bone_inverses.get(i) {
+                m.multiply(inverse);
+            }
+            m.multiply(&skin.bind_matrix);
+            m.premultiply(&bind_inverse);
+            out.extend(m.elements);
+        }
+        skin.bones.len()
     }
 
     // ---- cameras

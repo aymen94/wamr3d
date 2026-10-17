@@ -3,9 +3,9 @@
 import * as W from '../index.js';
 import { createBackend } from '../webgpu.js';
 import { createWebGLBackend } from '../webgl.js';
-import { CustomToneMapping, EquirectangularReflectionMapping, EquirectangularRefractionMapping, NoToneMapping, PCFShadowMap, UnsignedByteType } from './constants.js';
+import { BasicShadowMap, CustomToneMapping, EquirectangularReflectionMapping, EquirectangularRefractionMapping, NoToneMapping, PCFShadowMap, PCFSoftShadowMap, UnsignedByteType, VSMShadowMap } from './constants.js';
 import { ignored, instanceSources, w } from './engine.js';
-import { FrameEnvironment, environmentReady } from './materials.js';
+import { FrameEnvironment, environmentReady, environmentWidth, shaderMaterials } from './materials.js';
 import { Color, Matrix4 } from './math.js';
 import { backends, textureSources } from './textures.js';
 
@@ -74,6 +74,8 @@ export class WebGPURenderer {
 		this._height = this.domElement.height;
 		this._clearColor = new Color( 0x000000 );
 		this.toneMapping = NoToneMapping;
+		// false keeps what the target holds and draws over it
+		this.autoClear = true;
 		this.toneMappingExposure = 1;
 		this.shadowMap = { enabled: false, autoUpdate: true, needsUpdate: false, type: PCFShadowMap };
 		this._backend = null;
@@ -85,6 +87,7 @@ export class WebGPURenderer {
 		// inverse rotations of the environment and of the background, kept while unchanged
 		this._rotations = [ { key: [ NaN, NaN, NaN, '' ], matrix: new Float32Array( 9 ) }, { key: [ NaN, NaN, NaN, '' ], matrix: new Float32Array( 9 ) } ];
 		this._rotationMatrix = null;
+		this._probe = new Float32Array( 27 );
 
 	}
 
@@ -168,13 +171,20 @@ export class WebGPURenderer {
 		if ( scene.matrixWorldAutoUpdate ) scene.updateMatrixWorld();
 		if ( camera.parent === null && camera.matrixWorldAutoUpdate ) camera.updateMatrixWorld();
 
-		const sky = [ 0, 0, 0 ], ground = [ 0, 0, 0 ], frame = this._frame, MAX_LIGHTS = W.Renderer.maxLights();
+		const sky = [ 0, 0, 0 ], ground = [ 0, 0, 0 ], probe = this._probe.fill( 0 ), frame = this._frame, MAX_LIGHTS = W.Renderer.maxLights();
 		let lights = 0;
 		if ( this.toneMapping === CustomToneMapping ) ignored( 'CustomToneMapping' );
 		frame.setToneMapping( this.toneMapping, this.toneMappingExposure );
 		const shadows = this.shadowMap.enabled === true;
 		frame.setShadowsEnabled( shadows );
-		if ( shadows && this.shadowMap.type !== PCFShadowMap ) ignored( 'shadowMap.type other than PCFShadowMap (drawn as PCFShadowMap)' );
+
+		if ( shadows ) {
+
+			// As three.js's WebGPU renderer, PCFSoftShadowMap draws as PCFShadowMap.
+			const type = this.shadowMap.type;
+			frame.setShadowType( type === BasicShadowMap || type === VSMShadowMap ? type : PCFShadowMap );
+
+		}
 		const stamp = ++ frameStamp;
 		frame.clearLights();
 		const environment = this._environment;
@@ -186,6 +196,8 @@ export class WebGPURenderer {
 			const object = stack.pop();
 			if ( ! object._visible ) continue;
 			if ( object.isLOD && object.autoUpdate ) object.update( camera );
+			// audio objects follow their world transform
+			if ( object._onFrame !== undefined ) object._onFrame();
 
 			if ( object._material !== undefined ) {
 
@@ -209,16 +221,48 @@ export class WebGPURenderer {
 				}
 
 				if ( object.isSprite ) object._syncCenter();
+				else if ( object._syncMorph !== undefined ) {
+
+					object._syncMorph();
+					if ( object.isSkinnedMesh ) object._syncSkin();
+
+				}
 
 			} else if ( object.isLight ) {
 
 				const { r, g, b } = object.color, k = object.intensity;
 
-				if ( object.isDirectionalLight || object.isPointLight || object.isSpotLight ) {
+				if ( object.isRectAreaLight ) {
 
 					if ( ++ lights > MAX_LIGHTS ) {
 
-						ignored( `more than ${MAX_LIGHTS} directional, point and spot lights` );
+						ignored( `more than ${MAX_LIGHTS} directional, point, spot and area lights` );
+
+					} else {
+
+						// half its width along its x axis and half its height along y, of its world rotation
+						const m = w().matrixWorld( object.handle ), x = Math.hypot( m[ 0 ], m[ 1 ], m[ 2 ] ) || 1, y = Math.hypot( m[ 4 ], m[ 5 ], m[ 6 ] ) || 1;
+						const hw = object.width * 0.5 / x, hh = object.height * 0.5 / y;
+						frame.addRectAreaLight( m[ 12 ], m[ 13 ], m[ 14 ], m[ 0 ] * hw, m[ 1 ] * hw, m[ 2 ] * hw, m[ 4 ] * hh, m[ 5 ] * hh, m[ 6 ] * hh, r, g, b, k );
+
+					}
+
+				} else if ( object.isLightProbe ) {
+
+					const coefficients = object.sh.coefficients;
+					for ( let i = 0; i < 9; i ++ ) {
+
+						probe[ i * 3 ] += coefficients[ i ].x * k;
+						probe[ i * 3 + 1 ] += coefficients[ i ].y * k;
+						probe[ i * 3 + 2 ] += coefficients[ i ].z * k;
+
+					}
+
+				} else if ( object.isDirectionalLight || object.isPointLight || object.isSpotLight ) {
+
+					if ( ++ lights > MAX_LIGHTS ) {
+
+						ignored( `more than ${MAX_LIGHTS} directional, point, spot and area lights` );
 
 					} else {
 
@@ -230,9 +274,11 @@ export class WebGPURenderer {
 						if ( shadows && object.castShadow ) {
 
 							const shadow = object.shadow, c = shadow.camera, size = shadow.mapSize;
-							if ( object.isPointLight ) ignored( 'shadows of point lights' );
+							// a point light draws six square faces of the map width from its position
+							if ( object.isPointLight ) frame.setLastLightShadow( false, 90, 1, 0, 0, c.near, object.distance || c.far, from[ 12 ], from[ 13 ], from[ 14 ], shadow.bias, shadow.normalBias, shadow.intensity, shadow.radius, size.width, size.width );
 							else if ( object.isDirectionalLight ) frame.setLastLightShadow( true, c.left, c.right, c.top, c.bottom, c.near, c.far, to[ 12 ], to[ 13 ], to[ 14 ], shadow.bias, shadow.normalBias, shadow.intensity, shadow.radius, size.width, size.height );
 							else frame.setLastLightShadow( false, 2 * object.angle * shadow.focus * 180 / Math.PI, size.width / size.height * shadow.aspect, 0, 0, c.near, object.distance || c.far, to[ 12 ], to[ 13 ], to[ 14 ], shadow.bias, shadow.normalBias, shadow.intensity, shadow.radius, size.width, size.height );
+							frame.setLastLightShadowBlur( shadow.blurSamples ?? 8 );
 
 						}
 
@@ -259,9 +305,10 @@ export class WebGPURenderer {
 		}
 
 		this._frame.setAmbientLight( ...sky, ...ground );
+		this._frame.setLightProbe( probe );
 
 		const map = environment.texture;
-		if ( map !== null ) frame.setEnvironment( map.id, map.image.width, this._inverseRotation( environment.rotation, 0 ) );
+		if ( map !== null ) frame.setEnvironment( map.id, environmentWidth( map ), this._inverseRotation( environment.rotation, 0 ) );
 		else frame.clearEnvironment();
 		this._syncBackground( scene );
 
@@ -271,11 +318,25 @@ export class WebGPURenderer {
 
 		const backend = this._backend;
 		const rt = this._renderTarget, texture = rt?.texture;
-		const target = rt ? { id: texture.id, width: Math.max( 1, rt.width | 0 ), height: Math.max( 1, rt.height | 0 ), samples: rt.samples, type: texture.type === UnsignedByteType ? 'byte' : 'float', texture } : null;
-		backend.render( w(), this._frame, scene.handle, camera.handle, linear( scene.background && scene.background.isColor ? scene.background : this._clearColor ), textureSources, instanceSources, target );
+		const target = rt ? { id: texture.id, width: Math.max( 1, rt.width | 0 ), height: Math.max( 1, rt.height | 0 ), samples: rt.samples, type: texture.type === UnsignedByteType ? 'byte' : 'float', texture, textures: rt.textures, depthTexture: rt.depthTexture ?? null } : null;
+		backend.render( w(), this._frame, scene.handle, camera.handle, linear( scene.background && scene.background.isColor ? scene.background : this._clearColor ), textureSources, instanceSources, target, this._pixelRatio, this._extras( camera, backend ) );
+		// marks what was drawn into the target, for environments made from it
+		if ( rt ) for ( const each of rt.textures ) each.version ++;
 		this.info.render.calls = backend.info.calls;
 		this.info.render.triangles = backend.info.triangles;
 		this.info.memory.geometries = backend.info.geometries;
+
+	}
+
+	// What the backend needs besides the frame: whether to keep what the target holds
+	// (`autoClear` false), and for GLSL shader materials the camera's view and projection
+	// matrices and position.
+	_extras( camera, backend ) {
+
+		const extras = { load: this.autoClear === false };
+		if ( ! backend.isWebGLBackend || shaderMaterials.size === 0 ) return extras;
+		const e = camera.matrixWorld.elements;
+		return Object.assign( extras, { shaderMaterials, view: Float32Array.from( camera.matrixWorldInverse.elements ), projection: Float32Array.from( camera.projectionMatrix.elements ), position: [ e[ 12 ], e[ 13 ], e[ 14 ] ], orthographic: camera.isOrthographicCamera === true } );
 
 	}
 
@@ -296,8 +357,8 @@ export class WebGPURenderer {
 
 	}
 
-	// A texture background as three.js draws it: equirectangular textures around the
-	// camera (blurred from the prefiltered map when `backgroundBlurriness` is above 0),
+	// A texture background as three.js draws it: equirectangular and cube textures around
+	// the camera (blurred from the prefiltered map when `backgroundBlurriness` is above 0),
 	// other textures stretched over the frame. Colours are the clear colour instead.
 	_syncBackground( scene ) {
 
@@ -325,11 +386,11 @@ export class WebGPURenderer {
 
 		}
 
-		const panorama = background.mapping === EquirectangularReflectionMapping || background.mapping === EquirectangularRefractionMapping;
+		const panorama = background.isCubeTexture === true || background.mapping === EquirectangularReflectionMapping || background.mapping === EquirectangularRefractionMapping;
 		const blurriness = scene.backgroundBlurriness ?? 0, kind = panorama ? ( blurriness > 0 ? 1 : 0 ) : 2;
 		if ( ! panorama && ( background.offset.x !== 0 || background.offset.y !== 0 || background.repeat.x !== 1 || background.repeat.y !== 1 || background.rotation !== 0 ) ) ignored( 'offset, repeat and rotation of a background texture' );
 		const rotation = panorama ? this._inverseRotation( scene.backgroundRotation, 1 ) : IDENTITY3;
-		frame.setBackground( background.id, kind, background.image.width, scene.backgroundIntensity ?? 1, blurriness, rotation );
+		frame.setBackground( background.id, kind, environmentWidth( background ), scene.backgroundIntensity ?? 1, blurriness, rotation );
 
 	}
 

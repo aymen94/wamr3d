@@ -53,7 +53,7 @@ for ( const file of [ 'index.js', 'index.d.ts', 'compat.js', 'compat.d.ts', 'web
 }
 
 // The modules behind compat.js and webgpu.js.
-for ( const folder of [ 'compat', 'webgpu' ] ) {
+for ( const folder of [ 'compat', 'webgpu', 'addons' ] ) {
 
 	if ( fs.existsSync( path.join( here, 'js', folder ) ) ) fs.cpSync( path.join( here, 'js', folder ), path.join( dist, folder ), { recursive: true } );
 

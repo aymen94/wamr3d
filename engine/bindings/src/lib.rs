@@ -13,6 +13,7 @@ use wamr_core::{
 use wamr_math::{CoordinateSystem, EulerOrder};
 use wasm_bindgen::prelude::*;
 
+mod materials;
 mod math;
 mod picking;
 mod renderer;
@@ -466,6 +467,9 @@ pub struct World {
     inner: wamr_core::World,
     /// Output of `matricesWorldPtr`, kept so that JavaScript can view it without a copy.
     scratch: Vec<f32>,
+    /// Output of the single-value `*Ptr` readers (`getWorldPositionPtr` and the others),
+    /// at a fixed address inside the module.
+    readout: [f32; 4],
 }
 
 impl World {

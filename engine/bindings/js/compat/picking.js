@@ -1,8 +1,7 @@
 // Raycasting: engine hits, and instances and sprites picked here.
 
 import { hosted, objects, w, world } from './engine.js';
-import { Ray, Vector2, Vector3 } from './math.js';
-import { vector } from './object3d.js';
+import { Ray, Vector2, Vector3, engineVector } from './math.js';
 
 // ---------------------------------------------------------------- picking
 
@@ -20,7 +19,7 @@ export class Raycaster {
 
 	set( origin, direction ) {
 
-		this.ray.set( vector( origin ), vector( direction ) );
+		this.ray.set( origin, direction );
 
 	}
 
@@ -48,7 +47,7 @@ export class Raycaster {
 
 	intersectObject( object, recursive = true, intersects = [] ) {
 
-		const origin = this.ray.origin, direction = this.ray.direction;
+		const origin = engineVector( this.ray.origin, 0 ), direction = engineVector( this.ray.direction, 1 );
 		const hits = w().raycast( object.handle, recursive, origin, direction, this.near, this.far, this.params.Line.threshold, this.params.Points.threshold );
 		collectHits( hits, intersects );
 		hits.free();
@@ -56,8 +55,6 @@ export class Raycaster {
 		// Instance matrices and the camera a sprite faces are kept here, not in the engine.
 		if ( hosted.count > 0 ) intersectHosted( this, object, recursive, origin, direction, intersects );
 
-		origin.free();
-		direction.free();
 		return intersects.sort( ( a, b ) => a.distance - b.distance );
 
 	}
@@ -178,8 +175,6 @@ function intersectSprite( raycaster, sprite, intersects ) {
 
 	const ray = raycaster.ray, o = ray.origin, d = ray.direction;
 	const origin = [ o.x, o.y, o.z ], direction = [ d.x, d.y, d.z ];
-	o.free();
-	d.free();
 
 	const a = corner( - 0.5, - 0.5 ), c = corner( 0.5, 0.5 );
 	let b = corner( 0.5, - 0.5 ), uvB = [ 1, 0 ];

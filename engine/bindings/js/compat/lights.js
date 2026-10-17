@@ -3,6 +3,7 @@
 import { OrthographicCamera, PerspectiveCamera } from './cameras.js';
 import { Color, Vector2 } from './math.js';
 import { Object3D } from './object3d.js';
+import { SphericalHarmonics3 } from './sh.js';
 
 // ---------------------------------------------------------------- lights
 
@@ -160,7 +161,7 @@ export class SpotLightShadow extends LightShadow {
 
 SpotLightShadow.prototype.isSpotLightShadow = true;
 
-/** Accepted so code runs; point lights do not cast shadows yet. */
+/** Six 90 degree faces around the light, square maps of `mapSize.width`; the far plane is the light's `distance` when set. */
 export class PointLightShadow extends LightShadow {
 
 	constructor() {
@@ -230,3 +231,77 @@ export class SpotLight extends Light {
 }
 
 SpotLight.prototype.isSpotLight = true;
+
+/**
+ * Light from a rectangle `width` by `height` facing along its local -z (three.js
+ * `RectAreaLight`). Lights standard and physical materials; it casts no shadows. WAMR3D
+ * evaluates it without three.js's LTC tables: diffuse light exactly by the rectangle's
+ * form factor, specular light from the rectangle's point nearest the reflected view ray.
+ */
+export class RectAreaLight extends Light {
+
+	constructor( color, intensity, width = 10, height = 10 ) {
+
+		super( color, intensity );
+		this.type = 'RectAreaLight';
+		this.width = width;
+		this.height = height;
+
+	}
+
+	// luminous power in lumens, as three.js defines it
+	get power() {
+
+		return this.intensity * this.width * this.height * Math.PI;
+
+	}
+
+	set power( value ) {
+
+		this.intensity = value / ( this.width * this.height * Math.PI );
+
+	}
+
+	copy( source, recursive ) {
+
+		super.copy( source, recursive );
+		this.width = source.width;
+		this.height = source.height;
+		return this;
+
+	}
+
+}
+
+RectAreaLight.prototype.isRectAreaLight = true;
+
+/** Light from all around given as spherical harmonics (three.js `LightProbe`); probes in a scene add up. */
+export class LightProbe extends Light {
+
+	constructor( sh = new SphericalHarmonics3(), intensity = 1 ) {
+
+		super( undefined, intensity );
+		this.type = 'LightProbe';
+		this.sh = sh;
+
+	}
+
+	copy( source, recursive ) {
+
+		super.copy( source, recursive );
+		this.sh.copy( source.sh );
+		return this;
+
+	}
+
+	fromJSON( json ) {
+
+		this.intensity = json.intensity;
+		this.sh.fromArray( json.sh );
+		return this;
+
+	}
+
+}
+
+LightProbe.prototype.isLightProbe = true;

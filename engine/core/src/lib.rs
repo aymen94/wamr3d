@@ -14,6 +14,7 @@ pub mod components;
 pub mod constants;
 pub mod geometry;
 pub mod layers;
+pub mod morph;
 pub mod resources;
 pub mod world;
 
@@ -23,9 +24,9 @@ pub use attribute::{
     InterleavedBufferHandle, InterleavedView, UpdateRange,
 };
 pub use camera::{Camera, Projection, ViewOffset};
-pub use components::{Hierarchy, Primitive, Renderable, Transform, Visibility};
+pub use components::{Hierarchy, Primitive, Renderable, Skin, Transform, Visibility};
 pub use constants::{GpuType, Usage};
 pub use geometry::{BufferGeometry, DrawRange, GeometryHandle, Group};
 pub use layers::Layers;
-pub use resources::{Material, Shading, Side, TextureMaps, Raycaster, RaycasterParams, RenderTarget, RenderTargetHandle, Timer, Uniform};
+pub use resources::{MapSlot, MapUv, Material, Shading, Side, TextureMaps, MAP_COUNT, Raycaster, RaycasterParams, RenderTarget, RenderTargetHandle, Timer, Uniform};
 pub use world::{CoreEvent, Entity, MaterialHandle, World};

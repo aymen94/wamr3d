@@ -13,17 +13,25 @@
 
 import * as W from './index.js';
 
-export { FrontSide, BackSide, DoubleSide, BasicShadowMap, PCFShadowMap, PCFSoftShadowMap, VSMShadowMap, NoToneMapping, LinearToneMapping, ReinhardToneMapping, CineonToneMapping, ACESFilmicToneMapping, CustomToneMapping, AgXToneMapping, NeutralToneMapping, WebGLCoordinateSystem, WebGPUCoordinateSystem, NoColorSpace, SRGBColorSpace, LinearSRGBColorSpace, RepeatWrapping, ClampToEdgeWrapping, MirroredRepeatWrapping, NearestFilter, NearestMipmapNearestFilter, NearestMipmapLinearFilter, LinearFilter, LinearMipmapNearestFilter, LinearMipmapLinearFilter, UnsignedByteType, FloatType, HalfFloatType, UVMapping, CubeReflectionMapping, CubeRefractionMapping, EquirectangularReflectionMapping, EquirectangularRefractionMapping, CubeUVReflectionMapping } from './compat/constants.js';
+export * from './compat/constants.js';
 export { init, getWorld } from './compat/engine.js';
 export { Vector2, Vector3, Vector4, Quaternion, Euler, Matrix3, Matrix4, ColorManagement, Color, Box3, Sphere, Plane, Ray, Frustum, Line3, Triangle, Spherical, Cylindrical } from './compat/math.js';
 export { Object3D, Group, Scene, Fog, FogExp2 } from './compat/object3d.js';
-export { Mesh, InstancedBufferAttribute, InstancedMesh, Line, Points, Sprite, LineSegments, LineLoop, LOD, GridHelper, AxesHelper } from './compat/objects.js';
+export { Mesh, InstancedBufferAttribute, InstancedMesh, Line, Points, Sprite, LineSegments, LineLoop, LOD, GridHelper, AxesHelper, Bone, Skeleton, SkinnedMesh } from './compat/objects.js';
 export { Camera, PerspectiveCamera, OrthographicCamera } from './compat/cameras.js';
-export { Light, AmbientLight, HemisphereLight, DirectionalLight, LightShadow, DirectionalLightShadow, SpotLightShadow, PointLightShadow, PointLight, SpotLight } from './compat/lights.js';
-export { BufferAttribute, InterleavedBuffer, InterleavedBufferAttribute, Float32BufferAttribute, Int8BufferAttribute, Uint8BufferAttribute, Uint8ClampedBufferAttribute, Int16BufferAttribute, Uint16BufferAttribute, Int32BufferAttribute, Uint32BufferAttribute, BufferGeometry, BoxGeometry, PlaneGeometry, SphereGeometry, CylinderGeometry, ConeGeometry, CircleGeometry, RingGeometry, TorusGeometry } from './compat/geometry.js';
-export { Texture, RenderTarget, WebGLRenderTarget, DataTexture, CanvasTexture, TextureLoader } from './compat/textures.js';
-export { Material, MeshBasicMaterial, LineBasicMaterial, PointsMaterial, SpriteMaterial, MeshLambertMaterial, MeshPhongMaterial, MeshToonMaterial, MeshNormalMaterial, MeshStandardMaterial, MeshPhysicalMaterial } from './compat/materials.js';
+export { Light, AmbientLight, HemisphereLight, DirectionalLight, LightShadow, DirectionalLightShadow, SpotLightShadow, PointLightShadow, PointLight, SpotLight, RectAreaLight, LightProbe } from './compat/lights.js';
+export { SphericalHarmonics3 } from './compat/sh.js';
+export { BufferAttribute, InterleavedBuffer, InterleavedBufferAttribute, Float32BufferAttribute, Int8BufferAttribute, Uint8BufferAttribute, Uint8ClampedBufferAttribute, Int16BufferAttribute, Uint16BufferAttribute, Int32BufferAttribute, Uint32BufferAttribute, BufferGeometry, BoxGeometry, PlaneGeometry, SphereGeometry, CylinderGeometry, ConeGeometry, CircleGeometry, RingGeometry, TorusGeometry, PolyhedronGeometry, TetrahedronGeometry, OctahedronGeometry, DodecahedronGeometry, IcosahedronGeometry, TorusKnotGeometry, LatheGeometry, CapsuleGeometry } from './compat/geometry.js';
+export { Texture, RenderTarget, WebGLRenderTarget, DataTexture, CanvasTexture, DepthTexture, CubeTexture } from './compat/textures.js';
+export { Cache, LoadingManager, DefaultLoadingManager, Loader, LoaderUtils, FileLoader, ImageLoader, ImageBitmapLoader, TextureLoader, CubeTextureLoader, DataTextureLoader, AnimationLoader, BufferGeometryLoader, MaterialLoader, ObjectLoader } from './compat/loaders.js';
+export { Material, MeshBasicMaterial, LineBasicMaterial, PointsMaterial, SpriteMaterial, MeshLambertMaterial, MeshPhongMaterial, MeshToonMaterial, MeshNormalMaterial, MeshStandardMaterial, MeshPhysicalMaterial, ShaderMaterial, RawShaderMaterial, UniformsUtils } from './compat/materials.js';
 export { Raycaster } from './compat/picking.js';
+export { ArrowHelper, BoxHelper, Box3Helper, PlaneHelper, CameraHelper, DirectionalLightHelper, PointLightHelper, SpotLightHelper, HemisphereLightHelper, PolarGridHelper, SkeletonHelper } from './compat/helpers.js';
+export { AudioContext, AudioListener, Audio, PositionalAudio, AudioAnalyser, AudioLoader } from './compat/audio.js';
+export { EventDispatcher, Controls } from './compat/events.js';
+export { Box2, Curve, CurvePath, Path, Shape, ShapePath, ShapeUtils, Earcut, Curves, ArcCurve, CatmullRomCurve3, CubicBezierCurve, CubicBezierCurve3, EllipseCurve, LineCurve, LineCurve3, QuadraticBezierCurve, QuadraticBezierCurve3, SplineCurve } from './compat/curves.js';
+export { ShapeGeometry, ExtrudeGeometry, TubeGeometry, EdgesGeometry, WireframeGeometry } from './compat/shapes.js';
+export { Interpolant, DiscreteInterpolant, LinearInterpolant, QuaternionLinearInterpolant, CubicInterpolant, BezierInterpolant, AnimationUtils, KeyframeTrack, BooleanKeyframeTrack, ColorKeyframeTrack, NumberKeyframeTrack, QuaternionKeyframeTrack, StringKeyframeTrack, VectorKeyframeTrack, AnimationClip, PropertyBinding, PropertyMixer, AnimationAction, AnimationMixer, AnimationObjectGroup } from './compat/animation.js';
 export { WebGLRenderer, WebGPURenderer } from './compat/renderer.js';
 
 export const MathUtils = W.MathUtils;
@@ -83,26 +91,3 @@ export class Clock {
 	}
 
 }
-
-// ---------------------------------------------------------------- not available yet
-
-// Named so that code using them fails with a clear message instead of "not a constructor".
-function missing( name, hint = '' ) {
-
-	return class {
-
-		constructor() {
-
-			throw new Error( `WAMR3D: ${name} is not available yet${hint}` );
-
-		}
-
-	};
-
-}
-
-export const RectAreaLight = missing( 'RectAreaLight' );
-export const SkinnedMesh = missing( 'SkinnedMesh' );
-export const ShaderMaterial = missing( 'ShaderMaterial' );
-export const IcosahedronGeometry = missing( 'IcosahedronGeometry' ), CapsuleGeometry = missing( 'CapsuleGeometry' );
-export const AnimationMixer = missing( 'AnimationMixer' ), CubeTextureLoader = missing( 'CubeTextureLoader' ), ObjectLoader = missing( 'ObjectLoader' );

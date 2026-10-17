@@ -21,6 +21,11 @@ pub struct Material {
     /// 1 is solid. Only blended with what is behind when `transparent` is set.
     pub opacity: f32,
     pub transparent: bool,
+    /// three.js `blending` of a transparent material: 0 none, 1 normal, 2 additive, 3
+    /// subtractive, 4 multiply, 5 custom (drawn as normal).
+    pub blending: u8,
+    /// three.js `premultipliedAlpha`: the colour is multiplied by alpha before blending.
+    pub premultiplied_alpha: bool,
     pub depth_test: bool,
     pub depth_write: bool,
     /// Multiplies the colour by the geometry's `color` attribute.
@@ -50,11 +55,122 @@ pub struct Material {
     pub ao_map_intensity: f32,
     /// Fragments whose alpha is below this are discarded; 0 keeps them all.
     pub alpha_test: f32,
+    /// Strength of `maps.light`, baked light added to the indirect diffuse light (three.js
+    /// `lightMapIntensity`).
+    pub light_map_intensity: f32,
+    /// Height scale of `maps.bump` (three.js `bumpScale`).
+    pub bump_scale: f32,
+    /// Vertices move along their normal by `maps.displacement` times the scale plus the
+    /// bias (three.js `displacementScale`, `displacementBias`).
+    pub displacement_scale: f32,
+    pub displacement_bias: f32,
+    /// Meshes only: draws each triangle's edges as lines instead of the triangle.
+    pub wireframe: bool,
+    /// `Shading::Standard` only, three.js `MeshPhysicalMaterial`: strength and roughness of
+    /// a clear layer over the surface.
+    pub clearcoat: f32,
+    pub clearcoat_roughness: f32,
+    /// Velvet-like reflection at grazing angles: `sheenColor` times `sheen`, in the linear
+    /// working colour space, and its roughness.
+    pub sheen_color: Color,
+    pub sheen_roughness: f32,
+    /// Index of refraction of the dielectric layer; 1.5 reflects 4% head on.
+    pub ior: f32,
+    /// Scale and tint of the dielectric reflection (three.js `specularIntensity` and
+    /// `specularColor`).
+    pub specular_intensity: f32,
+    pub specular_color: Color,
+    /// Per map (in [`MapSlot`] order), the uv transform and uv set it is read with.
+    /// `set_map_transform` gives every map the same one, as three.js materials do when
+    /// all textures share their settings.
+    pub map_uvs: [MapUv; MAP_COUNT],
+    /// three.js `MeshPhysicalMaterial` light passing through the surface: strength, the
+    /// volume's thickness in local units, the distance at which light keeps
+    /// `attenuation_color` (infinite for none), and the spread of the refraction index
+    /// over wavelengths.
+    pub transmission: f32,
+    pub thickness: f32,
+    pub attenuation_color: Color,
+    pub attenuation_distance: f32,
+    pub dispersion: f32,
+    /// A thin film on the surface: strength, its refraction index and thickness range in
+    /// nanometres (the thickness map picks within it, else the maximum is used).
+    pub iridescence: f32,
+    pub iridescence_ior: f32,
+    pub iridescence_thickness: [f32; 2],
+    /// Stretches the highlight along a direction in tangent space: strength and the
+    /// direction's angle from the tangent.
+    pub anisotropy: f32,
+    pub anisotropy_rotation: f32,
+    /// Scales x and y of `maps.clearcoat_normal`.
+    pub clearcoat_normal_scale: [f32; 2],
+    /// `PointsMaterial.size` in pixels (world units scaled by the view with
+    /// `size_attenuation`), and `LineBasicMaterial.linewidth` in pixels. Points and lines
+    /// above 1 are drawn as quads.
+    pub point_size: f32,
+    pub line_width: f32,
+    /// An environment map of the material's own (three.js `envMap`): the host's texture
+    /// id and source width, and the inverted rotation of sampling directions. With 0 the
+    /// frame's environment is used.
+    pub env_map: u32,
+    pub env_map_width: u32,
+    pub env_map_rotation: Matrix3,
+    /// Drawn by a shader of the host instead of the built-in shading: 1 to 15 are the
+    /// renderer's full-screen effects, from 16 on a host's own shader materials.
+    pub custom: u32,
+    /// Settings of a custom material's shader.
+    pub custom_params: [f32; 16],
+}
+
+/// Number of texture maps a material can have, the colour map included.
+pub const MAP_COUNT: usize = 24;
+
+/// The texture maps of a material, in the order of [`Material::map_uvs`] and of
+/// [`TextureMaps::ids`].
+#[repr(usize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MapSlot {
+    Color = 0,
+    Normal,
+    Roughness,
+    Metalness,
+    Emissive,
+    Alpha,
+    Ao,
+    Light,
+    Bump,
+    Displacement,
+    Specular,
+    Gradient,
+    Clearcoat,
+    ClearcoatRoughness,
+    ClearcoatNormal,
+    SheenColor,
+    SheenRoughness,
+    SpecularIntensity,
+    SpecularColor,
+    Transmission,
+    Thickness,
+    Iridescence,
+    IridescenceThickness,
+    Anisotropy,
+}
+
+/// How a map's texture coordinates are made: `transform` applied to uv set `channel`
+/// (0 `uv`, 1 `uv1`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct MapUv {
+    pub transform: Matrix3,
+    pub channel: u8,
 }
 
 /// The textures of a material besides the colour map, read as three.js reads them:
-/// the normal in rgb, roughness in g, metalness in b, emitted light in rgb, alpha in r and
-/// ambient occlusion in r. All use one uv transform.
+/// the normal in rgb, roughness in g, metalness in b, emitted light in rgb, alpha in r,
+/// ambient occlusion in r, baked light in rgb, height in r (bump and displacement),
+/// specular strength in r, the toon gradient in r; clearcoat strength in r, its
+/// roughness in g and normal in rgb, sheen colour in rgb and roughness in a, specular
+/// intensity in a and colour in rgb, transmission in r, thickness in g, iridescence in r
+/// and its thickness in g, and the anisotropy direction in rg with strength in b.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TextureMaps {
     pub normal: u32,
@@ -63,6 +179,135 @@ pub struct TextureMaps {
     pub emissive: u32,
     pub alpha: u32,
     pub ao: u32,
+    pub light: u32,
+    pub bump: u32,
+    pub displacement: u32,
+    pub specular: u32,
+    pub gradient: u32,
+    pub clearcoat: u32,
+    pub clearcoat_roughness: u32,
+    pub clearcoat_normal: u32,
+    pub sheen_color: u32,
+    pub sheen_roughness: u32,
+    pub specular_intensity: u32,
+    pub specular_color: u32,
+    pub transmission: u32,
+    pub thickness: u32,
+    pub iridescence: u32,
+    pub iridescence_thickness: u32,
+    pub anisotropy: u32,
+}
+
+impl TextureMaps {
+    /// The texture ids in [`MapSlot`] order after the colour map `map`.
+    pub fn ids(&self, map: u32) -> [u32; MAP_COUNT] {
+        [
+            map,
+            self.normal,
+            self.roughness,
+            self.metalness,
+            self.emissive,
+            self.alpha,
+            self.ao,
+            self.light,
+            self.bump,
+            self.displacement,
+            self.specular,
+            self.gradient,
+            self.clearcoat,
+            self.clearcoat_roughness,
+            self.clearcoat_normal,
+            self.sheen_color,
+            self.sheen_roughness,
+            self.specular_intensity,
+            self.specular_color,
+            self.transmission,
+            self.thickness,
+            self.iridescence,
+            self.iridescence_thickness,
+            self.anisotropy,
+        ]
+    }
+
+    /// Sets the texture of one map other than the colour map.
+    pub fn set(&mut self, slot: MapSlot, id: u32) {
+        let field = match slot {
+            MapSlot::Color => return,
+            MapSlot::Normal => &mut self.normal,
+            MapSlot::Roughness => &mut self.roughness,
+            MapSlot::Metalness => &mut self.metalness,
+            MapSlot::Emissive => &mut self.emissive,
+            MapSlot::Alpha => &mut self.alpha,
+            MapSlot::Ao => &mut self.ao,
+            MapSlot::Light => &mut self.light,
+            MapSlot::Bump => &mut self.bump,
+            MapSlot::Displacement => &mut self.displacement,
+            MapSlot::Specular => &mut self.specular,
+            MapSlot::Gradient => &mut self.gradient,
+            MapSlot::Clearcoat => &mut self.clearcoat,
+            MapSlot::ClearcoatRoughness => &mut self.clearcoat_roughness,
+            MapSlot::ClearcoatNormal => &mut self.clearcoat_normal,
+            MapSlot::SheenColor => &mut self.sheen_color,
+            MapSlot::SheenRoughness => &mut self.sheen_roughness,
+            MapSlot::SpecularIntensity => &mut self.specular_intensity,
+            MapSlot::SpecularColor => &mut self.specular_color,
+            MapSlot::Transmission => &mut self.transmission,
+            MapSlot::Thickness => &mut self.thickness,
+            MapSlot::Iridescence => &mut self.iridescence,
+            MapSlot::IridescenceThickness => &mut self.iridescence_thickness,
+            MapSlot::Anisotropy => &mut self.anisotropy,
+        };
+        *field = id;
+    }
+}
+
+impl MapSlot {
+    pub const ALL: [MapSlot; MAP_COUNT] = [
+        MapSlot::Color,
+        MapSlot::Normal,
+        MapSlot::Roughness,
+        MapSlot::Metalness,
+        MapSlot::Emissive,
+        MapSlot::Alpha,
+        MapSlot::Ao,
+        MapSlot::Light,
+        MapSlot::Bump,
+        MapSlot::Displacement,
+        MapSlot::Specular,
+        MapSlot::Gradient,
+        MapSlot::Clearcoat,
+        MapSlot::ClearcoatRoughness,
+        MapSlot::ClearcoatNormal,
+        MapSlot::SheenColor,
+        MapSlot::SheenRoughness,
+        MapSlot::SpecularIntensity,
+        MapSlot::SpecularColor,
+        MapSlot::Transmission,
+        MapSlot::Thickness,
+        MapSlot::Iridescence,
+        MapSlot::IridescenceThickness,
+        MapSlot::Anisotropy,
+    ];
+
+    pub fn from_index(index: usize) -> Option<MapSlot> {
+        Self::ALL.get(index).copied()
+    }
+}
+
+impl Material {
+    /// Gives every map the uv transform `transform` (and keeps `map_transform` in step).
+    pub fn set_map_transform(&mut self, transform: Matrix3) {
+        self.map_transform = transform;
+        for uv in &mut self.map_uvs {
+            uv.transform = transform;
+        }
+    }
+
+    /// Whether the material lets light through, which three.js draws after the opaque
+    /// objects, over a copy of what they drew.
+    pub fn is_transmissive(&self) -> bool {
+        self.shading == Shading::Standard && self.transmission > 0.0
+    }
 }
 
 impl Default for Material {
@@ -78,6 +323,8 @@ impl Default for Material {
             map_transform: Matrix3::default(),
             opacity: 1.0,
             transparent: false,
+            blending: 1,
+            premultiplied_alpha: false,
             depth_test: true,
             depth_write: true,
             vertex_colors: false,
@@ -92,6 +339,37 @@ impl Default for Material {
             normal_scale: [1.0, 1.0],
             ao_map_intensity: 1.0,
             alpha_test: 0.0,
+            light_map_intensity: 1.0,
+            bump_scale: 1.0,
+            displacement_scale: 1.0,
+            displacement_bias: 0.0,
+            wireframe: false,
+            clearcoat: 0.0,
+            clearcoat_roughness: 0.0,
+            sheen_color: Color::new(0.0, 0.0, 0.0),
+            sheen_roughness: 1.0,
+            ior: 1.5,
+            specular_intensity: 1.0,
+            specular_color: Color::new(1.0, 1.0, 1.0),
+            map_uvs: [MapUv::default(); MAP_COUNT],
+            transmission: 0.0,
+            thickness: 0.0,
+            attenuation_color: Color::new(1.0, 1.0, 1.0),
+            attenuation_distance: f32::INFINITY,
+            dispersion: 0.0,
+            iridescence: 0.0,
+            iridescence_ior: 1.3,
+            iridescence_thickness: [100.0, 400.0],
+            anisotropy: 0.0,
+            anisotropy_rotation: 0.0,
+            clearcoat_normal_scale: [1.0, 1.0],
+            point_size: 1.0,
+            line_width: 1.0,
+            env_map: 0,
+            env_map_width: 0,
+            env_map_rotation: Matrix3::default(),
+            custom: 0,
+            custom_params: [0.0; 16],
         }
     }
 }

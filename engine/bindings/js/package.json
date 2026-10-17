@@ -31,7 +31,8 @@
       "types": "./compat.d.ts",
       "default": "./compat.js"
     },
-    "./wamr3d_wasm_bg.wasm": "./wamr3d_wasm_bg.wasm"
+    "./wamr3d_wasm_bg.wasm": "./wamr3d_wasm_bg.wasm",
+    "./addons/*": "./addons/*"
   },
   "files": [
     "README.md",
@@ -43,6 +44,7 @@
     "webgpu.js",
     "webgpu/",
     "webgl.js",
+    "addons/",
     "wamr3d_wasm.js",
     "wamr3d_wasm.d.ts",
     "wamr3d_wasm_bg.wasm",

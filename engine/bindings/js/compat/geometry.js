@@ -2,7 +2,8 @@
 
 import * as W from '../index.js';
 import { GEOMETRY, finalizer, lazyUUID, w } from './engine.js';
-import { Box3, Matrix4, Sphere, Vector3 } from './math.js';
+import { Box3, Matrix4, Sphere, Vector2, Vector3 } from './math.js';
+import { withEvents } from './events.js';
 
 // ---------------------------------------------------------------- geometry
 
@@ -350,6 +351,11 @@ export class BufferGeometry {
 		this.boundingBox = null;
 		this.boundingSphere = null;
 		this.userData = {};
+		// morph targets by attribute name (position, normal, color), as three.js
+		this.morphAttributes = {};
+		this.morphTargetsRelative = false;
+		this._morphSent = new Map();
+		this._morphStamp = 0;
 		finalizer.register( this, { kind: GEOMETRY, handle: this.handle }, this );
 		if ( key === ADOPT ) this._pull();
 
@@ -398,6 +404,46 @@ export class BufferGeometry {
 		if ( attribute.isInterleavedBufferAttribute ) attribute.data._users.add( attribute );
 		this.attributes[ name ] = attribute;
 		return this;
+
+	}
+
+	// Whether the geometry has morph targets for the engine to blend.
+	_hasMorphs() {
+
+		const m = this.morphAttributes;
+		return ( m.position?.length ?? 0 ) + ( m.normal?.length ?? 0 ) + ( m.color?.length ?? 0 ) > 0;
+
+	}
+
+	// Sends the morph targets that changed to the engine (as `morph.<name>.<i>`
+	// attributes); `_morphStamp` changes when any did.
+	_syncMorphAttributes() {
+
+		const sent = this._morphSent;
+
+		for ( const name of [ 'position', 'normal', 'color' ] ) {
+
+			const list = this.morphAttributes[ name ] ?? [];
+
+			for ( let i = 0; i < list.length; i ++ ) {
+
+				const attribute = list[ i ], key = `morph.${name}.${i}`, last = sent.get( key );
+				if ( last && last[ 0 ] === attribute && last[ 1 ] === attribute.version ) continue;
+				w().setAttribute( this.handle, key, attributeFloats( attribute ), attribute.itemSize );
+				sent.set( key, [ attribute, attribute.version ] );
+				this._morphStamp ++;
+
+			}
+
+			for ( let i = list.length; sent.has( `morph.${name}.${i}` ); i ++ ) {
+
+				w().deleteAttribute( this.handle, `morph.${name}.${i}` );
+				sent.delete( `morph.${name}.${i}` );
+				this._morphStamp ++;
+
+			}
+
+		}
 
 	}
 
@@ -540,7 +586,10 @@ export class BufferGeometry {
 
 	applyMatrix4( matrix ) {
 
-		w().applyMatrix4ToGeometry( this.handle, matrix );
+		const engineMatrix = new W.Matrix4();
+		engineMatrix.fromArray( matrix.elements );
+		w().applyMatrix4ToGeometry( this.handle, engineMatrix );
+		engineMatrix.free();
 		this._pull( [ 'position', 'normal', 'tangent' ] );
 		if ( this.boundingBox !== null ) this.computeBoundingBox();
 		if ( this.boundingSphere !== null ) this.computeBoundingSphere();
@@ -596,12 +645,14 @@ export class BufferGeometry {
 
 		finalizer.unregister( this );
 		w().disposeGeometry( this.handle );
+		this.dispatchEvent( { type: 'dispose' } );
 
 	}
 
 }
 
 BufferGeometry.prototype.isBufferGeometry = true;
+withEvents( BufferGeometry );
 lazyUUID( BufferGeometry );
 
 export class BoxGeometry extends BufferGeometry {
@@ -695,6 +746,85 @@ export class TorusGeometry extends BufferGeometry {
 		super( ADOPT, w().createTorusGeometry( radius, tube, Math.floor( radialSegments ), Math.floor( tubularSegments ), arc, thetaStart, thetaLength ) );
 		this.type = 'TorusGeometry';
 		this.parameters = { radius, tube, radialSegments, tubularSegments, arc, thetaStart, thetaLength };
+
+	}
+
+}
+
+/** Triangles `indices` over the xyz `vertices`, subdivided `detail` times and pushed out to `radius`. Not indexed. */
+export class PolyhedronGeometry extends BufferGeometry {
+
+	constructor( vertices = [], indices = [], radius = 1, detail = 0 ) {
+
+		super( ADOPT, w().createPolyhedronGeometry( Float32Array.from( vertices ), Uint32Array.from( indices ), radius, Math.floor( detail ) ) );
+		this.type = 'PolyhedronGeometry';
+		this.parameters = { vertices, indices, radius, detail };
+
+	}
+
+}
+
+// The platonic solids, built in the engine from three.js vertex tables.
+function platonic( type, faces ) {
+
+	return class extends BufferGeometry {
+
+		constructor( radius = 1, detail = 0 ) {
+
+			super( ADOPT, w().createPlatonicGeometry( faces, radius, Math.floor( detail ) ) );
+			this.type = type;
+			this.parameters = { radius, detail };
+
+		}
+
+	};
+
+}
+
+export const TetrahedronGeometry = platonic( 'TetrahedronGeometry', 4 );
+export const OctahedronGeometry = platonic( 'OctahedronGeometry', 8 );
+export const DodecahedronGeometry = platonic( 'DodecahedronGeometry', 12 );
+export const IcosahedronGeometry = platonic( 'IcosahedronGeometry', 20 );
+
+export class TorusKnotGeometry extends BufferGeometry {
+
+	constructor( radius = 1, tube = 0.4, tubularSegments = 64, radialSegments = 8, p = 2, q = 3 ) {
+
+		super( ADOPT, w().createTorusKnotGeometry( radius, tube, Math.floor( tubularSegments ), Math.floor( radialSegments ), p, q ) );
+		this.type = 'TorusKnotGeometry';
+		this.parameters = { radius, tube, tubularSegments, radialSegments, p, q };
+
+	}
+
+}
+
+/** Turns the profile `points` (Vector2: x from the axis, y along it) around the y-axis. */
+export class LatheGeometry extends BufferGeometry {
+
+	constructor( points = [ new Vector2( 0, - 0.5 ), new Vector2( 0.5, 0 ), new Vector2( 0, 0.5 ) ], segments = 12, phiStart = 0, phiLength = Math.PI * 2 ) {
+
+		const profile = new Float32Array( points.length * 2 );
+		points.forEach( ( point, i ) => {
+
+			profile[ 2 * i ] = point.x;
+			profile[ 2 * i + 1 ] = point.y;
+
+		} );
+		super( ADOPT, w().createLatheGeometry( profile, Math.floor( segments ), phiStart, phiLength ) );
+		this.type = 'LatheGeometry';
+		this.parameters = { points, segments, phiStart, phiLength };
+
+	}
+
+}
+
+export class CapsuleGeometry extends BufferGeometry {
+
+	constructor( radius = 1, height = 1, capSegments = 4, radialSegments = 8, heightSegments = 1 ) {
+
+		super( ADOPT, w().createCapsuleGeometry( radius, height, Math.floor( capSegments ), Math.floor( radialSegments ), Math.floor( heightSegments ) ) );
+		this.type = 'CapsuleGeometry';
+		this.parameters = { radius, height, capSegments, radialSegments, heightSegments };
 
 	}
 

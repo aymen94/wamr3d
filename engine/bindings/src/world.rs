@@ -227,6 +227,20 @@ impl World {
         Ok(())
     }
 
+    /// Address of an object's world matrix (16 floats, column-major) inside the module,
+    /// for reading without a copy; 0 for an object that is not alive. Read it at once: it
+    /// moves when objects are created and is detached when the memory grows.
+    #[wasm_bindgen(js_name = matrixWorldPtr)]
+    pub fn matrix_world_ptr(&self, object: u64) -> u32 {
+        self.inner.transform(entity(object)).map_or(0, |t| t.matrix_world.elements.as_ptr() as usize as u32)
+    }
+
+    /// The same for the local matrix.
+    #[wasm_bindgen(js_name = matrixPtr)]
+    pub fn matrix_ptr(&self, object: u64) -> u32 {
+        self.inner.transform(entity(object)).map_or(0, |t| t.matrix.elements.as_ptr() as usize as u32)
+    }
+
     /// Writes the world matrices of many objects, 16 numbers each, into a buffer inside
     /// the module and returns its address, for a `Float32Array` view without a copy
     /// (for example as the instance matrices of an instanced mesh). The view is valid
@@ -342,6 +356,27 @@ impl World {
     #[wasm_bindgen(js_name = getWorldDirection)]
     pub fn get_world_direction(&mut self, object: u64) -> Result<Vec<f32>, JsError> {
         Ok(self.inner.get_world_direction(entity(object)).ok_or_else(|| dead("object"))?.to_array().to_vec())
+    }
+
+    /// Like `getWorldPosition`, `getWorldQuaternion`, `getWorldScale` and
+    /// `getWorldDirection` (`what` 0 to 3), written to a fixed buffer inside the module
+    /// whose address is returned (3 floats, 4 for the quaternion), so that nothing is
+    /// allocated per call. 0 for an object that is not alive. Read it at once: the next
+    /// call overwrites it.
+    #[wasm_bindgen(js_name = worldValuePtr)]
+    pub fn world_value_ptr(&mut self, object: u64, what: u8) -> u32 {
+        let object = entity(object);
+        let value = match what {
+            0 => self.inner.get_world_position(object).map(|v| [v.x, v.y, v.z, 0.0]),
+            1 => self.inner.get_world_quaternion(object).map(|q| q.to_array()),
+            2 => self.inner.get_world_scale(object).map(|v| [v.x, v.y, v.z, 0.0]),
+            _ => self.inner.get_world_direction(object).map(|v| [v.x, v.y, v.z, 0.0]),
+        };
+        let Some(value) = value else {
+            return 0;
+        };
+        self.readout = value;
+        self.readout.as_ptr() as usize as u32
     }
 
     #[wasm_bindgen(js_name = localToWorld)]
@@ -540,12 +575,15 @@ impl World {
         Ok(())
     }
 
-    /// Offset, repeat, rotation and rotation centre applied to texture coordinates.
+    /// Offset, repeat, rotation and rotation centre applied to the texture coordinates of
+    /// every map (see `setMaterialMapUv` for one map).
     #[wasm_bindgen(js_name = setMaterialMapTransform)]
     #[allow(clippy::too_many_arguments)]
     pub fn set_material_map_transform(&mut self, handle: u64, offset_x: f32, offset_y: f32, repeat_x: f32, repeat_y: f32, rotation: f32, center_x: f32, center_y: f32) -> Result<(), JsError> {
         let material = self.inner.material_mut(material(handle)).ok_or_else(|| dead("material"))?;
-        material.map_transform.set_uv_transform(offset_x, offset_y, repeat_x, repeat_y, rotation, center_x, center_y);
+        let mut transform = wamr_math::Matrix3::default();
+        transform.set_uv_transform(offset_x, offset_y, repeat_x, repeat_y, rotation, center_x, center_y);
+        material.set_map_transform(transform);
         Ok(())
     }
 
@@ -578,7 +616,7 @@ impl World {
     #[allow(clippy::too_many_arguments)]
     pub fn set_material_maps(&mut self, handle: u64, normal: u32, roughness: u32, metalness: u32, emissive: u32, alpha: u32, ao: u32) -> Result<(), JsError> {
         let material = self.inner.material_mut(material(handle)).ok_or_else(|| dead("material"))?;
-        material.maps = wamr_core::TextureMaps { normal, roughness, metalness, emissive, alpha, ao };
+        material.maps = wamr_core::TextureMaps { normal, roughness, metalness, emissive, alpha, ao, ..material.maps };
         Ok(())
     }
 
@@ -589,6 +627,51 @@ impl World {
         material.normal_scale = [normal_scale_x, normal_scale_y];
         material.ao_map_intensity = ao_map_intensity;
         material.alpha_test = alpha_test;
+        Ok(())
+    }
+
+    /// The remaining textures of a material, as ids the host resolves (0 for none): light,
+    /// bump, displacement, specular and toon gradient maps.
+    #[wasm_bindgen(js_name = setMaterialExtraMaps)]
+    pub fn set_material_extra_maps(&mut self, handle: u64, light: u32, bump: u32, displacement: u32, specular: u32, gradient: u32) -> Result<(), JsError> {
+        let material = self.inner.material_mut(material(handle)).ok_or_else(|| dead("material"))?;
+        material.maps = wamr_core::TextureMaps { light, bump, displacement, specular, gradient, ..material.maps };
+        Ok(())
+    }
+
+    /// three.js `lightMapIntensity`, `bumpScale`, `displacementScale` and
+    /// `displacementBias` of a material.
+    #[wasm_bindgen(js_name = setMaterialMapStrengths)]
+    pub fn set_material_map_strengths(&mut self, handle: u64, light_map_intensity: f32, bump_scale: f32, displacement_scale: f32, displacement_bias: f32) -> Result<(), JsError> {
+        let material = self.inner.material_mut(material(handle)).ok_or_else(|| dead("material"))?;
+        material.light_map_intensity = light_map_intensity;
+        material.bump_scale = bump_scale;
+        material.displacement_scale = displacement_scale;
+        material.displacement_bias = displacement_bias;
+        Ok(())
+    }
+
+    /// three.js `wireframe`: meshes draw their triangles' edges as lines.
+    #[wasm_bindgen(js_name = setMaterialWireframe)]
+    pub fn set_material_wireframe(&mut self, handle: u64, wireframe: bool) -> Result<(), JsError> {
+        self.inner.material_mut(material(handle)).ok_or_else(|| dead("material"))?.wireframe = wireframe;
+        Ok(())
+    }
+
+    /// The layers of three.js `MeshPhysicalMaterial` that a standard material draws:
+    /// clearcoat and its roughness, sheen (linear `sheenColor` already multiplied by
+    /// `sheen`) and its roughness, `ior`, `specularIntensity` and linear `specularColor`.
+    #[wasm_bindgen(js_name = setMaterialPhysical)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_material_physical(&mut self, handle: u64, clearcoat: f32, clearcoat_roughness: f32, sheen_r: f32, sheen_g: f32, sheen_b: f32, sheen_roughness: f32, ior: f32, specular_intensity: f32, specular_r: f32, specular_g: f32, specular_b: f32) -> Result<(), JsError> {
+        let material = self.inner.material_mut(material(handle)).ok_or_else(|| dead("material"))?;
+        material.clearcoat = clearcoat;
+        material.clearcoat_roughness = clearcoat_roughness;
+        material.sheen_color = wamr_math::Color::new(sheen_r, sheen_g, sheen_b);
+        material.sheen_roughness = sheen_roughness;
+        material.ior = ior;
+        material.specular_intensity = specular_intensity;
+        material.specular_color = wamr_math::Color::new(specular_r, specular_g, specular_b);
         Ok(())
     }
 

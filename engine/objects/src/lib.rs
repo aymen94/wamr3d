@@ -1,5 +1,5 @@
-//! `wamr-objects`: built-in shapes. Each function returns an indexed `BufferGeometry`
-//! with `position`, `normal` and `uv` attributes.
+//! `wamr-objects`: built-in shapes. Each function returns a `BufferGeometry` with
+//! `position`, `normal` and `uv` attributes, indexed except for the polyhedra.
 //!
 //! Coordinates are computed in f64 and rounded once to f32, like the rest of the engine.
 
@@ -7,8 +7,10 @@
 
 pub mod raycast;
 mod round;
+mod solids;
 
 pub use round::{circle_geometry, cone_geometry, cylinder_geometry, ring_geometry, torus_geometry};
+pub use solids::{capsule_geometry, dodecahedron_geometry, icosahedron_geometry, lathe_geometry, octahedron_geometry, polyhedron_geometry, tetrahedron_geometry, torus_knot_geometry};
 pub use raycast::{intersect_instances, intersect_object, intersect_objects, set_from_camera, Face, Intersection};
 
 use wamr_core::{AttributeArray, BufferAttribute, BufferGeometry};

@@ -184,6 +184,43 @@ impl World {
         self.inner.create_geometry(geometry).to_bits()
     }
 
+    /// A polyhedron from xyz `vertices` and triangle `indices`, subdivided `detail` times
+    /// and pushed out to `radius`. Not indexed.
+    #[wasm_bindgen(js_name = createPolyhedronGeometry)]
+    pub fn create_polyhedron_geometry(&mut self, vertices: &[f32], indices: &[u32], radius: f32, detail: u32) -> u64 {
+        self.inner.create_geometry(wamr_objects::polyhedron_geometry(vertices, indices, radius, detail)).to_bits()
+    }
+
+    /// A platonic solid: `faces` 4 (tetrahedron), 8 (octahedron), 12 (dodecahedron) or
+    /// 20 (icosahedron).
+    #[wasm_bindgen(js_name = createPlatonicGeometry)]
+    pub fn create_platonic_geometry(&mut self, faces: u32, radius: f32, detail: u32) -> Result<u64, JsError> {
+        let geometry = match faces {
+            4 => wamr_objects::tetrahedron_geometry(radius, detail),
+            8 => wamr_objects::octahedron_geometry(radius, detail),
+            12 => wamr_objects::dodecahedron_geometry(radius, detail),
+            20 => wamr_objects::icosahedron_geometry(radius, detail),
+            _ => return Err(JsError::new("faces must be 4, 8, 12 or 20")),
+        };
+        Ok(self.inner.create_geometry(geometry).to_bits())
+    }
+
+    #[wasm_bindgen(js_name = createTorusKnotGeometry)]
+    pub fn create_torus_knot_geometry(&mut self, radius: f32, tube: f32, tubular_segments: u32, radial_segments: u32, p: f32, q: f32) -> u64 {
+        self.inner.create_geometry(wamr_objects::torus_knot_geometry(radius, tube, tubular_segments, radial_segments, p, q)).to_bits()
+    }
+
+    /// `points` holds the profile as x, y pairs.
+    #[wasm_bindgen(js_name = createLatheGeometry)]
+    pub fn create_lathe_geometry(&mut self, points: &[f32], segments: u32, phi_start: f32, phi_length: f32) -> u64 {
+        self.inner.create_geometry(wamr_objects::lathe_geometry(points, segments, phi_start, phi_length)).to_bits()
+    }
+
+    #[wasm_bindgen(js_name = createCapsuleGeometry)]
+    pub fn create_capsule_geometry(&mut self, radius: f32, height: f32, cap_segments: u32, radial_segments: u32, height_segments: u32) -> u64 {
+        self.inner.create_geometry(wamr_objects::capsule_geometry(radius, height, cap_segments, radial_segments, height_segments)).to_bits()
+    }
+
     /// Upload counter of the index; 0 for a non-indexed geometry.
     #[wasm_bindgen(js_name = indexVersion)]
     pub fn index_version(&self, handle: u64) -> Result<u32, JsError> {

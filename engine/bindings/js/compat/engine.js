@@ -20,13 +20,53 @@ export function w() {
 	if ( world === null ) throw new Error( 'WAMR3D: call init() first' );
 	if ( dirty.length !== 0 ) flush();
 	if ( touched.length !== 0 ) pushMatrices();
+	engineAccesses ++;
 	return world;
+
+}
+
+// Counts engine accesses through `w()`. A value read from the engine stays valid while
+// the count is unchanged, unless the application holds the world itself (`getWorld`),
+// whose calls are not counted.
+let engineAccesses = 0, worldShared = false;
+
+/**
+ * The world for a read that changes nothing and needs no pending writes: not counted as
+ * an access, so values cached against `readStamp` stay valid.
+ */
+export function peek() {
+
+	if ( world === null ) throw new Error( 'WAMR3D: call init() first' );
+	return world;
+
+}
+
+/** A stamp that changes whenever an engine value read before may have changed; 0 means always read again. */
+export function readStamp() {
+
+	return worldShared ? 0 : engineAccesses;
+
+}
+
+// A view over the module's memory, made again only when the memory has grown.
+let floats = null;
+
+/** Copies `count` floats at engine address `ptr` into `out`; false for address 0. */
+export function readFloats( ptr, out, count ) {
+
+	if ( ptr === 0 ) return false;
+	const buffer = W.memory().buffer;
+	if ( floats === null || floats.buffer !== buffer ) floats = new Float32Array( buffer );
+	const offset = ptr >>> 2;
+	for ( let i = 0; i < count; i ++ ) out[ i ] = floats[ offset + i ];
+	return true;
 
 }
 
 /** The World behind every object created here, for the batched low-level calls. */
 export function getWorld() {
 
+	worldShared = true;
 	return w();
 
 }
@@ -124,7 +164,9 @@ export const OBJECT = 0, GEOMETRY = 1, MATERIAL = 2;
 export const objects = new Map();
 
 // Engine resources are released when the JavaScript object that owns them is collected.
-export const finalizer = new FinalizationRegistry( ( { kind, handle, instances } ) => {
+export const finalizer = new FinalizationRegistry( ( token ) => {
+
+	const { kind, handle, instances } = token;
 
 	if ( world === null ) return;
 
@@ -133,6 +175,8 @@ export const finalizer = new FinalizationRegistry( ( { kind, handle, instances }
 		if ( instances ) instanceSources.delete( instances );
 		objects.delete( handle );
 		world.destroy( handle );
+		// the blended copy of a morphed mesh's geometry
+		if ( token.morphed ) world.disposeGeometry( token.morphed );
 
 	} else if ( kind === GEOMETRY ) {
 

@@ -70,7 +70,11 @@ fn uniforms_hold_the_matrices_and_colour() {
     assert_eq!(o[32..36], [0.5, 0.25, 2.0, 0.0]);
     assert_eq!((o[36], o[41], o[46]), (1.0, 1.0, 1.0));
     assert_eq!((frame.draws[0].start, frame.draws[0].count, frame.draws[0].pipeline, frame.draws[0].instance_count), (0, 36, 0b11000, 1));
-    assert_eq!(frame.draws[0].textures, [7, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(frame.draws[0].textures, [7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    // a standard material: sheen roughness in the normal matrix, 4% reflectance and full
+    // specular intensity in the last four floats
+    assert_eq!(o[27], 1.0);
+    assert_eq!(o[60..64], [0.04, 0.04, 0.04, 1.0]);
 
     // The view-projection uses WebGPU depth: the near plane maps to 0, the far plane to 1.
     let view_projection = Matrix4 { elements: frame.frame_uniforms[..16].try_into().unwrap() };
@@ -189,6 +193,7 @@ fn shadow_casters_are_collected_per_light_and_receivers_flagged() {
     world.visibility_mut(boxes[0]).unwrap().receive_shadow = true;
 
     let shadow = LightShadow {
+        blur_samples: 8,
         projection: ShadowProjection::Orthographic { left: -5.0, right: 5.0, top: 5.0, bottom: -5.0, near: 0.5, far: 500.0 },
         target: Vector3::new(0.0, 0.0, -5.0),
         bias: -0.001,
@@ -199,21 +204,30 @@ fn shadow_casters_are_collected_per_light_and_receivers_flagged() {
         map_height: 512,
     };
     let sun = Light { direction: Vector3::new(0.0, 10.0, 0.0), shadow: Some(shadow), ..Light::default() };
-    let point = Light { kind: LightKind::Point, shadow: Some(shadow), ..Light::default() };
+    let point_shadow = LightShadow { projection: ShadowProjection::Perspective { fov: 90.0, aspect: 1.0, near: 0.5, far: 500.0 }, map_width: 256, map_height: 128, ..shadow };
+    let point = Light { kind: LightKind::Point, shadow: Some(point_shadow), ..Light::default() };
     let mut lighting = Lighting { lights: vec![point, sun], shadows: true, ..Lighting::default() };
 
     let frame = prepare_frame(&mut world, root, camera, &lighting).unwrap();
-    assert_eq!(frame.shadows.len(), 1, "point lights cast no shadows yet");
-    let pass = &frame.shadows[0];
+    assert_eq!(frame.shadows.len(), POINT_SHADOW_FACES + 1, "six cube faces for the point light, one map for the sun");
+    // the point light at the origin sees the casting box in front of it on its -z face
+    assert_eq!(frame.shadows[5].draws.iter().map(|d| d.object).collect::<Vec<_>>(), [boxes[0]]);
+    assert_eq!(frame.shadows[0].draws.iter().map(|d| d.object).collect::<Vec<_>>(), [boxes[2]], "the far box lies on the +x face");
+    assert!(frame.shadows[2].draws.is_empty());
+    assert_eq!((frame.shadows[0].width, frame.shadows[0].height), (256, 256), "square faces of the map width");
+    let pass = &frame.shadows[POINT_SHADOW_FACES];
     assert_eq!(pass.draws.iter().map(|d| d.object).collect::<Vec<_>>(), [boxes[0]], "not casting, or outside the shadow frustum");
     assert_eq!(pass.draws[0].pipeline & 3, Side::Back as u32);
     assert_eq!((frame.shadow_map_width, frame.shadow_map_height), (1024, 512));
-    // light 0 (point) has no shadow; light 1 uses layer 0
-    assert_eq!(frame.frame_uniforms[LIGHTS_OFFSET + 14], 0.0);
-    assert_eq!(frame.frame_uniforms[LIGHTS_OFFSET + LIGHT_FLOATS + 14], 1.0);
-    assert_eq!(frame.frame_uniforms[SHADOWS_OFFSET + 16..SHADOWS_OFFSET + 23], [-0.001, 0.0, 1.0, 1.0 / 1024.0, 1.0, 1.0, 0.0]);
+    // light 0 (point) starts at layer 0, light 1 uses layer 6
+    assert_eq!(frame.frame_uniforms[LIGHTS_OFFSET + 14], 1.0);
+    assert_eq!(frame.frame_uniforms[LIGHTS_OFFSET + LIGHT_FLOATS + 14], 7.0);
+    // a point light's filter radius spans half as many texels
+    assert_eq!(frame.frame_uniforms[SHADOWS_OFFSET + 19], 0.5 / 256.0);
+    let sun_offset = SHADOWS_OFFSET + POINT_SHADOW_FACES * SHADOW_FLOATS;
+    assert_eq!(frame.frame_uniforms[sun_offset + 16..sun_offset + 24], [-0.001, 0.0, 1.0, 1.0 / 1024.0, 1.0, 1.0, 6.0, 1.0]);
     // the box at the target projects to the middle of the map
-    let m = Matrix4 { elements: frame.frame_uniforms[SHADOWS_OFFSET..SHADOWS_OFFSET + 16].try_into().unwrap() };
+    let m = Matrix4 { elements: frame.frame_uniforms[sun_offset..sun_offset + 16].try_into().unwrap() };
     let mut p = Vector3::new(0.0, 0.0, -5.0);
     p.apply_matrix4(&m);
     // (y is nudged slightly: the light looks straight down, parallel to "up", as in three.js)
@@ -222,8 +236,72 @@ fn shadow_casters_are_collected_per_light_and_receivers_flagged() {
     let receiver = frame.draws.iter().position(|d| d.object == boxes[0]).unwrap();
     assert_eq!(frame.object_uniforms[receiver * OBJECT_UNIFORM_FLOATS + 35], 4.0);
 
+    lighting.shadow_type = ShadowType::Basic;
+    let frame = prepare_frame(&mut world, root, camera, &lighting).unwrap();
+    assert_eq!(frame.frame_uniforms[sun_offset + 23], 0.0, "basic filtering");
+
     lighting.shadows = false;
     assert!(prepare_frame(&mut world, root, camera, &lighting).unwrap().shadows.is_empty());
+}
+
+#[test]
+fn point_shadows_that_do_not_fit_are_skipped() {
+    let (mut world, root, camera, _) = scene(&[[0.0, 0.0, -5.0]]);
+    let shadow = LightShadow {
+        blur_samples: 8,
+        projection: ShadowProjection::Perspective { fov: 90.0, aspect: 1.0, near: 0.5, far: 500.0 },
+        target: Vector3::default(),
+        bias: 0.0,
+        normal_bias: 0.0,
+        intensity: 1.0,
+        radius: 1.0,
+        map_width: 512,
+        map_height: 512,
+    };
+    let point = Light { kind: LightKind::Point, shadow: Some(shadow), ..Light::default() };
+    let spot = Light { kind: LightKind::Spot, shadow: Some(shadow), ..Light::default() };
+    // 6 + 6 maps fit in 16, a third point light does not; the spot light still does
+    let lighting = Lighting { lights: vec![point, point, point, spot], shadows: true, ..Lighting::default() };
+    let frame = prepare_frame(&mut world, root, camera, &lighting).unwrap();
+    assert_eq!(frame.shadows.len(), 13);
+    assert_eq!(frame.frame_uniforms[LIGHTS_OFFSET + 2 * LIGHT_FLOATS + 14], 0.0);
+    assert_eq!(frame.frame_uniforms[LIGHTS_OFFSET + 3 * LIGHT_FLOATS + 14], 13.0);
+}
+
+#[test]
+fn maps_wireframe_and_physical_layers_are_packed() {
+    let (mut world, root, camera, boxes) = scene(&[[0.0, 0.0, -5.0]]);
+    let handle = world.renderable(boxes[0]).unwrap().material;
+    {
+        let m = world.material_mut(handle).unwrap();
+        m.maps.light = 11;
+        m.maps.bump = 12;
+        m.maps.displacement = 13;
+        m.light_map_intensity = 0.5;
+        m.bump_scale = 2.0;
+        m.displacement_scale = 3.0;
+        m.displacement_bias = -1.0;
+        m.clearcoat = 0.8;
+        m.clearcoat_roughness = 0.2;
+        m.sheen_color = Color::new(0.5, 0.25, 0.125);
+        m.sheen_roughness = 0.6;
+        m.ior = 2.0;
+        m.specular_intensity = 0.5;
+        m.wireframe = true;
+    }
+    let frame = prepare_frame(&mut world, root, camera, &Lighting::default()).unwrap();
+    let draw = frame.draws[0];
+    assert_eq!(draw.textures[7..10], [11, 12, 13]);
+    assert_eq!(draw.pipeline & WIREFRAME_KEY, WIREFRAME_KEY);
+    assert_eq!((draw.pipeline >> 5 & 3, draw.pipeline & 3), (2, Side::Double as u32), "a line list, without culling");
+    let o = &frame.object_uniforms;
+    assert_eq!((o[19], o[23], o[27]), (0.8, 0.2, 0.6));
+    assert_eq!((o[39], o[43], o[47]), (0.5, 0.25, 0.125));
+    assert_eq!(o[48..51], [2.0, 3.0, -1.0]);
+    assert_eq!(o[53], 0.5);
+    // ((2 - 1) / (2 + 1))^2 = 1/9, times the specular intensity
+    assert!((o[60] - 0.5 / 9.0).abs() < 1e-7 && o[63] == 0.5);
+    assert_eq!(o[35] as u32, 2048 | 4096 | 8192 | 131072 | 262144);
 }
 
 #[test]
@@ -261,8 +339,9 @@ fn the_environment_is_packed_with_three_js_layout_sizes() {
     let lighting = Lighting { environment: Some(environment), ..Lighting::default() };
     let frame = prepare_frame(&mut world, root, camera, &lighting).unwrap();
     assert_eq!(frame.frame_uniforms[ENVIRONMENT_OFFSET..ENVIRONMENT_OFFSET + 3], [1.0 / 768.0, 1.0 / 1024.0, 8.0]);
-    assert_eq!(frame.object_uniforms[52..54], [0.7, 1.0]);
-    assert_eq!(frame.environment.map(|e| e.texture), Some(3));
+    assert_eq!(frame.object_uniforms[52], 0.7);
+    assert_eq!(frame.object_uniforms[35] as u32 & 65536, 65536, "lit by the environment");
+    assert_eq!(frame.environments.first().map(|e| e.texture), Some(3));
     assert!(shader_source().contains("fn cube_uv_sample(") && pmrem_shader_source().contains("fn ggx("));
 }
 
@@ -320,13 +399,13 @@ fn tone_mapping_and_exposure_are_packed_for_the_output_pass() {
     let lighting = Lighting { tone_mapping: ToneMapping::AcesFilmic, exposure: 1.5, ..Lighting::default() };
     let frame = prepare_frame(&mut world, root, camera, &lighting).unwrap();
     assert_eq!((frame.frame_uniforms[TONE_MAPPING_INDEX], frame.frame_uniforms[TONE_MAPPING_EXPOSURE_INDEX]), (4.0, 1.5));
-    assert!(OUTPUT_SHADER.contains("fn tone_mapped(") && !SHADER.contains("fn tone_mapped("));
+    assert!(output_shader_source().contains("fn tone_mapped(") && !SHADER.contains("fn tone_mapped("));
     assert_eq!(ToneMapping::from_u8(5), ToneMapping::None);
 }
 
 #[test]
 fn every_glsl_pass_is_assembled_for_webgl_2() {
-    for name in ["mesh.vert", "mesh.frag", "shadow.vert", "shadow.frag", "fullscreen.vert", "background.frag", "output.frag", "pmrem.vert", "pmrem.equirect", "pmrem.ggx"] {
+    for name in ["mesh.vert", "mesh.frag", "shadow.vert", "shadow.frag", "fullscreen.vert", "background.frag", "output.frag", "pmrem.vert", "pmrem.equirect", "pmrem.ggx", "cube.equirect"] {
         let source = glsl_source(name).unwrap();
         assert!(source.starts_with("#version 300 es
 ") && source.contains("void main()"), "{name}");
@@ -334,5 +413,5 @@ fn every_glsl_pass_is_assembled_for_webgl_2() {
     assert!(glsl_source("mesh.frag").unwrap().contains("vec2 dfg(") && glsl_source("unknown").is_none());
     // the frame block keeps the WGSL layout: same members, same order
     assert!(glsl_source("mesh.vert").unwrap().contains("Light lights[16];
-    Shadow shadows[4];"));
+    Shadow shadows[16];"));
 }
