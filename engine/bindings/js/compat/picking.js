@@ -2,6 +2,7 @@
 
 import { hosted, objects, w, world } from './engine.js';
 import { Ray, Vector2, Vector3, engineVector } from './math.js';
+import { Layers } from './transform.js';
 
 // ---------------------------------------------------------------- picking
 
@@ -13,6 +14,7 @@ export class Raycaster {
 		this.near = near;
 		this.far = far;
 		this.camera = null;
+		this.layers = new Layers();
 		this.params = { Mesh: {}, Line: { threshold: 1 }, LOD: {}, Points: { threshold: 1 }, Sprite: {} };
 
 	}
@@ -48,7 +50,7 @@ export class Raycaster {
 	intersectObject( object, recursive = true, intersects = [] ) {
 
 		const origin = engineVector( this.ray.origin, 0 ), direction = engineVector( this.ray.direction, 1 );
-		const hits = w().raycast( object.handle, recursive, origin, direction, this.near, this.far, this.params.Line.threshold, this.params.Points.threshold );
+		const hits = w().raycast( object.handle, recursive, origin, direction, this.near, this.far, this.params.Line.threshold, this.params.Points.threshold, this.layers.mask );
 		collectHits( hits, intersects );
 		hits.free();
 

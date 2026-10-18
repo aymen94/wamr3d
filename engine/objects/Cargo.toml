@@ -3,7 +3,7 @@ name = "wamr-objects"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "Built-in shapes for WAMR3D"
+description = "Built-in geometries, scene objects, cameras, and lights for WAMR3D"
 
 [dependencies]
 wamr-core = { path = "../core" }

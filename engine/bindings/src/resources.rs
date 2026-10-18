@@ -39,6 +39,13 @@ impl World {
         Ok(())
     }
 
+    /// Removes a geometry's index: its vertices are then drawn in order.
+    #[wasm_bindgen(js_name = clearIndex)]
+    pub fn clear_index(&mut self, handle: u64) -> Result<(), JsError> {
+        self.geometry_mut(handle)?.set_index(None);
+        Ok(())
+    }
+
     #[wasm_bindgen(js_name = setIndex)]
     pub fn set_index(&mut self, handle: u64, indices: &[u32]) -> Result<(), JsError> {
         let geometry = self.geometry_mut(handle)?;

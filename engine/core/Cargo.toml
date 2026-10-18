@@ -3,7 +3,7 @@ name = "wamr-core"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "Scene model of WAMR3D: entities, components, geometry and resource stores (Phase 2)"
+description = "Scene graph, transforms, geometry resources, and picking for WAMR3D"
 
 [dependencies]
 wamr-math = { path = "../math" }

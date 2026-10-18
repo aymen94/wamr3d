@@ -27,6 +27,17 @@ fn scene(positions: &[[f32; 3]]) -> (World, Entity, Entity, Vec<Entity>) {
     (world, root, camera, boxes)
 }
 
+/// The material block of a frame's draw.
+fn block(frame: &Frame, draw: usize) -> &[f32] {
+    let start = frame.draws[draw].material as usize * MATERIAL_UNIFORM_FLOATS;
+    &frame.material_uniforms[start..start + MATERIAL_UNIFORM_FLOATS]
+}
+
+/// The two vec4 of a map in a material block's map table.
+fn map_entry(block: &[f32], map: wamr_core::MapSlot) -> &[f32] {
+    &block[64 + map as usize * 8..][..8]
+}
+
 #[test]
 fn culls_outside_the_frustum_and_orders_nearest_first() {
     let (mut world, root, camera, boxes) = scene(&[[0.0, 0.0, -20.0], [0.0, 0.0, -5.0], [0.0, 0.0, 5.0], [300.0, 0.0, -5.0]]);
@@ -66,15 +77,16 @@ fn uniforms_hold_the_matrices_and_colour() {
     let o = &frame.object_uniforms;
     assert_eq!(o[12..16], [1.0, 2.0, -5.0, 1.0]);
     assert_eq!((o[16], o[21], o[26]), (1.0, 1.0, 1.0));
-    assert_eq!(o[28..32], [1.0, 0.5, 0.25, 1.0]);
-    assert_eq!(o[32..36], [0.5, 0.25, 2.0, 0.0]);
-    assert_eq!((o[36], o[41], o[46]), (1.0, 1.0, 1.0));
+    assert_eq!(o[28..32], [0.0, 0.0, 0.5, 0.5], "no flags, no skin, the default sprite centre");
+    let m = block(&frame, 0);
+    assert_eq!(m[0..4], [1.0, 0.5, 0.25, 1.0]);
+    assert_eq!(m[4..8], [0.5, 0.25, 2.0, 0.0]);
+    assert_eq!(map_entry(m, wamr_core::MapSlot::Color), [1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0], "identity transform, slot 0, uv set 0");
     assert_eq!((frame.draws[0].start, frame.draws[0].count, frame.draws[0].pipeline, frame.draws[0].instance_count), (0, 36, 0b11000, 1));
     assert_eq!(frame.draws[0].textures, [7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    // a standard material: sheen roughness in the normal matrix, 4% reflectance and full
-    // specular intensity in the last four floats
-    assert_eq!(o[27], 1.0);
-    assert_eq!(o[60..64], [0.04, 0.04, 0.04, 1.0]);
+    // a standard material: 4% reflectance and full specular intensity
+    assert_eq!(m[12..16], [0.04, 0.04, 0.04, 1.0]);
+    assert_eq!(frame.material_uniforms.len(), MATERIAL_UNIFORM_FLOATS, "one block for a shared material");
 
     // The view-projection uses WebGPU depth: the near plane maps to 0, the far plane to 1.
     let view_projection = Matrix4 { elements: frame.frame_uniforms[..16].try_into().unwrap() };
@@ -112,9 +124,9 @@ fn blended_draws_come_last_and_farthest_first() {
 
     let frame = prepare_frame(&mut world, root, camera, &Lighting::default()).unwrap();
     assert_eq!(frame.draws.iter().map(|d| d.object).collect::<Vec<_>>(), [boxes[3], boxes[2], boxes[1], boxes[0]]);
-    assert_eq!(frame.draws[3].pipeline, 0b10100);
-    assert_eq!(frame.object_uniforms[3 * OBJECT_UNIFORM_FLOATS + 31], 0.5);
-    assert_eq!(frame.object_uniforms[3 * OBJECT_UNIFORM_FLOATS + 35], 2.0);
+    assert_eq!(frame.draws[3].pipeline, 0b10100 | 1 << 11, "blended with normal blending");
+    let m = block(&frame, 3);
+    assert_eq!((m[3], m[7]), (0.5, 2.0));
 }
 
 #[test]
@@ -129,7 +141,7 @@ fn lines_need_no_normals_and_ignore_the_side() {
 
     let frame = prepare_frame(&mut world, root, camera, &Lighting::default()).unwrap();
     assert_eq!((frame.draws[0].count, frame.draws[0].pipeline), (4, 2 | 0b11000 | 2 << 5));
-    assert_eq!(frame.object_uniforms[35], 1.0);
+    assert_eq!(frame.object_uniforms[28], 17.0, "vertex colours, a line");
 }
 
 #[test]
@@ -159,7 +171,8 @@ fn a_material_per_group_makes_a_draw_per_group() {
 
     let frame = prepare_frame(&mut world, root, camera, &Lighting::default()).unwrap();
     assert_eq!(frame.draws.iter().map(|d| (d.start, d.count, d.pipeline & 4)).collect::<Vec<_>>(), [(3, 3, 0), (24, 3, 0), (6, 6, 4)]);
-    assert_eq!(frame.object_uniforms[28..31], [1.0, 0.0, 0.0]);
+    assert_eq!(block(&frame, 0)[0..3], [1.0, 0.0, 0.0]);
+    assert_eq!(frame.draws[0].material, frame.draws[1].material, "one block per material");
     assert_eq!(frame.candidates, 1);
 }
 
@@ -234,7 +247,7 @@ fn shadow_casters_are_collected_per_light_and_receivers_flagged() {
     assert!((p.x - 0.5).abs() < 1e-5 && (p.y - 0.5).abs() < 1e-3 && p.z > 0.0 && p.z < 1.0, "{p:?}");
     // receivers are flagged; others not
     let receiver = frame.draws.iter().position(|d| d.object == boxes[0]).unwrap();
-    assert_eq!(frame.object_uniforms[receiver * OBJECT_UNIFORM_FLOATS + 35], 4.0);
+    assert_eq!(frame.object_uniforms[receiver * OBJECT_UNIFORM_FLOATS + 28], 4.0);
 
     lighting.shadow_type = ShadowType::Basic;
     let frame = prepare_frame(&mut world, root, camera, &lighting).unwrap();
@@ -291,17 +304,21 @@ fn maps_wireframe_and_physical_layers_are_packed() {
     }
     let frame = prepare_frame(&mut world, root, camera, &Lighting::default()).unwrap();
     let draw = frame.draws[0];
-    assert_eq!(draw.textures[7..10], [11, 12, 13]);
+    assert_eq!(draw.textures[0..3], [7, 11, 12], "maps take the free slots in map order");
+    assert_eq!(draw.textures[DISPLACEMENT_SLOT], 13);
     assert_eq!(draw.pipeline & WIREFRAME_KEY, WIREFRAME_KEY);
     assert_eq!((draw.pipeline >> 5 & 3, draw.pipeline & 3), (2, Side::Double as u32), "a line list, without culling");
-    let o = &frame.object_uniforms;
-    assert_eq!((o[19], o[23], o[27]), (0.8, 0.2, 0.6));
-    assert_eq!((o[39], o[43], o[47]), (0.5, 0.25, 0.125));
-    assert_eq!(o[48..51], [2.0, 3.0, -1.0]);
-    assert_eq!(o[53], 0.5);
+    let m = block(&frame, 0);
+    assert_eq!(m[24..28], [0.8, 0.2, 0.6, 2.0]);
+    assert_eq!(m[28..31], [0.5, 0.25, 0.125]);
+    assert_eq!(m[20..23], [2.0, 3.0, -1.0]);
+    assert_eq!(m[17], 0.5);
     // ((2 - 1) / (2 + 1))^2 = 1/9, times the specular intensity
-    assert!((o[60] - 0.5 / 9.0).abs() < 1e-7 && o[63] == 0.5);
-    assert_eq!(o[35] as u32, 2048 | 4096 | 8192 | 131072 | 262144);
+    assert!((m[12] - 0.5 / 9.0).abs() < 1e-7 && m[15] == 0.5);
+    assert_eq!(m[7] as u32, 131072 | 262144);
+    use wamr_core::MapSlot;
+    assert_eq!([MapSlot::Light, MapSlot::Bump, MapSlot::Displacement].map(|map| map_entry(m, map)[3]), [2.0, 3.0, DISPLACEMENT_SLOT as f32 + 1.0]);
+    assert_eq!(map_entry(m, MapSlot::Normal)[3], 0.0, "no normal map");
 }
 
 #[test]
@@ -318,11 +335,13 @@ fn points_use_the_point_list_and_sprites_carry_their_settings() {
     assert_eq!(frame.draws[points].pipeline >> 5 & 3, 3);
     assert_eq!(frame.draws[points].pipeline & 3, 2, "points ignore the side");
     let o = &frame.object_uniforms[sprite * OBJECT_UNIFORM_FLOATS..];
-    // a sprite (8) of fixed size (16)
-    assert_eq!(o[35], 24.0);
-    assert_eq!(o[48..52], [0.5, 0.25, 1.0, 0.0]);
+    // a sprite (8) with its centre; its material of fixed size (16) with its rotation
+    assert_eq!(o[28..32], [8.0, 0.0, 0.25, 1.0]);
+    let m = block(&frame, sprite);
+    assert_eq!((m[7], m[48]), (16.0, 0.5));
     // camera right and up, perspective
-    assert_eq!(frame.frame_uniforms[40..48], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0]);
+    let f = &frame.frame_uniforms;
+    assert_eq!((f[40..43].to_vec(), f[44..48].to_vec()), (vec![1.0, 0.0, 0.0], vec![0.0, 1.0, 0.0, 1.0]));
 }
 
 #[test]
@@ -339,8 +358,9 @@ fn the_environment_is_packed_with_three_js_layout_sizes() {
     let lighting = Lighting { environment: Some(environment), ..Lighting::default() };
     let frame = prepare_frame(&mut world, root, camera, &lighting).unwrap();
     assert_eq!(frame.frame_uniforms[ENVIRONMENT_OFFSET..ENVIRONMENT_OFFSET + 3], [1.0 / 768.0, 1.0 / 1024.0, 8.0]);
-    assert_eq!(frame.object_uniforms[52], 0.7);
-    assert_eq!(frame.object_uniforms[35] as u32 & 65536, 65536, "lit by the environment");
+    let m = block(&frame, 0);
+    assert_eq!((m[16], m[31]), (0.7, 0.0), "intensity, first environment of the stack");
+    assert_eq!(m[7] as u32 & 65536, 65536, "lit by the environment");
     assert_eq!(frame.environments.first().map(|e| e.texture), Some(3));
     assert!(shader_source().contains("fn cube_uv_sample(") && pmrem_shader_source().contains("fn ggx("));
 }
@@ -357,14 +377,14 @@ fn emissive_specular_line_loops_and_rgba_colours_are_packed() {
     let frame = prepare_frame(&mut world, root, camera, &Lighting::default()).unwrap();
     let mesh = frame.draws.iter().position(|d| d.object == boxes[0]).unwrap();
     let line = frame.draws.iter().position(|d| d.object == boxes[1]).unwrap();
-    let o = &frame.object_uniforms[mesh * OBJECT_UNIFORM_FLOATS..];
-    assert_eq!(o[34], 3.0);
-    assert_eq!(o[56..64], [0.1, 0.2, 0.3, 1.0, 0.5, 0.5, 0.5, 60.0], "emissive and ambient-occlusion intensity, specular and shininess");
+    let m = block(&frame, mesh);
+    assert_eq!(m[6], 3.0);
+    assert_eq!(m[8..16], [0.1, 0.2, 0.3, 1.0, 0.5, 0.5, 0.5, 60.0], "emissive and ambient-occlusion intensity, specular and shininess");
     assert_eq!(frame.draws[mesh].pipeline & (LINE_LOOP_KEY | FOUR_COMPONENT_COLOR_KEY), FOUR_COMPONENT_COLOR_KEY);
     // a loop is drawn as a line strip with the loop bit
     assert_eq!(frame.draws[line].pipeline >> 5 & 3, 1);
     assert_eq!(frame.draws[line].pipeline & LINE_LOOP_KEY, LINE_LOOP_KEY);
-    assert!(SHADER.contains("struct ObjectUniforms") && OBJECT_BINDING_FLOATS * 4 == 256);
+    assert!(shader_source().contains("struct ObjectUniforms") && OBJECT_BINDING_FLOATS * 4 == 128);
 }
 
 #[test]
@@ -388,8 +408,10 @@ fn a_texture_background_is_packed_for_its_pass() {
 #[test]
 fn shader_declares_both_entry_points() {
     assert!(SHADER.contains("fn vertex(") && SHADER.contains("fn fragment("));
-    assert!(SHADER.contains(&format!("array<Light, {MAX_LIGHTS}>")) && SHADER.contains(&format!("{MAX_LIGHTS}u)")));
-    assert!(SHADER.contains(&format!("array<Shadow, {MAX_SHADOWS}>")) && SHADOW_SHADER.contains("fn vertex("));
+    let source = shader_source();
+    assert!(source.contains(&format!("array<Light, {MAX_LIGHTS}>")) && source.contains(&format!("{MAX_LIGHTS}u)")));
+    assert!(source.contains(&format!("array<Shadow, {MAX_SHADOWS}>")) && SHADOW_SHADER.contains("fn vertex("));
+    assert!(SHADER.contains("fn vertex_quad(") && VSM_SHADER.contains("fn vertical(") && VSM_SHADER.contains("fn horizontal("));
     assert_eq!(FRAME_UNIFORM_FLOATS * 4 % 16, 0);
 }
 
@@ -414,4 +436,20 @@ fn every_glsl_pass_is_assembled_for_webgl_2() {
     // the frame block keeps the WGSL layout: same members, same order
     assert!(glsl_source("mesh.vert").unwrap().contains("Light lights[16];
     Shadow shadows[16];"));
+}
+
+#[test]
+fn skinned_meshes_are_culled_where_their_bones_put_them() {
+    // two boxes far to the side; the first one's bone holds it in front of the camera
+    let (mut world, root, camera, boxes) = scene(&[[300.0, 0.0, -5.0], [300.0, 0.0, -5.0]]);
+    for (&mesh, bone_at) in boxes.iter().zip([[0.0, 0.0, -5.0], [600.0, 0.0, -5.0]]) {
+        let bone = world.create_object();
+        world.add(root, bone);
+        world.transform_mut(bone).unwrap().position.set(bone_at[0], bone_at[1], bone_at[2]);
+        world.set_skin(mesh, Some(wamr_core::Skin { bones: vec![Some(bone)], bone_inverses: vec![Matrix4::default()], bind_matrix: Matrix4::default(), bind_matrix_inverse: Matrix4::default(), detached: false }));
+    }
+    world.update_matrix_world(root, false);
+    let frame = prepare_frame(&mut world, root, camera, &Lighting::default()).unwrap();
+    assert_eq!(frame.draws.iter().map(|d| d.object).collect::<Vec<_>>(), [boxes[0]]);
+    assert_eq!(frame.skin_matrices.len(), 32, "both skins are posed, the culled one too");
 }

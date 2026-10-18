@@ -209,37 +209,24 @@ delegate( BoundEuler, Euler );
 delegate( BoundQuaternion, Quaternion );
 BoundVector3.prototype.isVector3 = BoundEuler.prototype.isEuler = BoundQuaternion.prototype.isQuaternion = true;
 
-export class BoundLayers {
+/** three.js `Layers`: a 32-bit mask of the layers an object, camera or raycaster is in. */
+export class Layers {
 
-	constructor( owner ) {
+	constructor() {
 
-		this._o = owner;
-		this._m = undefined;
-
-	}
-
-	// The mask is kept here after the first read, so tests and toggles cost no engine call.
-	get mask() {
-
-		return this._m ??= w().layers( this._o.handle );
-
-	}
-
-	set mask( value ) {
-
-		w().setLayers( this._o.handle, this._m = value >>> 0 );
+		this.mask = 1;
 
 	}
 
 	set( layer ) {
 
-		this.mask = 1 << layer;
+		this.mask = ( 1 << layer ) >>> 0;
 
 	}
 
 	enable( layer ) {
 
-		this.mask |= 1 << layer;
+		this.mask = ( this.mask | ( 1 << layer ) ) >>> 0;
 
 	}
 
@@ -251,13 +238,13 @@ export class BoundLayers {
 
 	toggle( layer ) {
 
-		this.mask ^= 1 << layer;
+		this.mask = ( this.mask ^ ( 1 << layer ) ) >>> 0;
 
 	}
 
 	disable( layer ) {
 
-		this.mask &= ~ ( 1 << layer );
+		this.mask = ( this.mask & ~ ( 1 << layer ) ) >>> 0;
 
 	}
 
@@ -276,6 +263,34 @@ export class BoundLayers {
 	isEnabled( layer ) {
 
 		return ( this.mask & ( 1 << layer ) ) !== 0;
+
+	}
+
+}
+
+/** The layers of an engine object: the mask lives in the engine. */
+export class BoundLayers extends Layers {
+
+	constructor( owner ) {
+
+		super();
+		this._o = owner;
+		this._m = undefined;
+
+	}
+
+	// The mask is kept here after the first read, so tests and toggles cost no engine call.
+	get mask() {
+
+		return this._m ??= w().layers( this._o.handle );
+
+	}
+
+	set mask( value ) {
+
+		// the base constructor's default is the engine's default
+		if ( this._o === undefined ) return;
+		w().setLayers( this._o.handle, this._m = value >>> 0 );
 
 	}
 

@@ -39,6 +39,37 @@ export function auxRecord( state, o, count ) {
 // First instance and instance count of points or segments drawn as quads, from a draw's
 // first vertex and vertex count: a point per vertex, a segment per strip pair, or one per
 // two vertices of a list.
+// three.js's blend factors (from ZeroFactor, 200) and equations (from AddEquation, 100)
+// in WebGPU's names; the constant colour has no separate alpha in WebGPU.
+const CUSTOM_FACTORS = [ 'zero', 'one', 'src', 'one-minus-src', 'src-alpha', 'one-minus-src-alpha', 'dst-alpha', 'one-minus-dst-alpha', 'dst', 'one-minus-dst', 'src-alpha-saturated', 'constant', 'one-minus-constant', 'constant', 'one-minus-constant' ];
+const CUSTOM_EQUATIONS = [ 'add', 'subtract', 'reverse-subtract', 'min', 'max' ];
+
+// The blend state of `CustomBlending` from the material's packed settings (see the
+// engine's `Material::custom_blending`). Min and max ignore the factors, as in WebGL;
+// WebGPU requires them to be one.
+export function customBlend( packed ) {
+
+	const component = ( shift ) => {
+
+		const operation = CUSTOM_EQUATIONS[ packed >> shift + 8 & 7 ] ?? 'add', minMax = operation === 'min' || operation === 'max';
+		return { operation, srcFactor: minMax ? 'one' : CUSTOM_FACTORS[ packed >> shift & 15 ] ?? 'one', dstFactor: minMax ? 'one' : CUSTOM_FACTORS[ packed >> shift + 4 & 15 ] ?? 'zero' };
+
+	};
+
+	return { color: component( 0 ), alpha: component( 11 ) };
+
+}
+
+// The rows of RGBA `data` (`width` texels each) in the opposite order, for a data
+// texture with `flipY`, as three.js uploads it.
+export function flippedRows( data, width, height ) {
+
+	const row = width * 4, out = new data.constructor( data.length );
+	for ( let y = 0; y < height; y ++ ) out.set( data.subarray( y * row, ( y + 1 ) * row ), ( height - 1 - y ) * row );
+	return out;
+
+}
+
 export function quadInstances( topology, start, count ) {
 
 	if ( topology === 3 ) return [ start, count ];

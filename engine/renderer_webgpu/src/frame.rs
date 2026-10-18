@@ -4,6 +4,11 @@ use super::*;
 use std::collections::HashMap;
 use wamr_core::{MapSlot, MaterialHandle, MAP_COUNT};
 
+mod material;
+mod shadows;
+pub use material::*;
+use shadows::shadow_pass;
+
 fn push_color(out: &mut Vec<f32>, color: &Color, scale: f32, w: f32) {
     out.extend([color.r * scale, color.g * scale, color.b * scale, w]);
 }
@@ -24,131 +29,6 @@ const CUBE_FACES: [([f32; 3], [f32; 3]); POINT_SHADOW_FACES] = [
     ([0.0, 0.0, -1.0], [0.0, -1.0, 0.0]),
 ];
 
-/// Reflectance of the dielectric layer head on, as three.js's physical material derives
-/// it: `((ior - 1) / (ior + 1))^2` tinted by the specular colour, at most 1, scaled by the
-/// specular intensity. The defaults give 0.04.
-fn dielectric_f0(material: &Material) -> [f32; 3] {
-    let ior = material.ior as f64;
-    let f0 = ((ior - 1.0) / (ior + 1.0)).powi(2);
-    let c = material.specular_color;
-    let k = material.specular_intensity as f64;
-    [c.r, c.g, c.b].map(|channel| ((f0 * channel as f64).min(1.0) * k) as f32)
-}
-
-/// The texture of each of a draw's slots, and per map (in [`MapSlot`] order) its slot
-/// plus one (0 for none). Maps are given the first free slot in map order, and maps
-/// reading the same texture share one, so that packed textures (occlusion, roughness and
-/// metalness in one image, as glTF stores them) take a single slot. The displacement map
-/// takes [`DISPLACEMENT_SLOT`]; maps beyond the free slots are left out.
-pub fn material_slots(material: &Material) -> ([u32; TEXTURE_SLOTS], [u8; MAP_COUNT]) {
-    let ids = material.maps.ids(material.map);
-    let mut textures = [0u32; TEXTURE_SLOTS];
-    let mut slots = [0u8; MAP_COUNT];
-    let displacement = MapSlot::Displacement as usize;
-    if ids[displacement] != 0 {
-        textures[DISPLACEMENT_SLOT] = ids[displacement];
-        slots[displacement] = DISPLACEMENT_SLOT as u8 + 1;
-    }
-    for (map, &id) in ids.iter().enumerate() {
-        if id == 0 || map == displacement {
-            continue;
-        }
-        let shared = textures.iter().enumerate().position(|(slot, &t)| t == id && slot != DISPLACEMENT_SLOT);
-        let slot = shared.or_else(|| textures.iter().enumerate().position(|(slot, &t)| t == 0 && slot != DISPLACEMENT_SLOT));
-        if let Some(slot) = slot {
-            textures[slot] = id;
-            slots[map] = slot as u8 + 1;
-        }
-    }
-    (textures, slots)
-}
-
-/// Material flag bits (the w of the material's second vector): 2 blended, 16 points or
-/// sprites of fixed size, 65536 lit by an environment, 131072 clearcoat, 262144 sheen,
-/// 524288 transmission, 1048576 iridescence, 2097152 anisotropy, 4194304 premultiplied
-/// alpha, 8388608 a material of lines or points drawn as quads with a colour map.
-pub fn material_flags(material: &Material, lit_by_environment: bool) -> u32 {
-    let bit = |on: bool, value: u32| if on { value } else { 0 };
-    let standard = material.shading == wamr_core::Shading::Standard;
-    let sheen = material.sheen_color;
-    bit(material.transparent, 2)
-        | bit(!material.size_attenuation, 16)
-        | bit(standard && lit_by_environment, 65536)
-        | bit(standard && material.clearcoat > 0.0, 131072)
-        | bit(standard && sheen.r.max(sheen.g).max(sheen.b) > 0.0, 262144)
-        | bit(standard && material.transmission > 0.0, 524288)
-        | bit(standard && material.iridescence > 0.0, 1048576)
-        | bit(standard && material.anisotropy != 0.0, 2097152)
-        | bit(material.premultiplied_alpha, 4194304)
-}
-
-/// Packs one material's block, [`MATERIAL_UNIFORM_FLOATS`] floats as vec4s:
-///
-/// 0. colour and opacity
-/// 1. roughness, metalness, shading model, flags ([`material_flags`])
-/// 2. emissive colour (times intensity) and ambient-occlusion intensity
-/// 3. Blinn-Phong's specular colour and shininess, or standard shading's dielectric
-///    reflectance and specular intensity
-/// 4. environment intensity, light-map intensity, normal scale
-/// 5. bump scale, displacement scale and bias, alpha test
-/// 6. clearcoat, clearcoat roughness, sheen roughness, ior
-/// 7. sheen colour, index of the material's environment in the frame's stack
-/// 8. transmission, thickness, attenuation distance (-1 for infinite), dispersion
-/// 9. attenuation colour, iridescence
-/// 10. iridescence ior, thickness range, anisotropy strength
-/// 11. anisotropy direction (cos, sin), clearcoat normal scale
-/// 12. sprite rotation, point size, line width, 0
-/// 13-15. the environment's rotation, three padded columns
-/// 16-63. per map in [`MapSlot`] order, two vec4: the first two rows of its uv
-///     transform with its slot plus one, then with its uv set in the w of the second.
-pub fn pack_material(material: &Material, slots: &[u8; MAP_COUNT], environment: Option<(u32, Matrix3)>, environment_intensity: f32, out: &mut Vec<f32>) {
-    let start = out.len();
-    let standard = material.shading == wamr_core::Shading::Standard;
-    push_color(out, &material.color, 1.0, material.opacity);
-    let flags = material_flags(material, environment.is_some());
-    out.extend([material.roughness, material.metalness, f32::from(material.shading as u8), flags as f32]);
-    push_color(out, &material.emissive, 1.0, material.ao_map_intensity);
-    if standard {
-        out.extend(dielectric_f0(material));
-        out.push(material.specular_intensity);
-    } else {
-        push_color(out, &material.specular, 1.0, material.shininess);
-    }
-    let [scale_x, scale_y] = material.normal_scale;
-    out.extend([environment_intensity, material.light_map_intensity, scale_x, scale_y]);
-    out.extend([material.bump_scale, material.displacement_scale, material.displacement_bias, material.alpha_test]);
-    out.extend([material.clearcoat, material.clearcoat_roughness, material.sheen_roughness, material.ior]);
-    let index = environment.map_or(0.0, |(index, _)| index as f32);
-    push_color(out, &material.sheen_color, 1.0, index);
-    let attenuation = if material.attenuation_distance.is_finite() { material.attenuation_distance } else { -1.0 };
-    out.extend([material.transmission, material.thickness, attenuation, material.dispersion]);
-    push_color(out, &material.attenuation_color, 1.0, material.iridescence);
-    let [thin, thick] = material.iridescence_thickness;
-    out.extend([material.iridescence_ior, thin, thick, material.anisotropy]);
-    let angle = material.anisotropy_rotation as f64;
-    let [cc_x, cc_y] = material.clearcoat_normal_scale;
-    out.extend([angle.cos() as f32, angle.sin() as f32, cc_x, cc_y]);
-    if material.custom != 0 {
-        // a custom shader's settings take the place of the sprite and environment rotation
-        out.extend(material.custom_params);
-    } else {
-        out.extend([material.rotation, material.point_size, material.line_width, 0.0]);
-        push_matrix3(out, &environment.map_or_else(Matrix3::default, |(_, rotation)| rotation));
-    }
-    for (map, uv) in material.map_uvs.iter().enumerate() {
-        let e = uv.transform.elements;
-        out.extend([e[0], e[3], e[6], f32::from(slots[map])]);
-        out.extend([e[1], e[4], e[7], f32::from(uv.channel)]);
-    }
-    out.resize(start + MATERIAL_UNIFORM_FLOATS, 0.0);
-}
-
-/// The object flags of a draw: 1 vertex colours, 4 receives shadows, 8 sprite, 16 a
-/// line drawn as quads.
-pub fn object_flags(vertex_colors: bool, receive_shadow: bool, sprite: bool, line: bool) -> u32 {
-    u32::from(vertex_colors) | u32::from(receive_shadow) << 2 | u32::from(sprite) << 3 | u32::from(line) << 4
-}
-
 /// A draw before ordering. It keeps the material's handle, not a copy: materials are
 /// shared by many draws and hold a name, so copying one per draw cost an allocation.
 struct Entry {
@@ -164,81 +44,10 @@ struct Entry {
     matrix_world: Matrix4,
 }
 
-/// The frame's materials, each packed once.
-struct Materials {
-    index: HashMap<MaterialHandle, (u32, [u32; TEXTURE_SLOTS])>,
-    last: Option<(MaterialHandle, u32, [u32; TEXTURE_SLOTS])>,
-}
-
-impl Materials {
-    fn new() -> Self {
-        Self { index: HashMap::new(), last: None }
-    }
-
-    fn get(&mut self, world: &World, handle: MaterialHandle, environments: &mut Environments, out: &mut Vec<f32>) -> (u32, [u32; TEXTURE_SLOTS]) {
-        if let Some((h, index, textures)) = self.last {
-            if h == handle {
-                return (index, textures);
-            }
-        }
-        let value = *self.index.entry(handle).or_insert_with(|| {
-            let index = (out.len() / MATERIAL_UNIFORM_FLOATS) as u32;
-            let Some(material) = world.material(handle) else {
-                out.resize(out.len() + MATERIAL_UNIFORM_FLOATS, 0.0);
-                return (index, [0; TEXTURE_SLOTS]);
-            };
-            let (textures, slots) = material_slots(material);
-            let environment = environments.for_material(material);
-            pack_material(material, &slots, environment, material.env_map_intensity, out);
-            (index, textures)
-        });
-        self.last = Some((handle, value.0, value.1));
-        value
-    }
-}
-
-/// The environments sampled by the frame: the scene's first, then the materials' own.
-struct Environments {
-    list: Vec<Environment>,
-    scene: Option<Environment>,
-}
-
-impl Environments {
-    fn for_material(&mut self, material: &Material) -> Option<(u32, Matrix3)> {
-        if material.shading != wamr_core::Shading::Standard || !material.uses_environment {
-            return None;
-        }
-        let wanted = if material.env_map != 0 {
-            Environment { texture: material.env_map, source_width: material.env_map_width, rotation: material.env_map_rotation }
-        } else {
-            self.scene?
-        };
-        // the same texture with another rotation is the same prefiltered map
-        let index = match self.list.iter().position(|e| e.texture == wanted.texture) {
-            Some(index) => index,
-            None if self.list.len() < MAX_ENVIRONMENTS => {
-                self.list.push(wanted);
-                self.list.len() - 1
-            }
-            None => return None,
-        };
-        Some((index as u32, wanted.rotation))
-    }
-
-    /// The `lodMax` all maps are prefiltered at: the largest of them, lowered until the
-    /// stack fits in a texture 8192 texels high.
-    fn lod_max(&self) -> u32 {
-        let mut lod = self.list.iter().map(Environment::lod_max).max().unwrap_or(0).max(4);
-        while lod > 4 && self.list.len() as u32 * (4 << lod) > 8192 {
-            lod -= 1;
-        }
-        lod
-    }
-}
-
 /// Skinning matrices of the frame, computed once per skinned object.
 struct Skins {
-    offsets: HashMap<Entity, u32>,
+    /// Per object, its first matrix plus one and its number of matrices.
+    offsets: HashMap<Entity, (u32, u32)>,
 }
 
 impl Skins {
@@ -247,11 +56,30 @@ impl Skins {
         if world.skin(object).is_none() {
             return 0;
         }
-        *self.offsets.entry(object).or_insert_with(|| {
-            let first = (out.len() / 16) as u32;
-            world.skin_matrices(object, out);
-            first + 1
-        })
+        self.offsets
+            .entry(object)
+            .or_insert_with(|| {
+                let first = out.len() / 16;
+                world.skin_matrices(object, out);
+                (first as u32 + 1, (out.len() / 16 - first) as u32)
+            })
+            .0
+    }
+
+    /// A local-space sphere around every pose the object's skinning matrices give `sphere`.
+    /// A skinned vertex is a weighted average of its bone-transformed positions, each
+    /// inside one of the transformed spheres, so it lies inside the sphere around them all.
+    fn bounds(&self, object: Entity, sphere: &Sphere, matrices: &[f32]) -> Option<Sphere> {
+        let &(first, count) = self.offsets.get(&object)?;
+        let mut bounds = Sphere::default();
+        for i in 0..count as usize {
+            let start = (first as usize - 1 + i) * 16;
+            let matrix = Matrix4 { elements: matrices.get(start..start + 16)?.try_into().ok()? };
+            let mut posed = *sphere;
+            posed.apply_matrix4(&matrix);
+            bounds.union(&posed);
+        }
+        (count > 0).then_some(bounds)
     }
 }
 
@@ -351,18 +179,34 @@ pub fn prepare_frame(world: &mut World, root: Entity, camera: Entity, lighting: 
                 }
             }
         }
-        parts.retain(|(_, start, end)| end > start);
+        // the scene's override material, where the object's own allows it
+        if let Some(override_material) = lighting.override_material.filter(|h| world.material(*h).is_some()) {
+            for part in &mut parts {
+                if world.material(part.0).is_some_and(|m| m.state.allow_override) {
+                    part.0 = override_material;
+                }
+            }
+        }
+        parts.retain(|(handle, start, end)| end > start && world.material(*handle).is_some_and(|m| m.state.visible));
         if parts.is_empty() {
             continue;
         }
 
         frame.candidates += 1;
 
-        // The host holds the instance transforms, and bones move skinned vertices beyond
-        // the geometry's bounds, so neither is culled.
+        // The host holds the instance transforms, so instanced objects are not culled.
+        // Bones move skinned vertices beyond the geometry's bounds: those are culled with
+        // a sphere around the posed geometry (three.js skins the vertices on the CPU).
         let instanced = renderable.instances != 0;
+        let skin = if renderable.primitive == Primitive::Mesh { skins.offset(world, object, &mut frame.skin_matrices) } else { 0 };
+        if skinned {
+            match skins.bounds(object, &sphere, &frame.skin_matrices) {
+                Some(posed) => sphere = posed,
+                None => sphere.radius = f32::INFINITY,
+            }
+        }
         sphere.apply_matrix4(&matrix_world);
-        if visibility.frustum_culled && !instanced && !skinned && !frustum.intersects_sphere(&sphere) {
+        if visibility.frustum_culled && !instanced && !frustum.intersects_sphere(&sphere) {
             continue;
         }
         if instanced && renderable.instance_count == 0 {
@@ -371,7 +215,6 @@ pub fn prepare_frame(world: &mut World, root: Entity, camera: Entity, lighting: 
 
         let mut view_position = Vector3::new(matrix_world.elements[12], matrix_world.elements[13], matrix_world.elements[14]);
         view_position.apply_matrix4(&gpu_camera.matrix_world_inverse);
-        let skin = if renderable.primitive == Primitive::Mesh { skins.offset(world, object, &mut frame.skin_matrices) } else { 0 };
 
         for &(handle, start, end) in &parts {
             let Some(material) = world.material(handle) else {
@@ -535,6 +378,15 @@ pub fn prepare_frame(world: &mut World, root: Entity, camera: Entity, lighting: 
     let [width, height, pixel_ratio] = lighting.viewport;
     let mips = (width.max(height).max(1.0)).log2().floor() + 1.0;
     frame.frame_uniforms.extend([1.0 / width.max(1.0), 1.0 / height.max(1.0), mips, pixel_ratio]);
+    // the global clipping planes, and the camera's near and far for distance materials
+    let planes = &lighting.clip_planes[..lighting.clip_planes.len().min(wamr_core::MAX_CLIP_PLANES)];
+    let (near, far) = match gpu_camera.projection {
+        wamr_core::Projection::Perspective { near, far, .. } | wamr_core::Projection::Orthographic { near, far, .. } => (near, far),
+    };
+    frame.frame_uniforms.extend([planes.len() as f32, near, far, 0.0]);
+    for plane in planes {
+        frame.frame_uniforms.extend(plane);
+    }
     frame.frame_uniforms.resize(FRAME_UNIFORM_FLOATS, 0.0);
 
     if let Some(background) = lighting.background {
@@ -564,91 +416,4 @@ pub fn prepare_frame(world: &mut World, root: Entity, camera: Entity, lighting: 
     }
 
     Some(frame)
-}
-
-/// The meshes that cast shadows into one map: visible, `cast_shadow`, on the camera's
-/// layers (three.js gives a shadow camera without layers of its own the view camera's),
-/// and inside the shadow camera's frustum unless instanced, skinned or not
-/// frustum-culled.
-#[allow(clippy::too_many_arguments)]
-fn shadow_pass(
-    world: &mut World,
-    objects: &[Entity],
-    layers: wamr_core::Layers,
-    view_projection: &Matrix4,
-    layer: u32,
-    width: u32,
-    height: u32,
-    materials: &mut Materials,
-    environments: &mut Environments,
-    skins: &mut Skins,
-    frame: &mut Frame,
-) -> ShadowPass {
-    let mut frustum = Frustum::default();
-    frustum.set_from_projection_matrix(view_projection, CoordinateSystem::WebGPU, false);
-    let mut pass = ShadowPass { layer, width, height, view_projection: view_projection.elements, ..ShadowPass::default() };
-
-    for &object in objects {
-        let (Some(renderable), Some(visibility), Some(matrix_world)) =
-            (world.renderable(object).copied(), world.visibility(object).copied(), world.transform(object).map(|t| t.matrix_world))
-        else {
-            continue;
-        };
-        if renderable.primitive != Primitive::Mesh || renderable.sprite.is_some() || !visibility.layers.test(&layers) {
-            continue;
-        }
-        let Some(side) = world.material(renderable.material).map(|m| m.side) else {
-            continue;
-        };
-        let skinned = world.skin(object).is_some();
-        let Some(geometry) = world.geometry_mut(renderable.geometry) else {
-            continue;
-        };
-        let Some(vertices) = geometry.get_attribute("position").map(|a| a.count() as u32) else {
-            continue;
-        };
-        let aux_key = if ["tangent", "uv1", "skinIndex", "skinWeight"].iter().any(|name| geometry.has_attribute(name)) { AUX_KEY } else { 0 };
-        let available = geometry.get_index().map_or(vertices, |index| index.count() as u32);
-        let start = geometry.draw_range.start.min(available);
-        let end = geometry.draw_range.start.saturating_add(geometry.draw_range.count).min(available);
-        if end <= start {
-            continue;
-        }
-        if geometry.bounding_sphere.is_none() {
-            geometry.compute_bounding_sphere();
-        }
-        let mut sphere: Sphere = geometry.bounding_sphere.unwrap_or_default();
-        sphere.apply_matrix4(&matrix_world);
-        let instanced = renderable.instances != 0;
-        if instanced && renderable.instance_count == 0 {
-            continue;
-        }
-        if visibility.frustum_culled && !instanced && !skinned && !frustum.intersects_sphere(&sphere) {
-            continue;
-        }
-        let side = match side {
-            Side::Front => Side::Back,
-            Side::Back => Side::Front,
-            Side::Double => Side::Double,
-        };
-        // the material's textures and block go along, for its alpha test and displacement
-        let (material_index, textures) = materials.get(world, renderable.material, environments, &mut frame.material_uniforms);
-        let shadow_material = Material { side, transparent: false, depth_write: true, depth_test: true, ..Material::default() };
-        let skin = skins.offset(world, object, &mut frame.skin_matrices);
-        pass.draws.push(Draw {
-            object,
-            geometry: renderable.geometry,
-            pipeline: pipeline_key(&shadow_material, Primitive::Mesh) | aux_key,
-            depth: 0.0,
-            textures,
-            start,
-            count: end - start,
-            instances: renderable.instances,
-            instance_count: if instanced { renderable.instance_count } else { 1 },
-            material: material_index,
-            custom: 0,
-        });
-        push_object(&mut pass.object_uniforms, &matrix_world, 0, skin, None);
-    }
-    pass
 }

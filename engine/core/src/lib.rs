@@ -28,5 +28,5 @@ pub use components::{Hierarchy, Primitive, Renderable, Skin, Transform, Visibili
 pub use constants::{GpuType, Usage};
 pub use geometry::{BufferGeometry, DrawRange, GeometryHandle, Group};
 pub use layers::Layers;
-pub use resources::{MapSlot, MapUv, Material, Shading, Side, TextureMaps, MAP_COUNT, Raycaster, RaycasterParams, RenderTarget, RenderTargetHandle, Timer, Uniform};
+pub use resources::{MapSlot, MapUv, Material, RenderState, Shading, Side, Stencil, TextureMaps, MAP_COUNT, MAX_CLIP_PLANES, Raycaster, RaycasterParams, RenderTarget, RenderTargetHandle, Timer, Uniform};
 pub use world::{CoreEvent, Entity, MaterialHandle, World};

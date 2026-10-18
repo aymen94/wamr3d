@@ -93,9 +93,12 @@ impl World {
     /// `far` for no limit. Sprites and objects with instances are skipped (see
     /// `raycastInstances`).
     /// `line_threshold` and `points_threshold` are how close, in world units, the ray must pass to a line or a point to
-    /// hit it; anything that is not a number means 1.
-    pub fn raycast(&self, root: u64, recursive: bool, origin: &Vector3, direction: &Vector3, near: f32, far: f32, line_threshold: f32, points_threshold: f32) -> RaycastHits {
+    /// hit it; anything that is not a number means 1. Objects whose layers do not share a
+    /// bit with `layers` are skipped (three.js `raycaster.layers`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn raycast(&self, root: u64, recursive: bool, origin: &Vector3, direction: &Vector3, near: f32, far: f32, line_threshold: f32, points_threshold: f32, layers: u32) -> RaycastHits {
         let mut raycaster = wamr_core::Raycaster::new(origin.inner, direction.inner, near, far);
+        raycaster.layers.mask = layers;
         raycaster.params.line_threshold = if line_threshold.is_finite() { line_threshold } else { 1.0 };
         raycaster.params.points_threshold = if points_threshold.is_finite() { points_threshold } else { 1.0 };
         RaycastHits { hits: wamr_objects::intersect_object(&self.inner, &raycaster, entity(root), recursive) }

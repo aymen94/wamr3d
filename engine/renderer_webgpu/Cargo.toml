@@ -3,7 +3,7 @@ name = "wamr-renderer"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "Frame preparation and shaders for the WAMR3D WebGPU renderer"
+description = "Frame preparation and shader data for WAMR3D's WebGPU renderer"
 
 [dependencies]
 wamr-core = { path = "../core" }

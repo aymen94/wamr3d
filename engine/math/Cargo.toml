@@ -3,7 +3,7 @@ name = "wamr-math"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "Port of the three.js math primitives (Phase 1 of WAMR3D)"
+description = "Three.js-compatible 3D math primitives for WAMR3D"
 
 [features]
 default = []

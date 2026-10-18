@@ -1,9 +1,9 @@
 [package]
 name = "wamr3d"
-version = "0.7.0"
+version = "0.7.5"
 edition = "2021"
 license = "MIT"
-description = "WAMR3D: WebAssembly bindings for the wamr-math and wamr-core crates"
+description = "WAMR3D WebAssembly engine and JavaScript bindings, including WebGPU and WebGL 2 renderers"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
