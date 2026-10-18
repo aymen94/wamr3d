@@ -45,7 +45,7 @@ function compareTable() {
 }
 
 export function benchmarks() {
-  const logs = repoFile(meta.dir);
+  const logs = meta.dir ? repoFile(meta.dir) : null;
   const canvasNote = resolutions.map((r) => `${resLabel(r)} → ${(meta.canvases[r] ?? ['not recorded']).map(resLabel).join(', ')}`).join('; ');
   const matrixReadback = lowLevel.find(([name]) => name === 'scene: read back 10,000 world matrices into one Float32Array');
   const webgpuAt10k = compare['1280x720'] ?? [];
@@ -59,10 +59,10 @@ export function benchmarks() {
     ['Rendering backends', 'WAMR3D on WebGPU and on its own WebGL 2 renderer; three.js WebGPURenderer on WebGPU and WebGLRenderer on WebGL 2. Pixel ratio 1.'],
     ['Resolution requested → canvas drawn', canvasNote],
     ['What is timed', 'CPU time in JavaScript, 0.1 ms resolution. GPU time is not measured; it shows only in the frame rate, which the display caps at 60.'],
-    ['Method', `One run per configuration, medians, nothing estimated. The comparison scene was not run at 3840×2160 (time limit).`],
+    ['Method', `One run per configuration, medians, nothing estimated.`],
     ['Failed configurations', failures.length ? failures.join('; ') : 'None: every configuration produced results.']
   ];
-  return shell(`${pageIntro({ label: 'Benchmarks', title: 'Measured, <span class="text-gradient">with context.</span>', intro: `One machine, fresh 1280×720 measurements and the earlier same-day results at three higher resolutions. Every number comes from the raw logs. <strong class="text-white">Longer bars are better.</strong>` })}
+  return shell(`${pageIntro({ label: 'Benchmarks', title: 'Measured, <span class="text-gradient">with context.</span>', intro: `One machine, one fresh run at four resolutions. Results are kept as a data snapshot; the original raw logs are no longer included. <strong class="text-white">Longer bars are better.</strong>` })}
   <div class="relative bg-gradient-to-b from-transparent via-ink-950/85 to-ink-950">
     <section class="mx-auto max-w-6xl px-6 pb-24">
       ${more('Test setup', `<div class="glass grid gap-5 rounded-3xl p-6 sm:grid-cols-2 lg:grid-cols-3">${setup.map(([k, v]) => `<div><p class="font-mono text-[11px] uppercase tracking-wider text-slate-400">${k}</p><p class="mt-1 text-slate-200">${v}</p></div>`).join('')}</div>`, '-mt-8 mb-14')}
@@ -84,7 +84,7 @@ export function benchmarks() {
     </section>
 
     <section class="mx-auto max-w-6xl px-6 py-24">
-      ${sectionHead({ label: 'Object API', title: 'The three.js-style classes', intro: 'Scene work is faster; single math calls are slower.' })}
+      ${sectionHead({ label: 'Object API', title: 'The three.js-style classes', intro: 'Scene work is faster; math values are plain JavaScript, as in three.js. Both libraries run in one Node.js process here; run each in its own process, the vector allocation and chain workloads take the same time in both (0.84 against 0.81 ms, and 2.18 against 2.14 ms).' })}
       <div data-reveal>${speedTable(objectApi, 'Object API benchmark: WAMR3D speed against three.js')}</div>
       ${more('Details', '<p>The same application code run against <code class="font-mono">wamr3d/compat</code> and three.js in Node.js, median of 21 (<code class="font-mono">bench/compat.mjs</code>). Use the math classes for convenience rather than speed: each call crosses into WebAssembly.</p>')}
     </section>
@@ -106,7 +106,7 @@ node website/scripts/benchmark-data.mjs bench/results/<date>`, { title: 'termina
         <div class="space-y-4 text-slate-400" data-reveal>
           <p>Or open the <a class="text-brand-cyan hover:text-white" href="./examples/showcase/" target="_blank" rel="noreferrer">live showcase</a> and press “Compare all six renderers”.</p>
           <p>Close other headless browsers first: leftovers can slow every engine by 20–50%.</p>
-          <div class="flex flex-wrap gap-3">${button('./examples/showcase/', 'Open the showcase', 'primary', true)}${button(logs, 'Raw logs of this run', 'secondary', true)}</div>
+          <div class="flex flex-wrap gap-3">${button('./examples/showcase/', 'Open the showcase', 'primary', true)}${logs ? button(logs, 'Raw logs of this run', 'secondary', true) : ''}</div>
         </div>
       </div>
     </section>

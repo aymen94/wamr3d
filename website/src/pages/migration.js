@@ -13,20 +13,20 @@ const differences = [
   ['<code>WebGLRenderer</code>', 'Works: the same renderer drawing with WebGL 2. <code>WebGPURenderer</code> picks WebGPU or WebGL 2 by itself'],
   ['<code>WebGPURenderer</code> falls back to WebGL 2', 'The same here, with WAMR3D\'s own WebGL 2 renderer; <code>backend: \'webgpu\'</code> or <code>\'webgl\'</code> (or <code>forceWebGL</code>) pins one. <a class="text-brand-cyan hover:text-white" href="#/docs#no-webgpu">Backends</a>'],
   ['<code>MeshStandardMaterial</code> with environment and many maps', '<code>color</code>, <code>map</code>, <code>roughness</code>, <code>metalness</code>, <code>emissive</code>, the normal, roughness, metalness, emissive, alpha and ambient-occlusion maps (one shared uv transform), <code>alphaTest</code>, <code>envMap</code> or <code>scene.environment</code> (equirectangular, one per frame), <code>side</code>, <code>transparent</code>, <code>opacity</code>, <code>depthTest</code>, <code>depthWrite</code>, <code>vertexColors</code>. Unsupported parameters are stored, have no effect and log one warning'],
-  ['<code>MeshPhysicalMaterial</code>', 'Drawn as <code>MeshStandardMaterial</code>; clearcoat, sheen, transmission and the other extensions log one warning'],
-  ['A missing class is <code>undefined</code>', 'Unsupported classes (<code>SkinnedMesh</code>, <code>ShaderMaterial</code>, …) throw “not available yet”'],
-  ['Any number of lights', 'Up to 16 directional, point and spot lights combined, plus ambient and hemisphere lights. Directional and spot lights support PCF shadows; point-light shadows are not available'],
-  ['Shadows from any light', 'Directional and spot shadows support PCF filtering, up to 4 shadow-casting lights per frame. Other shadow-map types draw as PCF. Point lights cast no shadows'],
-  ['Points, sprites, render targets and tone mapping', 'Supported, with limitations: points are one pixel, picking a sprite needs <code>raycaster.camera</code> as in three.js, and screen tone mapping applies to the whole frame'],
+  ['<code>MeshPhysicalMaterial</code>', 'Clearcoat, sheen, the specular layer, iridescence, anisotropy and transmission with dispersion, with every layer\'s maps'],
+  ['<code>ShaderMaterial</code>', 'GLSL draws on WebGL 2; on WebGPU it draws unlit, as three.js\'s <code>WebGPURenderer</code> takes no GLSL'],
+  ['Any number of lights', 'Up to 16 directional, point, spot and rectangular area lights combined, plus ambient, hemisphere lights and light probes'],
+  ['Shadows from any light', 'Directional, spot and point lights; basic, PCF or VSM filtering (<code>PCFSoftShadowMap</code> draws as PCF, as in three.js\'s <code>WebGPURenderer</code>); up to 16 shadow maps per frame'],
+  ['Points, sprites, render targets and tone mapping', 'Supported: points and lines above one pixel are drawn as quads, render targets take depth textures, picking a sprite needs <code>raycaster.camera</code> as in three.js'],
   ['<code>object.matrix.elements[ 12 ] = 5</code>', '<code>matrixWorld</code>, <code>matrix.elements</code>, <code>box.min</code> and similar are copies. Use <code>position</code>, <code>rotation</code>, <code>scale</code> or the value’s methods'],
   ['Numbers are 64-bit', 'Stored as 32-bit floats; results agree to about <code>1e-6</code>'],
   ['Garbage collected', 'Also here; <code>dispose()</code> releases engine objects at once']
 ];
 
 const missing = [
-  ['Rendering', 'Light, bump, displacement, specular and gradient maps; per-map uv transforms; cube textures; more than one environment map per frame; the physical extensions of <code>MeshPhysicalMaterial</code>; more than 16 lights; area lights; point-light shadows; shadow modes other than PCF; post-processing; render-target depth textures and multiple attachments; lines wider than one pixel.'],
-  ['Objects and materials', '<code>SkinnedMesh</code>, <code>ShaderMaterial</code>, wireframes, morph targets.'],
-  ['Everything else', 'Loaders other than <code>TextureLoader</code>, the animation system, audio, controls, and helpers other than <code>GridHelper</code> and <code>AxesHelper</code>.']
+  ['Loaders', 'GLTFLoader and other format loaders (FBX, OBJ, RGBE, EXR, KTX2, Draco). <code>ObjectLoader</code> reads three.js\'s JSON.'],
+  ['Shaders', 'Node-based (TSL) materials and post-processing; lights, fog and shadows inside <code>ShaderMaterial</code>.'],
+  ['Add-ons', '<code>TransformControls</code> and <code>ArcballControls</code>. Controls, post-processing passes and wide lines are in <code>wamr3d/addons/</code> (from 0.7.0).']
 ];
 
 const steps = [
@@ -53,10 +53,6 @@ export function migration() {
     <section id="migration-choices" class="mx-auto max-w-6xl scroll-mt-24 px-6 pb-16">
       ${sectionHead({ label: 'Choose your setup', title: 'One engine, two ways to build', intro: 'Start with the API and rendering backend that fit your project. You can move from the familiar route to batched calls later, without changing the engine.' })}
       <div class="grid gap-4 md:grid-cols-3">${choices.map(([title, api, body, sample], i) => `<article class="glass rounded-3xl p-6" data-reveal style="--reveal-delay:${i * 70}ms"><p class="font-mono text-[11px] uppercase tracking-wider text-brand-cyan">Option 0${i + 1}</p><h2 class="mt-3 font-display text-xl font-semibold text-white">${title}</h2><p class="mt-1 font-mono text-xs text-slate-400">${code(api)}</p><p class="mt-4 text-sm leading-relaxed text-slate-400">${code(body)}</p>${codeBlock(sample, { title: 'app.js', className: 'mt-5' })}</article>`).join('')}</div>
-      <div class="glass mt-5 flex flex-col gap-5 rounded-3xl p-6 sm:flex-row sm:items-center sm:justify-between" data-reveal>
-        <div class="max-w-2xl"><p class="font-mono text-[11px] uppercase tracking-[0.18em] text-brand-cyan">Version used on this site</p><p class="mt-2 text-sm leading-relaxed text-slate-400">Built with WAMR3D <code class="font-mono text-slate-200">^0.6.0</code>. The caret accepts compatible updates within the 0.5 release line; pin <code class="font-mono text-slate-200">0.6.0</code> if you need identical installs across builds.</p></div>
-        <a href="https://www.npmjs.com/package/wamr3d" target="_blank" rel="noreferrer" class="inline-flex shrink-0 items-center gap-3 rounded-2xl border border-brand-cyan/20 bg-brand-cyan/5 px-4 py-3 transition hover:border-brand-cyan/50 hover:bg-brand-cyan/10"><span class="font-mono text-xs text-slate-400">npm install</span><code class="font-mono text-sm font-semibold text-brand-cyan">wamr3d@^0.6.0</code><span aria-hidden="true" class="text-slate-400">↗</span></a>
-      </div>
     </section>
     <section class="mx-auto max-w-6xl px-6 py-24">
       ${sectionHead({ label: 'Differences', title: 'What to watch for' })}

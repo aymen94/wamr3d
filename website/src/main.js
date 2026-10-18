@@ -90,7 +90,7 @@ function bind() {
     let popover = button.parentElement.querySelector('[data-renderer-popover]');
     if (!popover) {
       popover = document.createElement('div');
-      popover.className = 'glass absolute right-0 top-full z-50 mt-2 hidden w-full rounded-2xl p-2 shadow-2xl shadow-black/40';
+      popover.className = 'menu-surface relative z-50 mt-2 hidden w-full rounded-2xl p-2';
       popover.dataset.rendererPopover = '';
       popover.id = button.getAttribute('aria-controls') || '';
       popover.innerHTML = desktopPopover.innerHTML;
