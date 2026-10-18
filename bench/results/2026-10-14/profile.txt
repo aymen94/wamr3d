@@ -1,5 +1,0 @@
-animate (JavaScript)      2.43 ms     22 ns per node
-setRotations              6.24 ms     57 ns per node
-updateMatrixWorld         6.52 ms     59 ns per node
-matricesWorldPtr          1.96 ms     18 ns per node
-total                    17.15 ms   for 110,009 nodes
