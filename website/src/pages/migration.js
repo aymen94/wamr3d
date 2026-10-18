@@ -13,20 +13,20 @@ const differences = [
   ['<code>WebGLRenderer</code>', 'Works: the same renderer drawing with WebGL 2. <code>WebGPURenderer</code> picks WebGPU or WebGL 2 by itself'],
   ['<code>WebGPURenderer</code> falls back to WebGL 2', 'The same here, with WAMR3D\'s own WebGL 2 renderer; <code>backend: \'webgpu\'</code> or <code>\'webgl\'</code> (or <code>forceWebGL</code>) pins one. <a class="text-brand-cyan hover:text-white" href="#/docs#no-webgpu">Backends</a>'],
   ['<code>MeshStandardMaterial</code> with environment and many maps', '<code>color</code>, <code>map</code>, <code>roughness</code>, <code>metalness</code>, <code>emissive</code>, the normal, roughness, metalness, emissive, alpha and ambient-occlusion maps (one shared uv transform), <code>alphaTest</code>, <code>envMap</code> or <code>scene.environment</code> (equirectangular, one per frame), <code>side</code>, <code>transparent</code>, <code>opacity</code>, <code>depthTest</code>, <code>depthWrite</code>, <code>vertexColors</code>. Unsupported parameters are stored, have no effect and log one warning'],
-  ['<code>MeshPhysicalMaterial</code>', 'Clearcoat, sheen, the specular layer, iridescence, anisotropy and transmission with dispersion, with every layer\'s maps'],
-  ['<code>ShaderMaterial</code>', 'GLSL draws on WebGL 2; on WebGPU it draws unlit, as three.js\'s <code>WebGPURenderer</code> takes no GLSL'],
-  ['Any number of lights', 'Up to 16 directional, point, spot and rectangular area lights combined, plus ambient, hemisphere lights and light probes'],
-  ['Shadows from any light', 'Directional, spot and point lights; basic, PCF or VSM filtering (<code>PCFSoftShadowMap</code> draws as PCF, as in three.js\'s <code>WebGPURenderer</code>); up to 16 shadow maps per frame'],
-  ['Points, sprites, render targets and tone mapping', 'Supported: points and lines above one pixel are drawn as quads, render targets take depth textures, picking a sprite needs <code>raycaster.camera</code> as in three.js'],
+  ['<code>MeshPhysicalMaterial</code>', 'Drawn as <code>MeshStandardMaterial</code>; physical extensions such as clearcoat, sheen and transmission are not implemented'],
+  ['<code>ShaderMaterial</code>', 'Not supported'],
+  ['Any number of lights', 'Up to 16 directional, point and spot lights, plus ambient and hemisphere lights; area lights are not supported'],
+  ['Shadows from any light', 'Directional and spot lights with PCF filtering; point-light shadows and other shadow filters are not supported'],
+  ['Points, sprites, render targets and tone mapping', 'Supported with limits: points and lines are one pixel wide; render-target depth textures and multiple attachments are not supported'],
   ['<code>object.matrix.elements[ 12 ] = 5</code>', '<code>matrixWorld</code>, <code>matrix.elements</code>, <code>box.min</code> and similar are copies. Use <code>position</code>, <code>rotation</code>, <code>scale</code> or the value’s methods'],
   ['Numbers are 64-bit', 'Stored as 32-bit floats; results agree to about <code>1e-6</code>'],
   ['Garbage collected', 'Also here; <code>dispose()</code> releases engine objects at once']
 ];
 
 const missing = [
-  ['Loaders', 'GLTFLoader and other format loaders (FBX, OBJ, RGBE, EXR, KTX2, Draco). <code>ObjectLoader</code> reads three.js\'s JSON.'],
-  ['Shaders', 'Node-based (TSL) materials and post-processing; lights, fog and shadows inside <code>ShaderMaterial</code>.'],
-  ['Add-ons', '<code>TransformControls</code> and <code>ArcballControls</code>. Controls, post-processing passes and wide lines are in <code>wamr3d/addons/</code> (from 0.7.0).']
+  ['Rendering and materials', 'Cube textures, wireframes, area lights, point-light shadows, shadow filters other than PCF, post-processing, render-target depth textures and multiple attachments.'],
+  ['Objects and geometry', '<code>SkinnedMesh</code>, <code>Bone</code>, <code>ShaderMaterial</code>, morph targets and geometry primitives beyond box, plane, sphere, cylinder, cone, circle, ring and torus.'],
+  ['Supporting systems', 'Loaders beyond <code>TextureLoader</code>, animation, audio, controls and helpers other than <code>GridHelper</code> and <code>AxesHelper</code>.']
 ];
 
 const steps = [
@@ -59,7 +59,7 @@ export function migration() {
       <div class="glass relative overflow-x-auto rounded-3xl p-2 sm:p-4" data-reveal><table class="w-full min-w-[36rem] text-left text-sm"><thead class="font-mono text-[11px] uppercase tracking-wider text-slate-400"><tr><th class="w-2/5 py-3 pl-3 pr-4 font-medium">In three.js</th><th class="py-3 pr-4 font-medium">In wamr3d/compat</th></tr></thead><tbody>${differences.map(([a, b]) => `<tr class="border-t border-white/5 align-top"><td class="py-3 pl-3 pr-4 text-slate-300">${code(a)}</td><td class="py-3 pr-4 text-slate-400">${code(b)}</td></tr>`).join('')}</tbody></table></div>
     </section>
     <section class="mx-auto max-w-6xl px-6 py-24">
-      ${sectionHead({ label: 'Not available yet', title: 'Keep three.js for these', intro: 'If your application depends on any of them, keep that part outside WAMR3D or wait for it to land.' })}
+      ${sectionHead({ label: 'Not available yet', title: 'Keep three.js for these', intro: 'If your application depends on any of these features, keep that part outside WAMR3D.' })}
       <div class="grid gap-4 sm:grid-cols-2">${missing.map(([title, body]) => `<div class="glass rounded-3xl p-6" data-reveal><h3 class="font-semibold text-white">${title}</h3><p class="mt-2 text-sm leading-relaxed text-slate-400">${code(body)}</p></div>`).join('')}</div>
       <div class="mt-10 flex flex-wrap gap-3" data-reveal>${button(repoFile('MIGRATION.md'), 'Full migration guide', 'primary', true)}${button('#/benchmarks', 'Review the benchmarks', 'secondary')}</div>
     </section>

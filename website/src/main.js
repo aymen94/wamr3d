@@ -145,7 +145,6 @@ function bind() {
   }));
 
   app.querySelectorAll('[data-chart]').forEach(bindChart);
-  app.querySelector('[data-demo-start]')?.addEventListener('click', startDemo);
   spinReel(app.querySelector('[data-reel]'));
   if (!('gpu' in navigator)) app.querySelectorAll('[data-gpu-note]').forEach((note) => { note.hidden = false; });
   updateSceneStatus();
@@ -239,17 +238,6 @@ function spinReel(reel) {
     }
     index = next;
   }, 3200);
-}
-
-function startDemo(event) {
-  const container = event.currentTarget.closest('[data-demo]');
-  const frame = document.createElement('iframe');
-  frame.src = './examples/ports/crossy-road/index.html';
-  frame.title = 'Crossy Road on WAMR3D';
-  frame.allow = 'fullscreen';
-  frame.className = 'absolute inset-0 size-full border-0';
-  container.querySelector('[data-demo-poster]').replaceWith(frame);
-  frame.focus();
 }
 
 function reveal() {

@@ -135,12 +135,12 @@ function features() {
     <div class="mx-auto max-w-6xl">
       ${sectionHead({ label: 'What it is', title: 'A native core.<br><span class="text-gradient">A familiar surface.</span>', intro: 'Scene graph, transforms, cameras, geometry processing, culling and draw ordering run inside a WebAssembly module. You drive it from JavaScript through three.js-style classes or batched calls.' })}
       <div class="grid gap-5 md:grid-cols-6">
-        ${card('md:col-span-4', 'Rust → WebAssembly', 'The heavy lifting runs native.', 'Set transforms as cheaply as in three.js: the object API batches every change into the Rust engine once per frame. When you need more, the low-level API gives you handles, explicit disposal and zero-copy typed-array views of geometry and world matrices.', chips(['scene graph', 'world matrices', 'frustum culling', 'draw ordering', 'raycasting', 'batched updates']))}
-        ${card('md:col-span-2', 'WebGPU + WebGL 2', 'Its own renderers.', 'Not a wrapper around three.js. WebGPU where the browser has it, a native WebGL 2 renderer everywhere else, chosen automatically. Meshes (filled or wireframe), lines, points, sprites and instanced meshes; basic, Lambert, Phong, toon, normal, standard and physical materials; texture maps, equirectangular and cube environments, fog, up to 16 lights, shadows from directional, spot and point lights, tone mapping, render targets and 4× MSAA.')}
-        ${card('md:col-span-2', 'Object API', 'Code that reads like three.js.', 'Scene, Group, Mesh, InstancedMesh, Points, Sprite, render targets, cameras, sixteen shapes, ten materials, textures, five light types, shadows, tone mapping, Raycaster, Clock and the math types.')}
-        ${card('md:col-span-2', 'Batched API', 'One call, thousands of objects.', 'Handles and batched calls such as <code class="font-mono text-slate-200">setRotations</code>; read world matrices and geometry through typed-array views over engine memory, with no copy.')}
-        ${card('md:col-span-2', 'Parity', 'Checked against.', 'Over 7,600 reference cases generated from the three.js source are replayed against the Rust code. All 23 renderer cases are compared with stored three.js images.')}
-        ${card('md:col-span-6', 'Roadmap', 'Coming next.', 'Skinning, morph targets, shader materials, area lights, VSM shadows, post-processing, animation, loaders, audio and controls are in the repository for the 0.7.0 release. Still to come:', `<ul class="mt-5 grid gap-x-8 gap-y-2 text-sm text-slate-300 sm:grid-cols-2 lg:grid-cols-3">${['GLTFLoader and other format loaders', 'Node-based (TSL) materials', 'Lights and fog in shader materials', 'TransformControls'].map((item) => `<li class="flex items-center gap-2"><span class="text-slate-400">${icon('cross')}</span>${item}</li>`).join('')}</ul>`)}
+        ${card('md:col-span-4', 'Rust → WebAssembly', 'Batch the scene work.', 'The engine handles scene graphs, transforms, cameras, geometry processing, culling and draw ordering. The familiar object API batches updates once per frame; the low-level API offers generational handles and typed-array views over engine memory.', chips(['scene graph', 'world matrices', 'frustum culling', 'draw ordering', 'raycasting', 'batched updates']))}
+        ${card('md:col-span-2', 'WebGPU + WebGL 2', 'Two native renderers.', 'WAMR3D prepares frames in Rust and draws them through its own WebGPU or WebGL 2 renderer. The renderer supports meshes, lines, points, sprites and instancing, with a growing set of materials, maps, lights and shadows.')}
+        ${card('md:col-span-2', 'Object API', 'A familiar way to build scenes.', 'Use three.js-style classes and chaining for supported scene, object, camera, geometry, material and math APIs. Object transforms stay in JavaScript and synchronize with the engine in batches.')}
+        ${card('md:col-span-2', 'Batched API', 'Fewer calls for large scenes.', 'Use generational handles and batched operations when many objects change each frame. Geometry and world-matrix data can be read through typed-array views over engine memory.')}
+        ${card('md:col-span-2', 'Parity', 'Behavior checked against three.js.', 'The repository includes thousands of generated value checks and stored visual comparisons. See the implementation status and migration guide for current support and known differences.')}
+        ${card('md:col-span-6', 'Current scope', 'An evolving engine.', 'WAMR3D is not a complete replacement for three.js. The current engine still lacks features such as skinned meshes, morph targets, shader materials, point-light shadows, post-processing and most loaders, animation, audio and controls. The website demos use the published0.7.5 package; the repository contains newer, unreleased work. Check the repository status for the full list of gaps.')}
       </div>
     </div>
   </section>`;
@@ -155,11 +155,11 @@ function pipeline() {
   </article>`;
   return `<section id="cpu-gpu" class="relative scroll-mt-24 px-6 py-20">
     <div class="mx-auto max-w-6xl">
-      ${sectionHead({ label: 'CPU + GPU', title: 'Turn your browser into<br><span class="text-gradient">a powerful 3D machine.</span>', intro: 'Browser 3D usually spends its frame in JavaScript before the GPU sees a single triangle. WAMR3D puts both processors to work: compiled Rust does the scene work on the CPU at native speed, and the GPU receives a frame that is ready to draw, through WebGPU or WebGL 2. No plug-in, no install, just a tab.' })}
+      ${sectionHead({ label: 'CPU + GPU', title: 'Put both processors<br><span class="text-gradient">to work.</span>', intro: 'WAMR3D prepares scene data in compiled Rust and sends a frame ready to draw through WebGPU or WebGL 2. No plug-in or separate install is needed; it runs in the browser.' })}
       <div class="grid gap-5 md:grid-cols-3">
-        ${step('01 · CPU, in WebAssembly', 'Native-speed scene work.', 'Rust compiled to WebAssembly with SIMD runs the whole scene: no garbage collector pauses, no object churn, data laid out in flat typed memory.', ['Transforms and world matrices, only for what changed', 'Frustum culling and draw ordering', 'Lights, shadows and materials packed into one uniform buffer', 'Thousands of objects moved by one batched call'])}
+        ${step('01 · CPU, in WebAssembly', 'Scene work in compiled Rust.', 'The Rust engine stores scene data in typed memory and handles transforms, culling and draw ordering. The object API keeps user-facing transforms in JavaScript and synchronizes them in batches.', ['Transforms and world matrices, only for what changed', 'Frustum culling and draw ordering', 'Lights, shadows and materials packed into one uniform buffer', 'Thousands of objects moved by one batched call'])}
         ${step('02 · The boundary', 'One crossing per frame.', 'The object API records your changes and sends them to the engine in a batch. Geometry and world matrices are typed-array views over engine memory: read without copying.', ['Zero-copy views of geometry and matrices', 'Vertex and index buffers uploaded only when they change', 'No per-property calls into WebAssembly'])}
-        ${step('03 · GPU, WebGPU or WebGL 2', 'A frame that is ready to draw.', 'A thin host turns the prepared frame into GPU commands: pipelines and programs are cached, instanced meshes draw in one call, and the same frame runs on WebGPU or WebGL 2.', ['Cached pipelines, no per-frame rebuilds', 'Instancing, 4× MSAA, PCF shadows, physically based lighting', 'Automatic WebGL 2 fallback on machines without WebGPU'])}
+        ${step('03 · GPU, WebGPU or WebGL 2', 'A frame that is ready to draw.', 'A thin host turns the prepared frame into GPU commands: pipelines and programs are cached, instanced meshes draw in one call, and the same frame runs on WebGPU or WebGL 2.', ['Cached pipelines, no per-frame rebuilds', 'Instancing, PCF shadows and physically based lighting', 'Automatic backend selection with WebGL 2 support'])}
       </div>
       <p class="mt-8 max-w-3xl text-sm leading-relaxed text-slate-400" data-reveal>The result: the CPU time three.js spends updating and submitting a scene shrinks, and more of each frame is left to the GPU. How much depends on the scene; the <a class="text-brand-cyan hover:text-white" href="#/benchmarks">benchmarks</a> show measured medians, including where WAMR3D is slower.</p>
     </div>
@@ -196,27 +196,15 @@ function performance() {
 
 function liveDemo() {
   const others = [
-    ['#/examples', 'Games and scenes', 'Crossy Road, Stack, City 3D and a voxel world, ported by changing the import.'],
+    ['#/examples', 'Engine demos', 'Explore the browser demo, visual parity cases and renderer comparisons.'],
     ['./examples/showcase/', 'Showcase', 'Up to 100,000 animated bodies. Switch between WAMR3D and three.js and compare live timings.'],
     ['./examples/compare/', 'Side by side', 'The same scene on each engine, with timing overlays.']
   ];
   return `<section id="demo" class="relative px-6 py-20">
     <div class="mx-auto max-w-6xl">
       ${sectionHead({ label: 'Live demos', title: 'Running in your browser.<br><span class="text-gradient">Right now.</span>', intro: 'Every demo below is drawn by WAMR3D, with WebGPU or WebGL 2 depending on your browser, except the three.js engines you choose to compare against.' })}
-      <div class="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-        <div class="gradient-border relative aspect-[16/10] overflow-hidden rounded-3xl bg-ink-900" data-reveal data-demo>
-          <div class="grid-backdrop absolute inset-0 flex flex-col items-center justify-center gap-5 p-8 text-center" data-demo-poster>
-            <p class="font-mono text-[11px] uppercase tracking-[0.2em] text-brand-cyan">A three.js game · now on WAMR3D</p>
-            <p class="max-w-sm font-display text-2xl font-semibold text-white">Crossy Road, with only the import changed. Hop with the arrow keys.</p>
-            <button type="button" data-demo-start class="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-ink-950 transition hover:bg-brand-cyan">
-              <svg viewBox="0 0 20 20" class="size-4" fill="currentColor" aria-hidden="true"><path d="M6 4.5v11l9-5.5Z"/></svg>Play the game
-            </button>
-            <a href="./examples/ports/crossy-road/" target="_blank" rel="noreferrer" class="text-xs text-slate-400 underline-offset-4 hover:text-white hover:underline">or open it full screen</a>
-          </div>
-        </div>
-        <div class="flex flex-col gap-4">
-          ${others.map(([href, title, body], i) => `<a href="${href}" target="_blank" rel="noreferrer" class="glass group flex flex-1 flex-col justify-between rounded-3xl p-6 transition hover:-translate-y-0.5 hover:bg-white/[0.07]" data-reveal style="--reveal-delay:${i * 80}ms"><div><h3 class="flex items-center justify-between font-display text-lg font-semibold text-white">${title}<span class="text-slate-400 transition group-hover:text-brand-cyan">${icon('external')}</span></h3><p class="mt-2 text-sm leading-relaxed text-slate-400">${body}</p></div></a>`).join('')}
-        </div>
+      <div class="grid grid-cols-1 gap-5 md:grid-cols-3">
+        ${others.map(([href, title, body], i) => `<a href="${href}" target="_blank" rel="noreferrer" class="glass group flex flex-col justify-between rounded-3xl p-6 transition hover:-translate-y-0.5 hover:bg-white/[0.07]" data-reveal style="--reveal-delay:${i * 80}ms"><div><h3 class="flex items-center justify-between font-display text-lg font-semibold text-white">${title}<span class="text-slate-400 transition group-hover:text-brand-cyan">${icon('external')}</span></h3><p class="mt-2 text-sm leading-relaxed text-slate-400">${body}</p></div></a>`).join('')}
       </div>
       <p class="mt-5 text-sm text-slate-400">The demos need a browser with WebGPU, such as current Chrome or Edge.</p>
     </div>
