@@ -1,97 +1,69 @@
 # STATUS.md: WAMR3D
 
-## Latest changes, not yet validated
+## Current state (2026-10-18)
 
-- **Rust bindings package version.** `engine/bindings/Cargo.toml` and `engine/Cargo.lock` use `0.5.0`; Rust and npm package versions are independent. The JavaScript package is currently `0.6.0`; internal Rust component crates remain at `0.1.0`.
-- **Performance hot paths.** The compatibility math wrapper avoids a rest-array allocation on each call and uses arity-specific dispatch for common signatures. Raycasting caches a geometry's local sphere on first use instead of cloning and rescanning the geometry for every mesh and ray; the internal cache is excluded from geometry equality. Float32 bounds and geometry transforms iterate backing slices directly, avoiding per-component enum access. `Object3D.matrixWorld` now copies into its reusable Matrix4 in one Wasm call instead of allocating an intermediate array. Node and showcase measurements were rerun in `bench/results/2026-10-15-refresh/`.
-- **WebGL 2 backend and automatic fallback.** `engine/bindings/js/webgl.js` draws the engine's frames with WebGL 2 and the GLSL in `engine/renderer_webgpu/src/glsl.rs` (mesh with all materials, maps, lights, shadows and environment lighting; shadow, background, tone-mapping output and environment-prefiltering passes). `WebGPURenderer` takes `backend: 'auto' | 'webgpu' | 'webgl'` (default `'auto'`: WebGPU, then WebGL 2, then the software WebGPU adapter) and three.js's `forceWebGL`; `renderer.backend` reports which one draws. `WebGLRenderer` is now the same renderer on WebGL 2 instead of a class that throws. Checked on 2026-10-15 (Chrome headless, D3D11): `node parity/visual/run.mjs --backend=webgl` passes 26 of 28 cases against the three.js WebGPU references; `points` (4.4% of pixels off) and `lines` (2.5%) fail because 1-pixel points and lines rasterize slightly differently under WebGL's multisampling. All 12 ported examples run on it (`node examples/ports/check.mjs --webgl`). Two fixes came from those runs: canvas frames now always go through a linear half-float target, so blending is in linear light as on WebGPU (it was sRGB blending, which failed `transparent`, `vertex_alpha` and `fog`), and render targets are drawn with y flipped so their rows match WebGPU's (the `render_target` case was upside down and sampled black). The package's `files` list now includes `compat/`, `webgpu/` and `webgl.js` (the module folders were missing from it). The SIMD module is 566.6 KiB with the GLSL sources.
-- Version references to the three.js reference were removed from comments, documentation, the website and scripts. The exact pin stays only where tools need it: `three` in `package.json` and its lockfile, the CDN constants (`examples/three-reference.js`, `REFERENCE_URL` in `parity/visual/cases.js`) and the metadata of generated fixtures. Stored logs in `bench/results/` were left as recorded; `website/scripts/benchmark-data.mjs` now drops any revision from the engine names it reads.
-- Engine names shown by the comparison pages and written by future measurements no longer carry a revision (`three.js · WebGPU`).
-- Website and README positioning: "Unlock your imagination without limits", a high-performance native WebAssembly engine with familiar three.js APIs. The README reports the refreshed 2.2× result for one batched 10,000-transform update; the website benchmark page reports the refreshed workload data.
-- `MIGRATION.md` is now a short, generic guide (install and import, differences, browsers without WebGPU, batching, what is missing).
-- Fresh test and benchmark results are recorded below.
+- Published npm package: `wamr3d@0.6.0`. The repository is far ahead of it: everything under "Done since 0.6.0" is unreleased. The next release should be `0.7.0` ([NPM.md](NPM.md)); the website keeps depending on `0.6.0` until it is published.
+- Rust crate `wamr3d` (bindings) is `0.5.0`, independent of the npm version; internal crates stay at `0.1.0`.
+- **Not yet verified.** This round was implemented without running the checks, on request. What was run: `cargo build` (native and `wasm32-unknown-unknown`), `cargo test --workspace --no-run` (the tests compile), `node --check` on every JavaScript module, and `node engine/bindings/build.mjs`. Not run: the Rust tests, the parity checks, the visual parity cases, the typings check and the example smoke tests. Several renderer unit tests (`engine/renderer_webgpu/src/tests.rs`) still assert the old per-object uniform layout and will fail until they are updated to the material blocks (see DECISIONS.md, "Frame format").
 
-## Verification (2026-10-15)
+## Done since 0.6.0
 
-The full test suite was run on the current tree after the changes below. Every command in README "Tests and measurements" except the benchmarks passed:
+### Renderer (WebGPU and WebGL 2)
 
-- `cargo test --workspace`: 654 Rust tests (unit, parity, allocation); `cargo build --workspace --target wasm32-unknown-unknown`; the math crate on `wasm32-wasip1`, scalar and SIMD.
-- `node parity/bindings/compat-check.mjs`: 1,537 values of the object API against stored three.js values (34 groups; 8 groups added this session cover colour spaces, `Triangle`, `Line3`, `Spherical`, `Cylindrical`, `Box3.setFromObject`, geometry copies, normalized and interleaved attributes, the new materials and maps, line loops, `LOD`, per-instance and sprite picking). Largest scaled error 5.7e-6.
-- `node parity/bindings/check.mjs`: 44,179 values of the low-level API against three.js live.
-- `node parity/visual/run.mjs`: 28 cases against stored three.js WebGPU images, including 5 new ones: `materials` (Phong, toon, normal, emissive, line loop), `vertex_alpha`, `environment`, `background_blurred` and `texture_maps`.
-- `tsc -p parity/bindings` (TypeScript 5, through `npx`), with the typecheck program extended to the new API.
-- `node examples/ports/check.mjs --three`, `node examples/webgpu/smoke.mjs`, `node examples/showcase/check.mjs`, `node examples/browser/smoke.mjs`.
+- **Frame format:** material settings moved out of the per-object uniforms into per-material blocks (1 KiB each, packed once per frame and bound with a dynamic offset); objects keep their matrices, flags, skin offset and sprite centre. Draw info has eight numbers per draw (material block and custom shader added). See DECISIONS.md.
+- **Texture slots:** 24 kinds of map share the 12 slots of a draw; maps that read the same texture share a slot (packed occlusion/roughness/metalness images take one). Every map has its own uv transform and uv set (`texture.channel`, `uv1`).
+- **Vertex tangents** for normal maps (and clearcoat normal and anisotropy frames), from a `tangent` attribute when the geometry has one.
+- **Skinning:** `SkinnedMesh`, `Skeleton`, `Bone`, attached and detached bind modes. Bone matrices are computed in the engine per frame and drawn from one float texture; shadows of skinned meshes follow the pose; raycasts test the posed triangles.
+- **Morph targets:** blended in the engine into a geometry of the mesh's own when the weights change (relative or absolute), so picking and bounds see the blended shape.
+- **`MeshPhysicalMaterial`:** transmission (with thickness, attenuation and dispersion, over a mipmapped copy of the opaque scene), iridescence (thin-film fresnel), anisotropy, and the maps of every layer (`clearcoatMap`, `clearcoatRoughnessMap`, `clearcoatNormalMap`, `sheenColorMap`, `sheenRoughnessMap`, `specularIntensityMap`, `specularColorMap`, `transmissionMap`, `thicknessMap`, `iridescenceMap`, `iridescenceThicknessMap`, `anisotropyMap`).
+- **Lights:** `RectAreaLight` (without three.js's LTC tables: exact diffuse form factor, representative-point specular) and `LightProbe` (spherical harmonics).
+- **Shadows:** `VSMShadowMap` (moments blurred per shadow map, Chebyshev test); alpha-tested casters and displacement in shadow maps.
+- **Environments:** up to eight environment maps per frame (the scene's and materials' own `envMap`), stacked in one texture; render-target textures as environment or background; HDR (float) cube textures and float `DataTexture`s.
+- **Blending:** three.js's normal, additive, subtractive and multiply blending, and `premultipliedAlpha`.
+- **Points and lines:** `PointsMaterial.size` above one pixel (with `sizeAttenuation`, `map` and `alphaMap`) and `linewidth` above one pixel, drawn as quads.
+- **Render targets:** `DepthTexture`, several colour attachments (`count`; the built-in materials write the first), multisampled targets on WebGL 2, `renderer.autoClear`.
+- **`ShaderMaterial` and `RawShaderMaterial`** (GLSL, three.js's built-in uniforms and attributes, custom attributes including integer ones) on WebGL 2. On WebGPU they draw unlit, as three.js's WebGPURenderer draws no GLSL either.
+- **Post-processing:** built-in full-screen effects (copy, luminosity high pass, blur, bloom composite, FXAA, output) on both backends.
 
-No benchmark or profiling has been run since these changes; see "Measurements".
+### Object API and add-ons
 
-## Done in this round
+- Curves, paths and shapes (`Curve` and every curve class, `CurvePath`, `Path`, `Shape`, `ShapePath`, `ShapeUtils`, `Box2`), with `ShapeGeometry`, `ExtrudeGeometry`, `TubeGeometry`, `EdgesGeometry` and `WireframeGeometry`.
+- Animation: keyframe tracks, interpolants, `AnimationClip`, `AnimationMixer`, `AnimationAction`, `PropertyBinding`, `PropertyMixer`, `AnimationObjectGroup`, `AnimationUtils`.
+- `EventDispatcher` on objects, materials, geometries and textures (`dispose` events), `Controls`.
+- Loaders: `Cache`, `LoadingManager`, `Loader`, `LoaderUtils`, `FileLoader`, `ImageLoader`, `ImageBitmapLoader`, `TextureLoader`, `CubeTextureLoader`, `DataTextureLoader`, `AnimationLoader`, `BufferGeometryLoader`, `MaterialLoader`, `ObjectLoader`.
+- Audio: `AudioContext`, `AudioListener`, `Audio`, `PositionalAudio`, `AudioAnalyser`, `AudioLoader`.
+- Helpers: `ArrowHelper`, `BoxHelper`, `Box3Helper`, `PlaneHelper`, `CameraHelper`, `DirectionalLightHelper`, `PointLightHelper`, `SpotLightHelper`, `HemisphereLightHelper`, `PolarGridHelper`, `SkeletonHelper`.
+- All three.js constants; `SphericalHarmonics3`, `UniformsUtils`.
+- Add-ons under `wamr3d/addons/` with three.js's paths: `controls/` (`OrbitControls`, `MapControls`, `PointerLockControls`, `FirstPersonControls`, `FlyControls`, `TrackballControls`, `DragControls`), `postprocessing/` (`EffectComposer`, `Pass`, `RenderPass`, `ShaderPass`, `OutputPass`, `UnrealBloomPass`, `FXAAPass`), `shaders/` (`CopyShader`, `FXAAShader`, `LuminosityHighPassShader`, `OutputShader`), `lines/` (`Line2`, `LineSegments2`, `LineMaterial`, `LineGeometry`, `LineSegmentsGeometry`).
 
-- **Physically based lighting follows three.js.** The standard material now uses three.js's split-sum table (16 × 16, read with bilinear filtering), works out indirect scattering for a dielectric and a metal and mixes them by metalness, keeps diffuse energy conservation on the dielectric path, takes `1 − F` from the direct diffuse term, compensates direct specular for multiple scattering, and widens roughness where the normal turns quickly across a pixel. Light from ambient and hemisphere lights is diffuse only, as in three.js. Mean differences from three.js fell from 1.03 to 0.04 of 255 (`lights`), 1.43 to 0.04 (`lights_many`) and 0.20 to 0.02 (`sphere`); the earlier "strong-light comparison differs by about 1.8/255" is resolved.
-- **Texture maps.** `normalMap` and `normalScale` (tangent space, frame from screen-space derivatives), `roughnessMap` (g), `metalnessMap` (b), `emissiveMap` (rgb), `alphaMap` (read from r, as three.js's WebGPU renderer does), `aoMap` (r) and `aoMapIntensity`, and `alphaTest`, on the materials that have them in three.js. Seven texture slots per draw; the engine interns each frame's distinct texture sets so the host makes one bind group per set. All maps share one uv transform.
-- **Environment maps and backgrounds in the object API** (added in the previous round, now verified): `scene.environment`, `environmentIntensity`, `environmentRotation`, `envMap`, `envMapIntensity`, `envMapRotation`, and texture backgrounds with `backgroundBlurriness`, `backgroundIntensity` and `backgroundRotation`. Running the new visual cases found and fixed a bug: the prefiltering pass used an automatic pipeline layout that left out a binding, so no environment was ever prefiltered.
-- **Previously added, now verified:** `MeshPhongMaterial`, `MeshToonMaterial`, `MeshNormalMaterial`, `MeshPhysicalMaterial` (drawn as standard), `emissive`, `LineLoop`, `LOD`, four-component vertex colours, per-instance and sprite picking, `Box3.setFromObject`, `BufferGeometry.clone`/`copy`/`setFromPoints`, normalized and interleaved attributes, `Triangle`, `Line3`, `Spherical`, `Cylindrical`, colour-space arguments, `uuid`.
-- **Typings.** Getters of engine values (`box.min`, `ray.origin`) are typed as the object-API classes they return.
-- **Modules.** Source files over about 1,000 lines were split by area without changing public APIs; the generated wasm-bindgen API is identical (checked by diffing `wamr3d_wasm.d.ts`), and `compat.js` exports the same 138 names:
-  - `engine/bindings/js/compat.js` (4,769 lines) is now the entry point (109 lines) over `compat/`: `constants`, `engine` (World, batching, registries), `math`, `transform`, `object3d`, `objects`, `cameras`, `lights`, `geometry`, `textures`, `materials`, `picking`, `renderer`.
-  - `engine/bindings/js/webgpu.js` (1,125) keeps the host; prefiltering and the background pass moved to `webgpu/environment.js`, shared formats to `webgpu/formats.js`.
-  - `engine/bindings/src/lib.rs` (2,105) keeps the math base classes and `World`; `renderer.rs`, `picking.rs`, `world.rs` and `resources.rs` hold the rest. `bindings/src/math.rs` (1,215) moved the shapes to `math/shapes.rs`.
-  - `engine/renderer_webgpu/src/lib.rs` (1,755) keeps the types; `shaders.rs`, `frame.rs`, `dfg.rs` and `tests.rs` hold the rest.
-  - `engine/core/src/world.rs` (1,232) moved its tests to `world/tests.rs`.
-- **Website** currently depends on the published npm package `wamr3d@^0.6.0`; `website/package-lock.json` resolves it to `0.6.0`.
+### Performance notes
 
-## Measurements
+- Material data is packed once per material per frame instead of once per draw; the per-object upload is 128 bytes read per draw.
+- Skinning matrices are computed in WebAssembly in one pass over the frame, uploaded as one texture; morph blending runs only when weights change.
+- Texture sets are interned across the main and shadow passes; shadow casters without an alpha test draw without a fragment stage.
+- Animation writes transforms through allocation-free `fromArray` on bound vectors, which reach the engine in the next batched flush.
 
-- `bench/results/2026-10-15-refresh/`: refreshed Node.js, compatibility, and 1280×720 showcase measurements. The 10,000-object comparison rows were also refreshed; 12- and 2,000-object comparison rows and higher-resolution browser logs reuse the same-day `2026-10-15-webgl` results. The 3840×2160 comparison remains unavailable. The website data was regenerated from this combined set and `npm run build --prefix website` passed. Node: batched 10,000-transform update 1.48 ms vs 3.19 ms in three.js; object API 10,000-mesh transform update 2.69 ms vs 7.30 ms. Showcase: at 10,000 separate meshes WAMR3D reached 57 fps (WebGPU) and 54 fps (WebGL 2); at 100,000 instances it reached 33 fps (WebGPU) and 35 fps (WebGL 2). One machine, one run per configuration.
+## Verification
 
-Historical benchmark runs made before the latest renderer and API changes:
-
-- `bench/results/2026-10-15-webgl/`: the earlier same-day run, superseded by `2026-10-15-refresh` for fresh Node and 1280×720 results. Its higher-resolution browser logs are reused by the refresh. The 3840×2160 comparison scene is unavailable.
-- `bench/results/2026-10-14/`: the earlier complete run, before texture maps, the three.js lighting model and the WebGL 2 backend.
-- `bench/results/2026-10-15/`: a later run of the same set; the 3840×2160 scene comparison failed (`compare-3840x2160.txt` holds a `measure.mjs` error), the other files are complete. Superseded by `2026-10-15-webgl`.
-- `bench/results/2026-10-15-current/`: fresh Node.js, compatibility, 1280×720 showcase, 100,000-instance showcase and browser comparison results. The higher-resolution logs were copied from the earlier same-day run; the 3840×2160 comparison remains unavailable.
-
-The fresh benchmark run is recorded below. Changes that can affect future runs include seven texture bindings per draw instead of one (bind groups per distinct texture set), the standard material's longer lighting code, and the object API split into modules (bundlers and the browser now load 14 files instead of 1). The SIMD module is 566.9 KiB.
-
-## Fresh verification and benchmarks (2026-10-15)
-
-- `cargo test --workspace`: 655 tests passed; `cargo build --workspace --target wasm32-unknown-unknown`: passed.
-- `node engine/bindings/build.mjs`: passed, producing a 566.9 KiB SIMD Wasm module.
-- `node parity/bindings/compat-check.mjs`: passed, 1,537 stored-reference values; largest scaled error 5.692e-6.
-- `node parity/bindings/check.mjs`: passed, 44,179 live-reference values; largest scaled error 6.147e-6.
-- `tsc -p parity/bindings`: passed.
-- Browser checks passed: `node examples/ports/check.mjs --three` (eight remaining pages on both engines), `node examples/browser/smoke.mjs`, `node examples/webgpu/smoke.mjs`, `node examples/showcase/check.mjs`, and `node parity/visual/run.mjs` (28 cases).
-- Fresh benchmark logs are in `bench/results/2026-10-15-current/`. Node microbenchmarks and the browser showcase/comparison were rerun at 1280×720; the higher resolutions were carried forward from the earlier run on the same date. The comparison scene has no 3840×2160 result. `website/src/data/benchmarks.js` was regenerated from these logs.
-- At 1280×720, 10,000 separate meshes ran at 60 fps on WAMR3D WebGPU with 13.2 ms CPU submission, versus 12 fps and 78.9 ms for three.js WebGPU. For 100,000 instanced bodies, WAMR3D ran at 33 fps with 25.6 ms CPU update, versus 10 fps and 80.5 ms for three.js WebGPU. In Node, one batched 10,000-transform update took 1.45 ms versus 2.72 ms for three.js; individual math operations remain slower across the Wasm boundary.
-- `npm run build --prefix website`: passed. Vite externalized Node's `fs/promises` import from the local package as expected for browser builds.
+Last full verification: 2026-10-16, on the tree before this round (659 Rust tests, parity checks, 35/35 visual cases on WebGPU, 32/35 on WebGL 2). See git history for that report. This round needs the full set run again (CONFIGURATION.md lists the commands); expect the renderer layout tests to need updating first.
 
 ## Ported examples
 
-`examples/ports/` holds three.js games and scenes run on WAMR3D through `wamr3d/compat` with the import changed: Crossy Road and Stack (Hunor Márton Borbély), City 3D (Victor Vergara), and the official examples `webgl_geometry_minecraft` and `webgl_lights_spotlights`, plus three pages written for WAMR3D (`fluid-particles`, `water`, `car`). The four BufferGeometry and picking example ports were removed from the site and repository. `?engine=three` runs the remaining ported code on three.js.
-
-The ports still carry workarounds written when features were missing; they can now be removed: Phong and toon stand-ins in `city` and `spotlights`, the hand-built boxes instead of `Box3.setFromObject` in `crossy-road`, and the missing reflections in `water` and `car`.
+`examples/ports/` holds three.js games and scenes run on WAMR3D through `wamr3d/compat` with the import changed: Crossy Road and Stack (Hunor Márton Borbély), City 3D (Victor Vergara), and the official examples `webgl_geometry_minecraft` and `webgl_lights_spotlights`, plus three pages written for WAMR3D (`fluid-particles`, `water`, `car`). `?engine=three` runs the ported code on three.js. Workarounds written when features were missing can now be removed (Phong and toon stand-ins, hand-built boxes instead of `Box3.setFromObject`, the missing reflections in `water` and `car`).
 
 ## Undeveloped and incomplete work
 
-### Renderer and materials
-
-- Cube textures (`CubeTexture`, `CubeTextureLoader`) for environments and backgrounds; render-target textures as environment or background; more than one environment map per frame.
-- Per-map uv transforms and second uv sets (`texture.channel`); `lightMap`, `bumpMap`, `displacementMap`, `specularMap`, `gradientMap`; a `tangent` attribute for normal maps; alpha test in shadow maps.
-- The physical extensions of `MeshPhysicalMaterial` (clearcoat, sheen, transmission, iridescence).
-- Point-light shadows, area lights and shadow filtering modes other than PCF.
-- Post-processing, render-target depth textures and multiple render-target attachments.
-- On WebGL 2: multisampled render targets; 1-pixel points and lines differ slightly from WebGPU (visual cases `points` and `lines`); without `EXT_color_buffer_float` it falls back to sRGB blending.
-- Lines wider than one pixel; points larger than one pixel (as in three.js's WebGPU renderer).
-
-### Object API and geometry
-
-- `SkinnedMesh`, `Bone`, `ShaderMaterial`, wireframes.
-- Morph targets; integer vertex attributes reaching the shader as integers (they are converted to floats).
-- Geometry primitives beyond box, plane, sphere, cylinder, cone, circle, ring and torus.
-
-### Supporting systems
-
-- Loaders beyond `TextureLoader` (glTF would be an add-on), animation, audio, controls and more helpers.
+- **GLTFLoader** (add-on) is not written yet; `ObjectLoader` covers three.js's own JSON format.
+- Post-processing: only the built-in passes draw on WebGPU; a `ShaderPass` with other GLSL shaders needs WebGL 2. No node-based (TSL) post-processing.
+- `ShaderMaterial` does not receive lights, fog or shadows, and `#include` supports only a few chunks (`common`, `premultiplied_alpha_fragment`; the colour-space and tone-mapping chunks are empty because the renderer encodes after the pass).
+- `CustomBlending` draws as normal blending; a render target's extra colour attachments are not written by the built-in materials.
+- Depth textures cannot be bound as maps of built-in materials on WebGPU (they read white).
+- Wide line loops are drawn without their closing segment; `LineMaterial` dashes and world units are not drawn.
+- `UnrealBloomPass` uses kernel sizes 3 to 11 and white tints.
+- Skinned meshes are not frustum-culled.
+- WebGL 2: 1-pixel points, lines and wireframes rasterize slightly differently from WebGPU; without `EXT_color_buffer_float` it falls back to sRGB blending and skips tone mapping, float targets, environments and VSM.
+- `TransformControls`, `ArcballControls` and loaders of other formats (FBX, OBJ, RGBE, EXR, KTX2, Draco) are not provided.
 
 ## Constraints
 
-The renderer targets WebGPU. TSL/node-based rendering, WebGL backends, and the listed out-of-scope Three.js systems remain unported. No schedule is assigned to these items.
+WAMR3D has its own WebGPU and WebGL 2 renderers. three.js's TSL/node-based rendering and its WebGL renderer are not ported. No schedule is assigned to the items above.
