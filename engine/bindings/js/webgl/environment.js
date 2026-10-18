@@ -51,13 +51,8 @@ export function installEnvironment( ctx ) {
 
 			let buffer = levelBuffers.get( size );
 			if ( ! buffer ) levelBuffers.set( size, buffer = upload( gl.ARRAY_BUFFER, cubeUVLevel( size ) ) );
-			gl.bindBuffer( gl.ARRAY_BUFFER, buffer );
-			gl.enableVertexAttribArray( 0 );
-			gl.vertexAttribDivisor( 0, 0 );
-			gl.vertexAttribPointer( 0, 3, gl.FLOAT, false, 24, 0 );
-			gl.enableVertexAttribArray( 1 );
-			gl.vertexAttribDivisor( 1, 0 );
-			gl.vertexAttribPointer( 1, 3, gl.FLOAT, false, 24, 12 );
+			ctx.arrayInput( 0, buffer, 3, 24, 0, 0 );
+			ctx.arrayInput( 1, buffer, 3, 24, 12, 0 );
 
 		};
 

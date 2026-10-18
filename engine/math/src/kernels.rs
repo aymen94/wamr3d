@@ -6,7 +6,7 @@
 //! without the feature, they are the [`scalar`] functions.
 //!
 //! The simd path promotes to `f64x2` and keeps the scalar operation order, so both paths
-//! are bit-identical (DECISIONS.md D3). Both modules stay public so tests can compare them.
+//! are bit-identical (AGENTS.md D3). Both modules stay public so tests can compare them.
 
 #[cfg(all(feature = "simd", target_arch = "wasm32", not(target_feature = "simd128")))]
 compile_error!(

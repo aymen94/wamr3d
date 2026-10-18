@@ -5,6 +5,7 @@ uniform mat4 shadow_view_projection;
 
 out vec2 v_uv;
 out vec2 v_uv1;
+out vec3 v_world;
 
 void main() {
     vec3 position = a_position;
@@ -16,17 +17,21 @@ void main() {
     }
     position = displaced(position, normal);
     mat4 instance = mat4(a_instance0, a_instance1, a_instance2, a_instance3);
-    gl_Position = shadow_view_projection * (object.model * (instance * vec4(position, 1.0)));
+    vec4 world = object.model * (instance * vec4(position, 1.0));
+    gl_Position = shadow_view_projection * world;
     gl_Position.z = gl_Position.z * 2.0 - gl_Position.w;
+    v_world = world.xyz;
     v_uv = a_uv;
     v_uv1 = a_uv1;
 }
 "#;
 
-/// The shadow fragment stage: nothing to write, an alpha test with `ALPHA_TEST` defined.
+/// The shadow fragment stage: nothing to write; with `ALPHA_TEST` defined, the alpha test
+/// and the material's clipping planes when they clip shadows.
 pub const SHADOW_FRAGMENT: &str = r#"
 in vec2 v_uv;
 in vec2 v_uv1;
+in vec3 v_world;
 
 void main() {
 #ifdef ALPHA_TEST
@@ -39,6 +44,9 @@ void main() {
         coverage *= map_sample(MAP_ALPHA, c).r;
     }
     if (coverage <= material.surface.w) {
+        discard;
+    }
+    if ((uint(material.extra.x) & 256u) != 0u && clipped_by_material(v_world)) {
         discard;
     }
 #endif

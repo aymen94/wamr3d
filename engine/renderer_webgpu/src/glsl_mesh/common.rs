@@ -30,6 +30,8 @@ layout(std140) uniform FrameBlock {
     vec4 environment_unused[3];
     vec4 probe[9];
     vec4 transmission;
+    vec4 clip;
+    vec4 clip_planes[8];
 } frame;
 
 layout(std140) uniform ObjectBlock {
@@ -58,7 +60,14 @@ layout(std140) uniform MaterialBlock {
     vec4 environment_rotation_0;
     vec4 environment_rotation_1;
     vec4 environment_rotation_2;
-    vec4 maps[48];
+    vec4 maps[50];
+    vec4 blend;
+    vec4 state;
+    vec4 stencil;
+    vec4 extra;
+    vec4 dash;
+    vec4 depth_params;
+    vec4 clip_planes[8];
 } material;
 
 #define MAP_COLOR 0
@@ -85,6 +94,45 @@ layout(std140) uniform MaterialBlock {
 #define MAP_IRIDESCENCE 21
 #define MAP_IRIDESCENCE_THICKNESS 22
 #define MAP_ANISOTROPY 23
+#define MAP_MATCAP 24
+
+// Whether a world position is behind any of the material's clipping planes (all of
+// them with clip intersection).
+bool clipped_by_material(vec3 p) {
+    int local = int(material.extra.y + 0.5);
+    if (local == 0) {
+        return false;
+    }
+    bool intersection = (uint(material.extra.x) & 16u) != 0u;
+    bool all_behind = true;
+    for (int i = 0; i < 8; i++) {
+        if (i >= local) {
+            break;
+        }
+        vec4 plane = material.clip_planes[i];
+        bool behind = dot(plane.xyz, p) + plane.w < 0.0;
+        if (behind && !intersection) {
+            return true;
+        }
+        all_behind = all_behind && behind;
+    }
+    return intersection && all_behind;
+}
+
+// Behind any of the renderer's global planes, or clipped by the material's.
+bool clipped(vec3 p) {
+    int global_count = int(frame.clip.x + 0.5);
+    for (int i = 0; i < 8; i++) {
+        if (i >= global_count) {
+            break;
+        }
+        vec4 plane = frame.clip_planes[i];
+        if (dot(plane.xyz, p) + plane.w < 0.0) {
+            return true;
+        }
+    }
+    return clipped_by_material(p);
+}
 
 bool map_present(int k) {
     return material.maps[2 * k].w > 0.5;
@@ -184,6 +232,7 @@ layout(location = 9) in vec4 a_tangent;
 layout(location = 10) in vec2 a_uv1;
 layout(location = 11) in vec4 a_skin_index;
 layout(location = 12) in vec4 a_skin_weight;
+layout(location = 15) in float a_line_distance;
 
 // -1 while drawing into a render target, so that its rows are stored top first, as
 // WebGPU stores them and as they are sampled; 1 otherwise.

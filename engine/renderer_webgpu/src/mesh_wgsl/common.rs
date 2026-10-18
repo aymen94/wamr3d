@@ -282,6 +282,8 @@ struct VertexInput {
     @location(10) uv1: vec2<f32>,
     @location(11) skin_index: vec4<f32>,
     @location(12) skin_weight: vec4<f32>,
+    // distance along the line (three.js `lineDistance`), for dashes
+    @location(15) line_distance: f32,
 };
 
 // Bone matrix `index` of the frame: four texels of a row of 1024.

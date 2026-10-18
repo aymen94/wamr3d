@@ -1,8 +1,0 @@
-file:///C:/Users/Ay/Documents/projects/WAMRNative/examples/compare/measure.mjs:100
-		environment = stats.gpu;
-		                    ^
-
-TypeError: Cannot read properties of null (reading 'gpu')
-    at file:///C:/Users/Ay/Documents/projects/WAMRNative/examples/compare/measure.mjs:100:23
-
-Node.js v24.19.0

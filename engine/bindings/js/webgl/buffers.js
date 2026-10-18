@@ -4,7 +4,7 @@
 
 import { memory } from '../index.js';
 import { auxRecord } from '../webgpu/formats.js';
-import { ATTRIBUTES, AUX_ATTRIBUTES, AUX_LOCATION, AUX_STRIDE, INSTANCE_COLOR_SLOT, INSTANCE_SLOT, LOOP_KEY, MISSING, PREMULTIPLIED_KEY, QUAD_B, QUAD_COLOR_B, QUAD_KEY, VERTEX_COLOR_SLOT, wireframeCount } from './constants.js';
+import { ALPHA_TO_COVERAGE_KEY, ATTRIBUTES, AUX_ATTRIBUTES, BLEND_COLOR_FLOAT, COLOR_WRITE_OFF_KEY, DEPTH_FUNC_SHIFT, POLYGON_OFFSET_FLOAT, STENCIL_FLOAT, AUX_FLOATS, AUX_LOCATIONS, AUX_OFFSETS, AUX_SIZES, AUX_STRIDE, INSTANCE_COLOR_SLOT, INSTANCE_SLOT, LOOP_KEY, MISSING, PREMULTIPLIED_KEY, QUAD_B, QUAD_COLOR_B, QUAD_KEY, VERTEX_COLOR_SLOT, wireframeCount } from './constants.js';
 
 /** Adds this part's functions and state to the host context `ctx`. */
 export function installBuffers( ctx ) {
@@ -80,15 +80,15 @@ export function installBuffers( ctx ) {
 
 			} else {
 
-				const data = new Float32Array( vertices * 14 ), view = new Float32Array( memory().buffer );
-				const offsets = [ 0, 4, 6, 10 ], sizes = [ 4, 2, 4, 4 ];
+				const data = new Float32Array( vertices * AUX_FLOATS ), view = new Float32Array( memory().buffer );
+				const offsets = AUX_OFFSETS, sizes = AUX_SIZES;
 
 				for ( let a = 0, p = o + 3 + ATTRIBUTES.length * 2; a < AUX_ATTRIBUTES; a ++, p += 2 ) {
 
 					const address = state[ p + 1 ];
 					if ( address === 0 ) continue;
 					const base = address >>> 2, size = sizes[ a ], offset = offsets[ a ];
-					for ( let v = 0; v < vertices; v ++ ) for ( let k = 0; k < size; k ++ ) data[ v * 14 + offset + k ] = view[ base + v * size + k ];
+					for ( let v = 0; v < vertices; v ++ ) for ( let k = 0; k < size; k ++ ) data[ v * AUX_FLOATS + offset + k ] = view[ base + v * size + k ];
 
 				}
 
@@ -161,7 +161,8 @@ export function installBuffers( ctx ) {
 		if ( entry.aux ) gl.deleteBuffer( entry.aux );
 		if ( entry.index ) gl.deleteBuffer( entry.index );
 		if ( entry.edges ) for ( const edges of entry.edges.values() ) gl.deleteBuffer( edges );
-		if ( entry.quads ) for ( const buffer of [ entry.quads.position, entry.quads.color ] ) if ( buffer ) gl.deleteBuffer( buffer );
+		if ( entry.quads ) for ( const buffer of [ entry.quads.position, entry.quads.color, entry.quads.distance ] ) if ( buffer ) gl.deleteBuffer( buffer );
+		if ( entry.distances?.buffer ) gl.deleteBuffer( entry.distances.buffer );
 		if ( entry.custom ) for ( const cached of entry.custom.values() ) gl.deleteBuffer( cached.buffer );
 
 	}
@@ -199,49 +200,84 @@ export function installBuffers( ctx ) {
 
 	}
 
-	// Instance inputs advance per instance; without instances they hold an identity matrix.
-	for ( let location = INSTANCE_SLOT; location <= INSTANCE_COLOR_SLOT; location ++ ) gl.vertexAttribDivisor( location, 1 );
+	// What each vertex input reads, so that a draw makes GL calls only for the inputs that
+	// differ from the previous draw's (geometries of one kind share all but their buffers).
+	// Code that changes an input without these helpers calls `forgetInput` for it.
+	const inputs = [];
+	const input = ( location ) => ( inputs[ location ] ??= { array: undefined, buffer: null, size: 0, stride: 0, offset: 0, divisor: undefined, x: NaN, y: NaN, z: NaN, w: NaN } );
+
+	// A float array input read from `buffer`, per vertex (divisor 0) or per instance (1).
+	function arrayInput( location, buffer, size, stride, offset, divisor ) {
+
+		const s = input( location );
+
+		if ( s.array !== true ) {
+
+			gl.enableVertexAttribArray( location );
+			s.array = true;
+
+		}
+
+		if ( s.divisor !== divisor ) gl.vertexAttribDivisor( location, s.divisor = divisor );
+
+		if ( s.buffer !== buffer || s.size !== size || s.stride !== stride || s.offset !== offset ) {
+
+			gl.bindBuffer( gl.ARRAY_BUFFER, buffer );
+			gl.vertexAttribPointer( location, size, gl.FLOAT, false, stride, offset );
+			s.buffer = buffer;
+			s.size = size;
+			s.stride = stride;
+			s.offset = offset;
+
+		}
+
+	}
+
+	// An input without an array, holding one value for every vertex.
+	function constantInput( location, x, y, z, w ) {
+
+		const s = input( location );
+
+		if ( s.array !== false ) {
+
+			gl.disableVertexAttribArray( location );
+			s.array = false;
+
+		}
+
+		if ( s.x !== x || s.y !== y || s.z !== z || s.w !== w ) {
+
+			gl.vertexAttrib4f( location, x, y, z, w );
+			s.x = x;
+			s.y = y;
+			s.z = z;
+			s.w = w;
+
+		}
+
+	}
+
+	function forgetInput( location ) {
+
+		inputs[ location ] = undefined;
+
+	}
 
 	function bindGeometry( entry ) {
 
 		for ( let slot = 0; slot < ATTRIBUTES.length; slot ++ ) {
 
 			const buffer = entry.buffers[ slot ];
-			gl.vertexAttribDivisor( slot, 0 );
-
-			if ( buffer ) {
-
-				gl.enableVertexAttribArray( slot );
-				gl.bindBuffer( gl.ARRAY_BUFFER, buffer );
-				gl.vertexAttribPointer( slot, entry.sizes[ slot ], gl.FLOAT, false, 0, 0 );
-
-			} else {
-
-				gl.disableVertexAttribArray( slot );
-				gl.vertexAttrib4f( slot, ...MISSING[ slot ] );
-
-			}
+			if ( buffer ) arrayInput( slot, buffer, entry.sizes[ slot ], 0, 0, 0 );
+			else constantInput( slot, ...MISSING[ slot ] );
 
 		}
 
-		const sizes = [ 4, 2, 4, 4 ], offsets = [ 0, 16, 24, 40 ];
-
 		for ( let a = 0; a < AUX_ATTRIBUTES; a ++ ) {
 
-			const location = AUX_LOCATION + a;
-
-			if ( entry.aux ) {
-
-				gl.enableVertexAttribArray( location );
-				gl.bindBuffer( gl.ARRAY_BUFFER, entry.aux );
-				gl.vertexAttribPointer( location, sizes[ a ], gl.FLOAT, false, AUX_STRIDE, offsets[ a ] );
-
-			} else {
-
-				gl.disableVertexAttribArray( location );
-				gl.vertexAttrib4f( location, 0, 0, 0, 0 );
-
-			}
+			const location = AUX_LOCATIONS[ a ];
+			if ( entry.aux ) arrayInput( location, entry.aux, AUX_SIZES[ a ], AUX_STRIDE, AUX_OFFSETS[ a ] * 4, 0 );
+			else constantInput( location, 0, 0, 0, 0 );
 
 		}
 
@@ -253,10 +289,24 @@ export function installBuffers( ctx ) {
 	// range with its first vertex again (see the WebGPU host).
 	function quadSource( world, entry, start = 0, count = 0, loop = false ) {
 
-		if ( ! entry.index && ! loop ) return { position: entry.buffers[ 0 ], color: entry.buffers[ VERTEX_COLOR_SLOT ], colorSize: entry.sizes[ VERTEX_COLOR_SLOT ] };
-		const key = entry.indexVersion + ':' + entry.versions[ 0 ] + ':' + entry.versions[ VERTEX_COLOR_SLOT ] + ( loop ? ':' + start + ':' + count : '' );
+		if ( ! entry.index && ! loop ) {
+
+			// line distances of their own buffer, read per instance like the positions
+			if ( entry.distances?.key !== entry.auxVersions ) {
+
+				if ( entry.distances?.buffer ) gl.deleteBuffer( entry.distances.buffer );
+				const distances = ( ',' + entry.auxVersions ).includes( ',4:' ) ? world.getAttribute( entry.handle, 'lineDistance' ) : null;
+				entry.distances = { key: entry.auxVersions, buffer: distances ? upload( gl.ARRAY_BUFFER, new Float32Array( distances ) ) : null };
+
+			}
+
+			return { position: entry.buffers[ 0 ], color: entry.buffers[ VERTEX_COLOR_SLOT ], colorSize: entry.sizes[ VERTEX_COLOR_SLOT ], distance: entry.distances.buffer };
+
+		}
+
+		const key = entry.indexVersion + ':' + entry.versions[ 0 ] + ':' + entry.versions[ VERTEX_COLOR_SLOT ] + ':' + entry.auxVersions + ( loop ? ':' + start + ':' + count : '' );
 		if ( entry.quads && entry.quads.key === key ) return entry.quads;
-		if ( entry.quads ) for ( const buffer of [ entry.quads.position, entry.quads.color ] ) if ( buffer ) gl.deleteBuffer( buffer );
+		if ( entry.quads ) for ( const buffer of [ entry.quads.position, entry.quads.color, entry.quads.distance ] ) if ( buffer ) gl.deleteBuffer( buffer );
 		let index = entry.index ? world.getIndex( entry.handle ) : null;
 
 		if ( loop ) {
@@ -280,7 +330,8 @@ export function installBuffers( ctx ) {
 		entry.quads = {
 			key, colorSize,
 			position: upload( gl.ARRAY_BUFFER, unrolled( world.getAttribute( entry.handle, 'position' ), 3 ) ),
-			color: entry.buffers[ VERTEX_COLOR_SLOT ] ? upload( gl.ARRAY_BUFFER, unrolled( world.getAttribute( entry.handle, 'color' ), colorSize ) ) : null
+			color: entry.buffers[ VERTEX_COLOR_SLOT ] ? upload( gl.ARRAY_BUFFER, unrolled( world.getAttribute( entry.handle, 'color' ), colorSize ) ) : null,
+			distance: ( ',' + entry.auxVersions ).includes( ',4:' ) ? upload( gl.ARRAY_BUFFER, unrolled( world.getAttribute( entry.handle, 'lineDistance' ), 1 ) ) : null
 		};
 		return entry.quads;
 
@@ -290,33 +341,31 @@ export function installBuffers( ctx ) {
 	function bindQuads( source, topology, first ) {
 
 		const pairs = topology === 2, step = pairs ? 2 : 1;
-		const pointer = ( location, size, stride, offset ) => {
 
-			gl.enableVertexAttribArray( location );
-			gl.vertexAttribPointer( location, size, gl.FLOAT, false, stride, offset );
-			gl.vertexAttribDivisor( location, 1 );
-
-		};
-
-		gl.bindBuffer( gl.ARRAY_BUFFER, source.position );
-		pointer( 0, 3, step * 12, first * step * 12 );
-		pointer( QUAD_B, 3, step * 12, first * step * 12 + ( topology === 3 ? 0 : 12 ) );
+		arrayInput( 0, source.position, 3, step * 12, first * step * 12, 1 );
+		arrayInput( QUAD_B, source.position, 3, step * 12, first * step * 12 + ( topology === 3 ? 0 : 12 ), 1 );
 
 		if ( source.color ) {
 
 			const c = source.colorSize;
-			gl.bindBuffer( gl.ARRAY_BUFFER, source.color );
-			pointer( VERTEX_COLOR_SLOT, c, step * c * 4, first * step * c * 4 );
-			pointer( QUAD_COLOR_B, c, step * c * 4, first * step * c * 4 + ( topology === 3 ? 0 : c * 4 ) );
+			arrayInput( VERTEX_COLOR_SLOT, source.color, c, step * c * 4, first * step * c * 4, 1 );
+			arrayInput( QUAD_COLOR_B, source.color, c, step * c * 4, first * step * c * 4 + ( topology === 3 ? 0 : c * 4 ), 1 );
 
 		} else {
 
-			for ( const location of [ VERTEX_COLOR_SLOT, QUAD_COLOR_B ] ) {
+			for ( const location of [ VERTEX_COLOR_SLOT, QUAD_COLOR_B ] ) constantInput( location, ...MISSING[ VERTEX_COLOR_SLOT ] );
 
-				gl.disableVertexAttribArray( location );
-				gl.vertexAttrib4f( location, ...MISSING[ VERTEX_COLOR_SLOT ] );
+		}
 
-			}
+		// the line distances of both ends, for dashes
+		if ( source.distance ) {
+
+			arrayInput( 1, source.distance, 1, step * 4, first * step * 4, 1 );
+			arrayInput( 2, source.distance, 1, step * 4, first * step * 4 + ( topology === 3 ? 0 : 4 ), 1 );
+
+		} else {
+
+			for ( const location of [ 1, 2 ] ) constantInput( location, 0, 0, 0, 1 );
 
 		}
 
@@ -324,44 +373,35 @@ export function installBuffers( ctx ) {
 
 	function bindInstances( instance ) {
 
+		// instance inputs advance per instance; without instances they hold an identity matrix
 		for ( let column = 0; column < 4; column ++ ) {
 
 			const location = INSTANCE_SLOT + column;
-
-			if ( instance ) {
-
-				gl.enableVertexAttribArray( location );
-				gl.bindBuffer( gl.ARRAY_BUFFER, instance.matrix );
-				gl.vertexAttribPointer( location, 4, gl.FLOAT, false, 64, column * 16 );
-
-			} else {
-
-				gl.disableVertexAttribArray( location );
-				gl.vertexAttrib4f( location, column === 0 ? 1 : 0, column === 1 ? 1 : 0, column === 2 ? 1 : 0, column === 3 ? 1 : 0 );
-
-			}
+			if ( instance ) arrayInput( location, instance.matrix, 4, 64, column * 16, 1 );
+			else constantInput( location, column === 0 ? 1 : 0, column === 1 ? 1 : 0, column === 2 ? 1 : 0, column === 3 ? 1 : 0 );
 
 		}
 
-		if ( instance?.color ) {
-
-			gl.enableVertexAttribArray( INSTANCE_COLOR_SLOT );
-			gl.bindBuffer( gl.ARRAY_BUFFER, instance.color );
-			gl.vertexAttribPointer( INSTANCE_COLOR_SLOT, 3, gl.FLOAT, false, 0, 0 );
-
-		} else {
-
-			gl.disableVertexAttribArray( INSTANCE_COLOR_SLOT );
-			gl.vertexAttrib4f( INSTANCE_COLOR_SLOT, 1, 1, 1, 1 );
-
-		}
+		if ( instance?.color ) arrayInput( INSTANCE_COLOR_SLOT, instance.color, 3, 0, 0, 1 );
+		else constantInput( INSTANCE_COLOR_SLOT, 1, 1, 1, 1 );
 
 	}
 
 	// Passes that draw a full-screen triangle read no vertex arrays.
 	function unbindArrays() {
 
-		for ( let location = 0; location <= QUAD_COLOR_B; location ++ ) gl.disableVertexAttribArray( location );
+		for ( let location = 0; location <= QUAD_COLOR_B; location ++ ) {
+
+			const s = input( location );
+
+			if ( s.array !== false ) {
+
+				gl.disableVertexAttribArray( location );
+				s.array = false;
+
+			}
+
+		}
 
 	}
 
@@ -376,6 +416,53 @@ export function installBuffers( ctx ) {
 	// three.js's blend factors (from ZeroFactor, 200) and equations (from AddEquation, 100).
 	const CUSTOM_FACTORS = [ gl.ZERO, gl.ONE, gl.SRC_COLOR, gl.ONE_MINUS_SRC_COLOR, gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.DST_ALPHA, gl.ONE_MINUS_DST_ALPHA, gl.DST_COLOR, gl.ONE_MINUS_DST_COLOR, gl.SRC_ALPHA_SATURATE, gl.CONSTANT_COLOR, gl.ONE_MINUS_CONSTANT_COLOR, gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA ];
 	const CUSTOM_EQUATIONS = [ gl.FUNC_ADD, gl.FUNC_SUBTRACT, gl.FUNC_REVERSE_SUBTRACT, gl.MIN, gl.MAX ];
+
+	// three.js `depthFunc` (0 never ... 7 not equal), stencil functions (from 512) and stencil
+	// operations as the engine numbers them.
+	const DEPTH_FUNCTIONS = [ gl.NEVER, gl.ALWAYS, gl.LESS, gl.LEQUAL, gl.EQUAL, gl.GEQUAL, gl.GREATER, gl.NOTEQUAL ];
+	const STENCIL_FUNCTIONS = [ gl.NEVER, gl.LESS, gl.EQUAL, gl.LEQUAL, gl.GREATER, gl.NOTEQUAL, gl.GEQUAL, gl.ALWAYS ];
+	const STENCIL_OPERATIONS = [ gl.ZERO, gl.KEEP, gl.REPLACE, gl.INCR, gl.DECR, gl.INCR_WRAP, gl.DECR_WRAP, gl.INVERT ];
+
+	// The state of the material at float `at` of `blocks` that the key does not carry:
+	// polygon offset, stencil test and the constant colour of custom blending.
+	function applyMaterialState( key, blocks, at ) {
+
+		const factor = blocks[ at + POLYGON_OFFSET_FLOAT ], units = blocks[ at + POLYGON_OFFSET_FLOAT + 1 ];
+
+		if ( factor !== 0 || units !== 0 ) {
+
+			gl.enable( gl.POLYGON_OFFSET_FILL );
+			gl.polygonOffset( factor, units );
+
+		} else gl.disable( gl.POLYGON_OFFSET_FILL );
+
+		const bits = blocks[ at + STENCIL_FLOAT ];
+
+		if ( bits & 1 ) {
+
+			gl.enable( gl.STENCIL_TEST );
+			gl.stencilFunc( STENCIL_FUNCTIONS[ bits >> 1 & 7 ], blocks[ at + STENCIL_FLOAT + 1 ], blocks[ at + STENCIL_FLOAT + 2 ] );
+			gl.stencilOp( STENCIL_OPERATIONS[ bits >> 4 & 7 ], STENCIL_OPERATIONS[ bits >> 7 & 7 ], STENCIL_OPERATIONS[ bits >> 10 & 7 ] );
+			gl.stencilMask( blocks[ at + STENCIL_FLOAT + 3 ] );
+
+		} else gl.disable( gl.STENCIL_TEST );
+
+		if ( key & 4 && ( key >> 11 & 7 ) === 5 ) gl.blendColor( blocks[ at + BLEND_COLOR_FLOAT ], blocks[ at + BLEND_COLOR_FLOAT + 1 ], blocks[ at + BLEND_COLOR_FLOAT + 2 ], blocks[ at + BLEND_COLOR_FLOAT + 3 ] );
+
+	}
+
+	// What the passes after the scene expect: no stencil test or offset, every channel
+	// written, the default blend equation.
+	function resetState() {
+
+		gl.disable( gl.STENCIL_TEST );
+		gl.disable( gl.POLYGON_OFFSET_FILL );
+		gl.disable( gl.SAMPLE_ALPHA_TO_COVERAGE );
+		gl.colorMask( true, true, true, true );
+		gl.stencilMask( 0xff );
+		gl.blendEquation( gl.FUNC_ADD );
+
+	}
 
 	// `custom` is the material's packed custom blending, read only with CustomBlending.
 	function applyState( key, custom = 0 ) {
@@ -408,7 +495,11 @@ export function installBuffers( ctx ) {
 		// the other passes blend with the default equation
 		if ( ( key >> 11 & 7 ) !== 5 ) gl.blendEquation( gl.FUNC_ADD );
 		gl.depthMask( ( key & 8 ) !== 0 );
-		gl.depthFunc( key & 16 ? gl.LEQUAL : gl.ALWAYS );
+		gl.depthFunc( key & 16 ? DEPTH_FUNCTIONS[ key >> DEPTH_FUNC_SHIFT & 7 ] : gl.ALWAYS );
+		const write = ( key & COLOR_WRITE_OFF_KEY ) === 0;
+		gl.colorMask( write, write, write, write );
+		if ( key & ALPHA_TO_COVERAGE_KEY ) gl.enable( gl.SAMPLE_ALPHA_TO_COVERAGE );
+		else gl.disable( gl.SAMPLE_ALPHA_TO_COVERAGE );
 
 	}
 
@@ -470,6 +561,6 @@ export function installBuffers( ctx ) {
 
 	}
 
-	Object.assign( ctx, { applyState, backgroundBuffer, bindGeometry, bindInstances, bindMaps, bindQuads, bindRange, distinct, draw, drawWireframe, entries, frameBuffer, geometries, geometry, info, instanced, instances, materialBuffer, objectBuffer, perInstance, quadSource, release, scratchBuffer, setTextures, shadowObjectBuffer, unbindArrays, upload } );
+	Object.assign( ctx, { applyMaterialState, resetState, applyState, arrayInput, forgetInput, backgroundBuffer, bindGeometry, bindInstances, bindMaps, bindQuads, bindRange, distinct, draw, drawWireframe, entries, frameBuffer, geometries, geometry, info, instanced, instances, materialBuffer, objectBuffer, perInstance, quadSource, release, scratchBuffer, setTextures, shadowObjectBuffer, unbindArrays, upload } );
 
 }

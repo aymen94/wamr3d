@@ -16,7 +16,9 @@ import { installEnvironment } from './webgl/environment.js';
 
 export async function createWebGLBackend( canvas, { antialias = true, powerPreference = 'high-performance' } = {} ) {
 
-	const gl = canvas.getContext( 'webgl2', { antialias, alpha: false, depth: true, stencil: false, premultipliedAlpha: false, powerPreference } );
+	if ( Renderer.materialUniformSize() !== MATERIAL_STRIDE ) throw new Error( 'WAMR3D: the WebGL 2 host does not match the uniform layout of the engine' );
+
+	const gl = canvas.getContext( 'webgl2', { antialias, alpha: false, depth: true, stencil: true, premultipliedAlpha: false, powerPreference } );
 	if ( ! gl ) throw new Error( 'WAMR3D: WebGL 2 is not available in this browser' );
 
 	// Half-float targets carry tone mapping, render targets of float type and the
@@ -50,7 +52,7 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 	installTextures( ctx );
 	installShadows( ctx );
 	installEnvironment( ctx );
-	const { applyState, background, backgroundBuffer, backgroundProgram, bindCustomAttributes, bindGeometry, bindInstances, bindMaps, bindQuads, bindRange, depthSampler, distinct, draw, drawShadows, drawWireframe, effectProgram, ensureShadowTexture, entries, environment, environmentFramebuffer, environments, frameBuffer, geometries, geometry, hdrTarget, info, instanced, instances, levelBuffers, materialBuffer, meshProgram, multiply, normalMatrix, objectBuffer, panoramaSampler, perInstance, program, programs, quadSource, release, renderTarget, renderTargets, scratchBuffer, screenSampler, setTextures, setUniforms, shaderProgram, shadowFramebuffer, shadowObjectBuffer, stackFramebuffer, texture, textures, transmissionTarget, unbindArrays, upload, uploadBones, vsmFramebuffer, white } = ctx;
+	const { applyMaterialState, applyState, resetState, background, backgroundBuffer, backgroundProgram, bindCustomAttributes, bindGeometry, bindInstances, bindMaps, bindQuads, bindRange, depthSampler, distinct, draw, drawShadows, drawWireframe, effectProgram, ensureShadowTexture, entries, environment, environmentFramebuffer, environments, frameBuffer, geometries, geometry, hdrTarget, info, instanced, instances, levelBuffers, materialBuffer, meshProgram, multiply, normalMatrix, objectBuffer, panoramaSampler, perInstance, program, programs, quadSource, release, renderTarget, renderTargets, scratchBuffer, screenSampler, setTextures, setUniforms, shaderProgram, shadowFramebuffer, shadowObjectBuffer, stackFramebuffer, texture, textures, transmissionTarget, unbindArrays, upload, uploadBones, vsmFramebuffer, white } = ctx;
 	// ---------------------------------------------------------------- frame
 
 	gl.enable( gl.DEPTH_TEST );
@@ -126,7 +128,7 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 		gl.bindSampler( VSM_UNIT, ctx.vsmTexture ? null : depthSampler );
 		gl.activeTexture( gl.TEXTURE0 + BONE_UNIT );
 		gl.bindTexture( gl.TEXTURE_2D, ctx.boneTexture );
-		let state = - 1, blendState = 0, bound = null, set = null, triangles = 0, boundInstances, material = - 1, current = null;
+		let state = - 1, blendState = 0, appliedMaterial = - 1, bound = null, set = null, triangles = 0, boundInstances, material = - 1, current = null;
 
 		for ( let i = from, o = from * DRAW_FIELDS; i < to; i ++, o += DRAW_FIELDS ) {
 
@@ -138,13 +140,16 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 			if ( own ) {
 
 				// a GLSL shader material: its program, the built-in uniforms of this draw, its uniforms
-				const shader = shaderProgram( own, instance !== null, srgb );
+				const lights = own.lights === true ? extras.lights : null, fog = own.fog === true ? extras.fog : null;
+				const shader = shaderProgram( own, instance !== null, srgb, lights, fog );
 				if ( shader !== current ) gl.useProgram( shader.id );
 				current = shader;
 				if ( shader.flip ) gl.uniform1f( shader.flip, flipY );
 				const model = data.objects.subarray( i * 64, i * 64 + 16 ), view = extras.view, modelView = multiply( view, model, new Float32Array( 16 ) );
-				setUniforms( shader, own, { modelMatrix: model, viewMatrix: view, projectionMatrix: extras.projection, modelViewMatrix: modelView, normalMatrix: normalMatrix( modelView, new Float32Array( 9 ) ), cameraPosition: extras.position, isOrthographic: extras.orthographic }, sources );
+				setUniforms( shader, own, { modelMatrix: model, viewMatrix: view, projectionMatrix: extras.projection, modelViewMatrix: modelView, normalMatrix: normalMatrix( modelView, new Float32Array( 9 ) ), cameraPosition: extras.position, isOrthographic: extras.orthographic, ...lights?.uniforms, ...fog?.uniforms }, sources );
 				applyState( key, customBlending( key, data.materials, draws[ o + 6 ] ) );
+				applyMaterialState( key, data.materials, draws[ o + 6 ] * MATERIAL_FLOATS );
+				appliedMaterial = - 1;
 				state = - 1;
 				set = null;
 				bindInstances( instance );
@@ -169,7 +174,15 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 			}
 
 			const blending = customBlending( key, data.materials, draws[ o + 6 ] );
-			if ( key !== state || blending !== blendState ) applyState( state = key, blendState = blending );
+			if ( key !== state || blending !== blendState ) {
+
+				applyState( state = key, blendState = blending );
+				appliedMaterial = - 1;
+
+			}
+
+			// polygon offset, stencil and blend colour follow the material
+			if ( draws[ o + 6 ] !== appliedMaterial ) applyMaterialState( key, data.materials, ( appliedMaterial = draws[ o + 6 ] ) * MATERIAL_FLOATS );
 
 			const maps = setTextures[ draws[ o + 1 ] ];
 
@@ -227,7 +240,7 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 		}
 
 		gl.bindSampler( VSM_UNIT, null );
-		gl.blendEquation( gl.FUNC_ADD );
+		resetState();
 		return triangles;
 
 	}
@@ -321,7 +334,9 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 				gl.depthMask( true );
 				gl.clearColor( clear.r, clear.g, clear.b, clear.a );
 				gl.clearDepth( 1 );
-				gl.clear( gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT );
+				gl.clearStencil( 0 );
+				resetState();
+				gl.clear( gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT );
 				gl.frontFace( gl.CW );
 				if ( backdrop ) drawBackground( backdrop, false, - 1 );
 				drawRange( world, draws, 0, renderer.opaqueCount(), false, - 1, data, environmentTexture, null, sources, extras );
@@ -345,7 +360,9 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 			const encode = srgb ? linearToSRGB : ( c ) => c;
 			gl.clearColor( encode( clear.r ), encode( clear.g ), encode( clear.b ), clear.a );
 			gl.clearDepth( 1 );
-			if ( extras?.load !== true ) gl.clear( gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT );
+			gl.clearStencil( 0 );
+			resetState();
+			if ( extras?.load !== true ) gl.clear( gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT );
 			gl.frontFace( offscreen ? gl.CW : gl.CCW );
 			if ( backdrop ) drawBackground( backdrop, srgb, flipY );
 			const triangles = drawRange( world, draws, 0, count, srgb, flipY, data, environmentTexture, copy, sources, extras );

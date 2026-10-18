@@ -32,7 +32,7 @@ pub struct Renderer {
 /// Vertex inputs of the shader with their floats per vertex: position, normal, uv and
 /// colour have a buffer each; tangent, second uv set, skinning and line distances are
 /// interleaved by the host into one (see `AUX_KEY`).
-const VERTEX_ATTRIBUTES: [(&str, usize); 8] = [("position", 3), ("normal", 3), ("uv", 2), ("color", 3), ("tangent", 4), ("uv1", 2), ("skinIndex", 4), ("skinWeight", 4)];
+const VERTEX_ATTRIBUTES: [(&str, usize); 9] = [("position", 3), ("normal", 3), ("uv", 2), ("color", 3), ("tangent", 4), ("uv1", 2), ("skinIndex", 4), ("skinWeight", 4), ("lineDistance", 1)];
 
 /// Slot index, generation, vertex count, a (version, address) pair per vertex input,
 /// index version, floats per colour (3 or 4).

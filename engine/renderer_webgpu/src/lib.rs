@@ -3,7 +3,7 @@
 //! This crate decides *what* is drawn and with *which data*: it culls against the
 //! camera frustum, orders the draws, chooses each draw's pipeline state, packs the
 //! uniform buffers and owns the shader source. Issuing the GPU calls is left to a small
-//! host layer, because WebGPU is a browser API (DECISIONS.md D32).
+//! host layer, because WebGPU is a browser API (AGENTS.md D32).
 //!
 //! Scope: meshes (filled or wireframe, skinned), lines, line loops, points and sprites;
 //! unlit, diffuse (Lambert), Blinn-Phong, toon, normal or roughness/metalness shading,
@@ -160,11 +160,15 @@ pub const FOUR_COMPONENT_COLOR_KEY: u32 = 1 << 8;
 /// edges per triangle, as three.js builds it).
 pub const WIREFRAME_KEY: u32 = 1 << 9;
 
-/// Set in [`Draw::pipeline`] when the geometry has any of `tangent`, `uv1`, `skinIndex`
-/// and `skinWeight`. The host then binds them interleaved in one vertex buffer
-/// (tangent 4 floats, uv1 2, skin indices 4, skin weights 4: 56 bytes per vertex);
-/// otherwise a zero stride buffer of zeros.
+/// Set in [`Draw::pipeline`] when the geometry has any of [`AUX_ATTRIBUTES`]. The host
+/// then binds them interleaved in one vertex buffer (tangent 4 floats, uv1 2, skin
+/// indices 4, skin weights 4, line distance 1: 60 bytes per vertex); otherwise a zero
+/// stride buffer of zeros.
 pub const AUX_KEY: u32 = 1 << 10;
+
+/// The vertex inputs beyond position, normal, uv and colour, in their order in the
+/// interleaved buffer of [`AUX_KEY`].
+pub const AUX_ATTRIBUTES: [&str; 5] = ["tangent", "uv1", "skinIndex", "skinWeight", "lineDistance"];
 
 /// Set in [`Draw::pipeline`] for three.js `premultipliedAlpha`: the colour is multiplied
 /// by alpha in the shader and the blend factors take that into account.

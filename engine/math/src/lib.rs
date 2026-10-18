@@ -2,11 +2,11 @@
 //!
 //! Semantics follow three.js: right-handed, +Y up, column-major
 //! matrices, `XYZ` default Euler order. Values are stored as contiguous `f32`; every
-//! function computes in `f64` and rounds once on store (DECISIONS.md D1).
+//! function computes in `f64` and rounds once on store (AGENTS.md D1).
 //!
 //! Method names are the three.js names in `snake_case`. Mutating methods return
 //! `&mut Self` so calls chain as they do in JavaScript; `target` out-parameters are
-//! return values (DECISIONS.md D4).
+//! return values (AGENTS.md D4).
 
 #![forbid(unsafe_code)]
 

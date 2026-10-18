@@ -9,6 +9,7 @@ out vec3 v_tint;
 out float v_depth;
 out vec2 v_uv1;
 out vec4 v_tangent;
+out float v_line_distance;
 
 void main() {
     uint flags = uint(object.params.x);
@@ -53,6 +54,7 @@ void main() {
     v_color = a_color;
     v_tint = a_instance_color;
     v_depth = dot(world.xyz - frame.camera_position.xyz, frame.camera_forward.xyz);
+    v_line_distance = a_line_distance;
 }
 "#;
 
@@ -60,6 +62,8 @@ void main() {
 /// attribute divisor of 1), the quad's corner from `gl_VertexID`.
 pub const QUAD_VERTEX: &str = r#"
 layout(location = 0) in vec3 a_position;
+layout(location = 1) in float a_line_distance;
+layout(location = 2) in float a_line_distance_b;
 layout(location = 3) in vec4 a_color;
 layout(location = 13) in vec3 a_position_b;
 layout(location = 14) in vec4 a_color_b;
@@ -74,6 +78,7 @@ out vec3 v_tint;
 out float v_depth;
 out vec2 v_uv1;
 out vec4 v_tangent;
+out float v_line_distance;
 
 void main() {
     int index = gl_VertexID - (gl_VertexID / 6) * 6;
@@ -85,17 +90,27 @@ void main() {
     vec4 clip = clip_a;
     vec4 world = a;
     vec4 color = a_color;
+    float line_distance = 0.0;
     if ((uint(object.params.x) & 16u) != 0u) {
         vec4 b = object.model * vec4(a_position_b, 1.0);
         vec4 clip_b = frame.view_projection * b;
-        vec2 screen = (clip_b.xy / clip_b.w - clip_a.xy / clip_a.w) / pixel;
-        vec2 along = length(screen) > 0.0 ? normalize(screen) : vec2(1.0, 0.0);
-        vec2 across = vec2(-along.y, along.x);
         bool at_b = corner.x > 0.0;
-        clip = at_b ? clip_b : clip_a;
         world = at_b ? b : a;
         color = at_b ? a_color_b : a_color;
-        clip.xy += across * corner.y * material.sprite.z * pixel_ratio * 0.5 * pixel * clip.w;
+        line_distance = at_b ? a_line_distance_b : a_line_distance;
+        if (material.depth_params.y > 0.5) {
+            // width in world units: across the segment and the direction to the camera
+            vec3 side = cross(b.xyz - a.xyz, frame.camera_position.xyz - world.xyz);
+            side = dot(side, side) > 0.0 ? normalize(side) : vec3(0.0);
+            world = vec4(world.xyz + side * corner.y * material.sprite.z * 0.5, 1.0);
+            clip = frame.view_projection * world;
+        } else {
+            vec2 screen = (clip_b.xy / clip_b.w - clip_a.xy / clip_a.w) / pixel;
+            vec2 along = length(screen) > 0.0 ? normalize(screen) : vec2(1.0, 0.0);
+            vec2 across = vec2(-along.y, along.x);
+            clip = at_b ? clip_b : clip_a;
+            clip.xy += across * corner.y * material.sprite.z * pixel_ratio * 0.5 * pixel * clip.w;
+        }
     } else {
         float size = material.sprite.y * pixel_ratio;
         if (frame.camera_up.w > 0.5 && (uint(material.params.w) & 16u) == 0u) {
@@ -116,5 +131,6 @@ void main() {
     v_color = color;
     v_tint = vec3(1.0);
     v_depth = dot(world.xyz - frame.camera_position.xyz, frame.camera_forward.xyz);
+    v_line_distance = line_distance;
 }
 "#;

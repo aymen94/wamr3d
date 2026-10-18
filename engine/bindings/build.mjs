@@ -32,7 +32,7 @@ function run( command, args ) {
 }
 
 // WebAssembly SIMD is on unless --no-simd is given: every browser with WebGPU has it. The
-// SIMD kernels give the same results bit for bit as the scalar ones (DECISIONS.md D3).
+// SIMD kernels give the same results bit for bit as the scalar ones (AGENTS.md D3).
 const simd = ! process.argv.includes( '--no-simd' );
 const env = simd ? { ...process.env, RUSTFLAGS: `${process.env.RUSTFLAGS ?? ''} -C target-feature=+simd128`.trim() } : process.env;
 

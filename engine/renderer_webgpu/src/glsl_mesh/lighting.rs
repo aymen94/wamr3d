@@ -19,6 +19,7 @@ in vec3 v_tint;
 in float v_depth;
 in vec2 v_uv1;
 in vec4 v_tangent;
+in float v_line_distance;
 
 layout(location = 0) out vec4 out_color;
 
@@ -81,7 +82,8 @@ int cube_face(vec3 d) {
 
 vec3 fogged(vec3 color, float depth) {
     float kind = frame.fog_color.w;
-    if (kind < 0.5) {
+    // materials with `fog` false keep their colour
+    if (kind < 0.5 || (uint(material.extra.x) & 1u) != 0u) {
         return color;
     }
     float amount = smoothstep(frame.fog.x, frame.fog.y, depth);
@@ -311,7 +313,92 @@ vec3 rect_closest_point(vec3 p, vec3 r, vec3 center, vec3 half_width, vec3 half_
     return center + half_width * u + half_height * w;
 }
 
-vec4 finish(vec3 color, float alpha) {
+// Hashed alpha testing (Wyman and McGuire, 2017): a threshold from a hash of the
+// position, at a scale of about one pixel, stable as the camera moves.
+float hash_2d(vec2 v) {
+    return fract(1.0e4 * sin(17.0 * v.x + 0.1 * v.y) * (0.1 + abs(sin(13.0 * v.y + v.x))));
+}
+
+float hash_3d(vec3 v) {
+    return hash_2d(vec2(hash_2d(v.xy), v.z));
+}
+
+float alpha_hash_threshold(vec3 position, vec3 position_dx, vec3 position_dy) {
+    float max_derivative = max(max(length(position_dx), length(position_dy)), 1e-8);
+    float pixel_scale = 1.0 / (0.05 * max_derivative);
+    vec2 scales = vec2(exp2(floor(log2(pixel_scale))), exp2(ceil(log2(pixel_scale))));
+    vec2 alphas = vec2(hash_3d(floor(scales.x * position)), hash_3d(floor(scales.y * position)));
+    float blend = fract(log2(pixel_scale));
+    float x = (1.0 - blend) * alphas.x + blend * alphas.y;
+    float a = max(min(blend, 1.0 - blend), 1e-6);
+    vec3 cases = vec3(x * x / (2.0 * a * (1.0 - a)), (x - 0.5 * a) / (1.0 - a), 1.0 - ((1.0 - x) * (1.0 - x) / (2.0 * a * (1.0 - a))));
+    float threshold = x < 1.0 - a ? (x < a ? cases.x : cases.y) : cases.z;
+    return clamp(threshold, 1.0e-6, 1.0);
+}
+
+// The depth packings of MeshDepthMaterial: 3201 RGBA, 3202 RGB and 3203 RG, eight bits
+// per channel; 3200 (basic) is grey, white near.
+vec4 pack_depth(float depth, uint packing, float alpha) {
+    if (packing == 3200u) {
+        return vec4(vec3(1.0 - depth), alpha);
+    }
+    if (depth <= 0.0) {
+        return vec4(0.0);
+    }
+    if (depth >= 1.0) {
+        return vec4(1.0);
+    }
+    float up = 256.0 / 255.0;
+    if (packing == 3203u) {
+        return vec4(floor(depth * 256.0) / 255.0, fract(depth * 256.0), 0.0, 1.0);
+    }
+    if (packing == 3202u) {
+        float whole = floor(depth * 65536.0);
+        float b = fract(depth * 65536.0);
+        float g = fract(whole / 256.0);
+        whole = floor(whole / 256.0);
+        return vec4(whole / 255.0, g * up, b, 1.0);
+    }
+    float whole = floor(depth * 16777216.0);
+    float a = fract(depth * 16777216.0);
+    float b = fract(whole / 256.0);
+    whole = floor(whole / 256.0);
+    float g = fract(whole / 256.0);
+    whole = floor(whole / 256.0);
+    return vec4(whole / 255.0, g * up, b * up, a);
+}
+
+// The product of the shadow factors of every shadowed light at a point, for
+// ShadowMaterial.
+float shadow_mask(vec3 world, vec3 normal, vec2 pixel) {
+    float mask = 1.0;
+    int count = min(int(frame.camera_position.w), 16);
+    for (int i = 0; i < 16; i++) {
+        if (i >= count) {
+            break;
+        }
+        Light light = frame.lights[i];
+        int shadow_index = int(light.cone.z + 0.5);
+        if (light.position.w > 2.5 || shadow_index == 0) {
+            continue;
+        }
+        int layer = shadow_index - 1;
+        if (light.position.w > 0.5 && light.position.w < 1.5) {
+            vec3 biased = world + normal * frame.shadows[layer].params.y;
+            layer += cube_face(biased - light.position.xyz);
+        }
+        mask *= shadowed(layer, world, normal, pixel);
+    }
+    return mask;
+}
+
+vec4 finish(vec3 color_in, float alpha) {
+    vec3 color = color_in;
+    if ((uint(material.extra.x) & 2u) != 0u) {
+        // dithering: noise below one 8-bit step of the encoded colour
+        float noise = gradient_noise(gl_FragCoord.xy) - 0.5;
+        color = srgb_to_linear(max(linear_to_srgb(max(color, vec3(0.0))) + vec3(noise, -noise, noise) / 255.0, vec3(0.0)));
+    }
     if ((uint(material.params.w) & 4194304u) != 0u) {
         return vec4(color * alpha, alpha);
     }

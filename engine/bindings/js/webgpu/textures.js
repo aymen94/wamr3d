@@ -5,7 +5,7 @@
 import { Renderer } from '../index.js';
 import { HDR_FORMAT, HDR_KEY, LINEAR, MIPMAPPED, MIP_LINEAR, RGBA8_KEY, SINGLE_KEY, WRAPS, flippedRows } from './formats.js';
 import { createEnvironmentPasses } from './environment.js';
-import { BLIT, cubeFace, cubeReady, dataFormat } from './constants.js';
+import { BLIT, DEPTH_COPY, DEPTH_FORMAT, cubeFace, cubeReady, dataFormat } from './constants.js';
 
 /** Adds this part's functions and state to the host context `ctx`. */
 export function installTextures( ctx ) {
@@ -74,6 +74,44 @@ export function installTextures( ctx ) {
 	device.queue.writeTexture( { texture: white }, new Uint8Array( [ 255, 255, 255, 255 ] ), {}, [ 1, 1 ] );
 	const whiteBinding = textureBinding( white, null );
 
+	// A depth texture read as a material map: the material slots take filterable floats,
+	// which a depth texture is not, so its depth is copied into a float texture (red, green
+	// and blue the depth, alpha one, as three.js samples a depth texture) after each time
+	// its target was drawn.
+	let depthCopyPipeline = null;
+
+	function depthCopy( binding ) {
+
+		if ( binding.copy && ! binding.drawn ) return binding.copy;
+		const { width, height } = binding;
+		const format = device.features.has( 'float32-filterable' ) ? 'r32float' : 'r16float';
+
+		if ( ! binding.copy || binding.copy.texture.width !== width || binding.copy.texture.height !== height ) {
+
+			binding.copy?.texture.destroy();
+			const copy = device.createTexture( { size: [ width, height ], format, usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT } );
+			binding.copy = { texture: copy, view: copy.createView(), sampler: binding.sampler };
+
+		}
+
+		depthCopyPipeline ??= device.createRenderPipeline( {
+			layout: 'auto',
+			vertex: { module: device.createShaderModule( { code: DEPTH_COPY } ), entryPoint: 'vertex' },
+			fragment: { module: device.createShaderModule( { code: DEPTH_COPY } ), entryPoint: 'fragment', targets: [ { format } ] },
+			primitive: { topology: 'triangle-list' }
+		} );
+		const encoder = device.createCommandEncoder();
+		const pass = encoder.beginRenderPass( { colorAttachments: [ { view: binding.copy.view, loadOp: 'clear', storeOp: 'store', clearValue: { r: 1, g: 1, b: 1, a: 1 } } ] } );
+		pass.setPipeline( depthCopyPipeline );
+		pass.setBindGroup( 0, device.createBindGroup( { layout: depthCopyPipeline.getBindGroupLayout( 0 ), entries: [ { binding: 0, resource: binding.view } ] } ) );
+		pass.draw( 3 );
+		pass.end();
+		device.queue.submit( [ encoder.finish() ] );
+		binding.drawn = false;
+		return binding.copy;
+
+	}
+
 	// A material's texture. Uploaded when the source's version changes; a source that is
 	// not ready yet (an image still loading) draws as white.
 	function texture( id, sources ) {
@@ -84,9 +122,9 @@ export function installTextures( ctx ) {
 
 			// Not while drawing into the same target; not before it was drawn once.
 			if ( id === ctx.drawingInto ) return whiteBinding;
-			// depth reads as a depth texture, which the material slots (filterable floats) cannot bind
 			const binding = renderTargetBindings.get( id );
-			return binding && ! binding.depth ? binding : whiteBinding;
+			if ( ! binding ) return whiteBinding;
+			return binding.depth ? depthCopy( binding ) : binding;
 
 		}
 
@@ -247,7 +285,7 @@ export function installTextures( ctx ) {
 		ctx.transmission?.depth.destroy();
 		const levels = Math.floor( Math.log2( Math.max( width, height ) ) ) + 1;
 		const texture_ = device.createTexture( { size: [ width, height ], format: HDR_FORMAT, mipLevelCount: levels, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING } );
-		const depth = device.createTexture( { size: [ width, height ], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT } );
+		const depth = device.createTexture( { size: [ width, height ], format: DEPTH_FORMAT, usage: GPUTextureUsage.RENDER_ATTACHMENT } );
 		ctx.transmission = { width, height, texture: texture_, depth, view: texture_.createView(), target: texture_.createView( { baseMipLevel: 0, mipLevelCount: 1 } ), depthView: depth.createView() };
 		ctx.rebuildFrameTextures();
 		return ctx.transmission;
@@ -279,7 +317,7 @@ export function installTextures( ctx ) {
 		}
 
 		// with a depth texture, the depth is resolved into a single-sampled copy for sampling
-		const depth = device.createTexture( { size: [ width, height ], format: depthTexture_ ? 'depth32float' : 'depth24plus', sampleCount: multisampled && ! depthTexture_ ? 4 : 1, usage: GPUTextureUsage.RENDER_ATTACHMENT | ( depthTexture_ ? GPUTextureUsage.TEXTURE_BINDING : 0 ) } );
+		const depth = device.createTexture( { size: [ width, height ], format: DEPTH_FORMAT, sampleCount: multisampled && ! depthTexture_ ? 4 : 1, usage: GPUTextureUsage.RENDER_ATTACHMENT | ( depthTexture_ ? GPUTextureUsage.TEXTURE_BINDING : 0 ) } );
 		entry = {
 			width, height, float, multisampled: multisampled && ! depthTexture_, count, depthId: depthTexture_?.id ?? 0, colors, multisampledColors, depth,
 			views: colors.map( ( c ) => c.createView() ), multisampleViews: multisampledColors.map( ( c ) => c.createView() ), depthView: depth.createView(),
@@ -297,7 +335,7 @@ export function installTextures( ctx ) {
 		// with a depth texture the target is single-sampled: the colour is read as drawn
 		if ( depthTexture_ ) entry.multisampleViews = [];
 		( target.textures ?? [ target.texture ] ).forEach( ( texture_, i ) => renderTargetBindings.set( texture_.id, { ...textureBinding( colors[ i ], texture_ ), texture: colors[ i ] } ) );
-		if ( depthTexture_ ) renderTargetBindings.set( depthTexture_.id, { view: entry.depthView, sampler: device.createSampler( {} ), depth: true } );
+		if ( depthTexture_ ) renderTargetBindings.set( depthTexture_.id, { view: depth.createView( { aspect: 'depth-only' } ), sampler: device.createSampler( {} ), depth: true, drawn: true, width, height } );
 		renderTargets.set( target.id, entry );
 		return entry;
 
@@ -309,7 +347,7 @@ export function installTextures( ctx ) {
 		if ( width === ctx.targetWidth && height === ctx.targetHeight ) return;
 		ctx.depthTexture?.destroy();
 		ctx.colorTexture?.destroy();
-		ctx.depthTexture = device.createTexture( { size: [ width, height ], format: 'depth24plus', sampleCount: samples, usage: GPUTextureUsage.RENDER_ATTACHMENT } );
+		ctx.depthTexture = device.createTexture( { size: [ width, height ], format: DEPTH_FORMAT, sampleCount: samples, usage: GPUTextureUsage.RENDER_ATTACHMENT } );
 		ctx.colorTexture = samples > 1 ? device.createTexture( { size: [ width, height ], format, sampleCount: samples, usage: GPUTextureUsage.RENDER_ATTACHMENT } ) : null;
 		ctx.depthView = ctx.depthTexture.createView();
 		ctx.colorView = ctx.colorTexture ? ctx.colorTexture.createView() : null;
@@ -322,6 +360,14 @@ export function installTextures( ctx ) {
 	const { sampler: environmentSampler, empty: noEnvironmentView, environment, background, backgroundPipeline } = environmentPasses;
 	ctx.environmentView = noEnvironmentView;
 
-	Object.assign( ctx, { background, backgroundPipeline, ensureHdrTargets, ensureTargets, ensureTransmission, environment, environmentPasses, environmentSampler, generateMipmaps, noEnvironmentView, renderTarget, renderTargets, setGroups, texture, textureSetGroup, textureSets, white } );
+	// A target with a depth texture was drawn: its depth copy is out of date.
+	function depthDrawn( target ) {
+
+		const binding = target.depthId ? renderTargetBindings.get( target.depthId ) : null;
+		if ( binding ) binding.drawn = true;
+
+	}
+
+	Object.assign( ctx, { depthDrawn, background, backgroundPipeline, ensureHdrTargets, ensureTargets, ensureTransmission, environment, environmentPasses, environmentSampler, generateMipmaps, noEnvironmentView, renderTarget, renderTargets, setGroups, texture, textureSetGroup, textureSets, white } );
 
 }

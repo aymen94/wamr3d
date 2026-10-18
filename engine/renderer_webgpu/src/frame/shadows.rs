@@ -43,7 +43,7 @@ pub(super) fn shadow_pass(
         let Some(vertices) = geometry.get_attribute("position").map(|a| a.count() as u32) else {
             continue;
         };
-        let aux_key = if ["tangent", "uv1", "skinIndex", "skinWeight"].iter().any(|name| geometry.has_attribute(name)) { AUX_KEY } else { 0 };
+        let aux_key = if AUX_ATTRIBUTES.iter().any(|name| geometry.has_attribute(name)) { AUX_KEY } else { 0 };
         let available = geometry.get_index().map_or(vertices, |index| index.count() as u32);
         let start = geometry.draw_range.start.min(available);
         let end = geometry.draw_range.start.saturating_add(geometry.draw_range.count).min(available);

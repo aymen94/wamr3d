@@ -240,7 +240,7 @@ export function createEnvironmentPasses( device, { format, samples, texture, tex
 			layout: device.createPipelineLayout( { bindGroupLayouts: [ backgroundLayout ] } ),
 			vertex: { module: backgroundModule, entryPoint: 'vertex' },
 			fragment: { module: backgroundModule, entryPoint: 'fragment', targets: [ { format: variant & HDR_KEY ? HDR_FORMAT : variant & RGBA8_KEY ? 'rgba8unorm' : format } ] },
-			depthStencil: { format: 'depth24plus', depthWriteEnabled: false, depthCompare: 'always' },
+			depthStencil: { format: 'depth24plus-stencil8', depthWriteEnabled: false, depthCompare: 'always' },
 			multisample: { count: variant & SINGLE_KEY ? 1 : samples }
 		} );
 		backgroundPipelines.set( variant, value );

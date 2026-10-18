@@ -3,7 +3,11 @@
 
 import { BufferGeometry, Float32BufferAttribute, Line, LineBasicMaterial, LineSegments, Vector2 } from '../../compat.js';
 
-/** three.js `LineMaterial`: `linewidth` in pixels (times the pixel ratio). Dashes and world units are not drawn. */
+/**
+ * three.js `LineMaterial`: `linewidth` in pixels (times the pixel ratio), or in world
+ * units with `worldUnits`; dashes along `computeLineDistances()` with `dashed`.
+ * `dashOffset` does not move the dashes.
+ */
 export class LineMaterial extends LineBasicMaterial {
 
 	constructor( parameters = {} ) {
@@ -21,7 +25,6 @@ export class LineMaterial extends LineBasicMaterial {
 		this.gapSize = gapSize ?? 1;
 		this.dashOffset = dashOffset ?? 0;
 		this.alphaToCoverage = alphaToCoverage ?? false;
-		if ( this.dashed || this.worldUnits ) console.warn( 'WAMR3D: LineMaterial: dashes and world units are not drawn' );
 
 	}
 
@@ -113,12 +116,6 @@ export class LineSegments2 extends LineSegments {
 
 	}
 
-	computeLineDistances() {
-
-		return this;
-
-	}
-
 }
 
 export class Line2 extends Line {
@@ -128,12 +125,6 @@ export class Line2 extends Line {
 		super( geometry, material );
 		this.type = 'Line2';
 		this.isLine2 = true;
-
-	}
-
-	computeLineDistances() {
-
-		return this;
 
 	}
 

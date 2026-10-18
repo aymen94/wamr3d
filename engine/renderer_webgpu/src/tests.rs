@@ -3,6 +3,9 @@ use wamr_core::{BufferAttribute, BufferGeometry, MaterialHandle, Renderable, Sha
 use wamr_math::Vector4;
 use wamr_objects::box_geometry;
 
+/// The pipeline-key bits of three.js's default depth function, `LessEqualDepth`.
+const LESS_EQUAL: u32 = 3 << DEPTH_FUNC_SHIFT;
+
 /// A camera at the origin looking down -Z, and boxes at the given positions.
 fn scene(positions: &[[f32; 3]]) -> (World, Entity, Entity, Vec<Entity>) {
     let mut world = World::new();
@@ -82,7 +85,7 @@ fn uniforms_hold_the_matrices_and_colour() {
     assert_eq!(m[0..4], [1.0, 0.5, 0.25, 1.0]);
     assert_eq!(m[4..8], [0.5, 0.25, 2.0, 0.0]);
     assert_eq!(map_entry(m, wamr_core::MapSlot::Color), [1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0], "identity transform, slot 0, uv set 0");
-    assert_eq!((frame.draws[0].start, frame.draws[0].count, frame.draws[0].pipeline, frame.draws[0].instance_count), (0, 36, 0b11000, 1));
+    assert_eq!((frame.draws[0].start, frame.draws[0].count, frame.draws[0].pipeline, frame.draws[0].instance_count), (0, 36, 0b11000 | LESS_EQUAL, 1));
     assert_eq!(frame.draws[0].textures, [7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     // a standard material: 4% reflectance and full specular intensity
     assert_eq!(m[12..16], [0.04, 0.04, 0.04, 1.0]);
@@ -124,7 +127,7 @@ fn blended_draws_come_last_and_farthest_first() {
 
     let frame = prepare_frame(&mut world, root, camera, &Lighting::default()).unwrap();
     assert_eq!(frame.draws.iter().map(|d| d.object).collect::<Vec<_>>(), [boxes[3], boxes[2], boxes[1], boxes[0]]);
-    assert_eq!(frame.draws[3].pipeline, 0b10100 | 1 << 11, "blended with normal blending");
+    assert_eq!(frame.draws[3].pipeline, 0b10100 | 1 << 11 | LESS_EQUAL, "blended with normal blending");
     let m = block(&frame, 3);
     assert_eq!((m[3], m[7]), (0.5, 2.0));
 }
@@ -140,7 +143,7 @@ fn lines_need_no_normals_and_ignore_the_side() {
     world.set_renderable(boxes[0], Some(Renderable { primitive: Primitive::LineSegments, ..Renderable::mesh(geometry, material) }));
 
     let frame = prepare_frame(&mut world, root, camera, &Lighting::default()).unwrap();
-    assert_eq!((frame.draws[0].count, frame.draws[0].pipeline), (4, 2 | 0b11000 | 2 << 5));
+    assert_eq!((frame.draws[0].count, frame.draws[0].pipeline), (4, 2 | 0b11000 | 2 << 5 | LESS_EQUAL));
     assert_eq!(frame.object_uniforms[28], 17.0, "vertex colours, a line");
 }
 

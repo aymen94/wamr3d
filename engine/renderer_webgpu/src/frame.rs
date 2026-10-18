@@ -153,7 +153,7 @@ pub fn prepare_frame(world: &mut World, root: Entity, camera: Entity, lighting: 
             Some(color) if color.item_size == 4 && matches!(color.array, AttributeArray::Float32(_)) => FOUR_COMPONENT_COLOR_KEY,
             _ => 0,
         };
-        let aux_key = if ["tangent", "uv1", "skinIndex", "skinWeight"].iter().any(|name| geometry.has_attribute(name)) { AUX_KEY } else { 0 };
+        let aux_key = if AUX_ATTRIBUTES.iter().any(|name| geometry.has_attribute(name)) { AUX_KEY } else { 0 };
         let available = geometry.get_index().map_or(vertices, |index| index.count() as u32);
         let range_start = geometry.draw_range.start.min(available);
         let range_end = geometry.draw_range.start.saturating_add(geometry.draw_range.count).min(available);

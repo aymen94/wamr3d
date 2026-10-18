@@ -95,10 +95,14 @@ export function installPrograms( ctx ) {
 	const GLSL1_VERTEX = '#define attribute in\n#define varying out\n#define texture2D texture\n';
 	const GLSL1_FRAGMENT = '#define varying in\nlayout(location = 0) out highp vec4 pc_fragColor;\n#define gl_FragColor pc_fragColor\n#define gl_FragDepthEXT gl_FragDepth\n#define texture2D texture\n#define textureCube texture\n#define texture2DProj textureProj\n#define texture2DLodEXT textureLod\n#define texture2DProjLodEXT textureProjLod\n#define textureCubeLodEXT textureLod\n#define texture2DGradEXT textureGrad\n#define texture2DProjGradEXT textureProjGrad\n#define textureCubeGradEXT textureGrad\n';
 	const INCLUDES = {
-		common: '#define PI 3.141592653589793\n#define PI2 6.283185307179586\n#define HALF_PI 1.5707963267948966\n#define RECIPROCAL_PI 0.3183098861837907\n#define EPSILON 1e-6\n#define saturate( a ) clamp( a, 0.0, 1.0 )\nfloat pow2( const in float x ) { return x * x; }\nvec3 pow2( const in vec3 x ) { return x * x; }\nfloat luminance( const in vec3 rgb ) { return dot( rgb, vec3( 0.2126, 0.7152, 0.0722 ) ); }\n',
+		common: '#define PI 3.141592653589793\n#define PI2 6.283185307179586\n#define HALF_PI 1.5707963267948966\n#define RECIPROCAL_PI 0.3183098861837907\n#define EPSILON 1e-6\n#define saturate( a ) clamp( a, 0.0, 1.0 )\nfloat pow2( const in float x ) { return x * x; }\nvec3 pow2( const in vec3 x ) { return x * x; }\nfloat luminance( const in vec3 rgb ) { return dot( rgb, vec3( 0.2126, 0.7152, 0.0722 ) ); }\nfloat pow3( const in float x ) { return x * x * x; }\nfloat pow4( const in float x ) { float x2 = x * x; return x2 * x2; }\nstruct IncidentLight { vec3 color; vec3 direction; bool visible; };\nstruct ReflectedLight { vec3 directDiffuse; vec3 directSpecular; vec3 indirectDiffuse; vec3 indirectSpecular; };\nvec3 transformDirection( in vec3 dir, in mat4 matrix ) { return normalize( ( matrix * vec4( dir, 0.0 ) ).xyz ); }\nvec3 transformDirectionByInverseViewMatrix( in vec3 dir, in mat4 matrix ) { return normalize( ( vec4( dir, 0.0 ) * matrix ).xyz ); }\n#define inverseTransformDirection transformDirectionByInverseViewMatrix\nvec3 transformNormalByInverseViewMatrix( in vec3 normal, in mat4 viewMatrix ) { return normalize( ( vec4( normal, 0.0 ) * viewMatrix ).xyz ); }\n',
 		colorspace_fragment: '',
 		tonemapping_fragment: '',
-		fog_pars_vertex: '', fog_vertex: '', fog_pars_fragment: '', fog_fragment: '',
+		fog_pars_vertex: '#ifdef USE_FOG\nvarying float vFogDepth;\n#endif\n',
+		fog_vertex: '#ifdef USE_FOG\nvFogDepth = - mvPosition.z;\n#endif\n',
+		fog_pars_fragment: '#ifdef USE_FOG\nuniform vec3 fogColor;\nvarying float vFogDepth;\n#ifdef FOG_EXP2\nuniform float fogDensity;\n#else\nuniform float fogNear;\nuniform float fogFar;\n#endif\n#endif\n',
+		fog_fragment: '#ifdef USE_FOG\n#ifdef FOG_EXP2\nfloat fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );\n#else\nfloat fogFactor = smoothstep( fogNear, fogFar, vFogDepth );\n#endif\ngl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );\n#endif\n',
+		lights_pars_begin: 'uniform bool receiveShadow;\nuniform vec3 ambientLightColor;\n#if defined( USE_LIGHT_PROBES )\nuniform vec3 lightProbe[ 9 ];\n#endif\nvec3 shGetIrradianceAt( in vec3 normal, in vec3 shCoefficients[ 9 ] ) {\n\tfloat x = normal.x, y = normal.y, z = normal.z;\n\tvec3 result = shCoefficients[ 0 ] * 0.886227;\n\tresult += shCoefficients[ 1 ] * 2.0 * 0.511664 * y;\n\tresult += shCoefficients[ 2 ] * 2.0 * 0.511664 * z;\n\tresult += shCoefficients[ 3 ] * 2.0 * 0.511664 * x;\n\tresult += shCoefficients[ 4 ] * 2.0 * 0.429043 * x * y;\n\tresult += shCoefficients[ 5 ] * 2.0 * 0.429043 * y * z;\n\tresult += shCoefficients[ 6 ] * ( 0.743125 * z * z - 0.247708 );\n\tresult += shCoefficients[ 7 ] * 2.0 * 0.429043 * x * z;\n\tresult += shCoefficients[ 8 ] * 0.429043 * ( x * x - y * y );\n\treturn result;\n}\nvec3 getLightProbeIrradiance( const in vec3 lightProbe[ 9 ], const in vec3 normal ) {\n\treturn shGetIrradianceAt( transformNormalByInverseViewMatrix( normal, viewMatrix ), lightProbe );\n}\nvec3 getAmbientLightIrradiance( const in vec3 ambientLightColor ) {\n\treturn ambientLightColor;\n}\nfloat getDistanceAttenuation( const in float lightDistance, const in float cutoffDistance, const in float decayExponent ) {\n\tfloat distanceFalloff = 1.0 / max( pow( lightDistance, decayExponent ), 0.01 );\n\tif ( cutoffDistance > 0.0 ) distanceFalloff *= pow2( saturate( 1.0 - pow4( lightDistance / cutoffDistance ) ) );\n\treturn distanceFalloff;\n}\nfloat getSpotAttenuation( const in float coneCosine, const in float penumbraCosine, const in float angleCosine ) {\n\treturn smoothstep( coneCosine, penumbraCosine, angleCosine );\n}\n#if NUM_DIR_LIGHTS > 0\nstruct DirectionalLight { vec3 direction; vec3 color; };\nuniform DirectionalLight directionalLights[ NUM_DIR_LIGHTS ];\nvoid getDirectionalLightInfo( const in DirectionalLight directionalLight, out IncidentLight light ) {\n\tlight.color = directionalLight.color;\n\tlight.direction = directionalLight.direction;\n\tlight.visible = true;\n}\n#endif\n#if NUM_POINT_LIGHTS > 0\nstruct PointLight { vec3 position; vec3 color; float distance; float decay; };\nuniform PointLight pointLights[ NUM_POINT_LIGHTS ];\nvoid getPointLightInfo( const in PointLight pointLight, const in vec3 geometryPosition, out IncidentLight light ) {\n\tvec3 lVector = pointLight.position - geometryPosition;\n\tlight.direction = normalize( lVector );\n\tlight.color = pointLight.color * getDistanceAttenuation( length( lVector ), pointLight.distance, pointLight.decay );\n\tlight.visible = ( light.color != vec3( 0.0 ) );\n}\n#endif\n#if NUM_SPOT_LIGHTS > 0\nstruct SpotLight { vec3 position; vec3 direction; vec3 color; float distance; float decay; float coneCos; float penumbraCos; };\nuniform SpotLight spotLights[ NUM_SPOT_LIGHTS ];\nvoid getSpotLightInfo( const in SpotLight spotLight, const in vec3 geometryPosition, out IncidentLight light ) {\n\tvec3 lVector = spotLight.position - geometryPosition;\n\tlight.direction = normalize( lVector );\n\tfloat spotAttenuation = getSpotAttenuation( spotLight.coneCos, spotLight.penumbraCos, dot( light.direction, spotLight.direction ) );\n\tlight.color = spotAttenuation > 0.0 ? spotLight.color * spotAttenuation * getDistanceAttenuation( length( lVector ), spotLight.distance, spotLight.decay ) : vec3( 0.0 );\n\tlight.visible = ( light.color != vec3( 0.0 ) );\n}\n#endif\n#if NUM_HEMI_LIGHTS > 0\nstruct HemisphereLight { vec3 direction; vec3 skyColor; vec3 groundColor; };\nuniform HemisphereLight hemisphereLights[ NUM_HEMI_LIGHTS ];\nvec3 getHemisphereLightIrradiance( const in HemisphereLight hemiLight, const in vec3 normal ) {\n\tfloat hemiDiffuseWeight = 0.5 * dot( normal, hemiLight.direction ) + 0.5;\n\treturn mix( hemiLight.groundColor, hemiLight.skyColor, hemiDiffuseWeight );\n}\n#endif\n',
 		logdepthbuf_pars_vertex: '', logdepthbuf_vertex: '', logdepthbuf_pars_fragment: '', logdepthbuf_fragment: '',
 		premultiplied_alpha_fragment: '#ifdef PREMULTIPLIED_ALPHA\ngl_FragColor.rgb *= gl_FragColor.a;\n#endif\n'
 	};
@@ -110,13 +114,17 @@ export function installPrograms( ctx ) {
 	} );
 	const STANDARD_ATTRIBUTES = [ [ 'position', 0 ], [ 'normal', 1 ], [ 'uv', 2 ], [ 'color', 3 ], [ 'instanceMatrix', 4 ], [ 'instanceColor', 8 ], [ 'tangent', 9 ], [ 'uv1', 10 ], [ 'skinIndex', 11 ], [ 'skinWeight', 12 ] ];
 
-	function shaderProgram( material, instanced, srgb ) {
+	// `lights` and `fog` are the frame's (see the compat renderer's extras), or null when the
+	// material does not use them; three.js defines the light counts in every program.
+	function shaderProgram( material, instanced, srgb, lights = null, fog = null ) {
 
-		const key = 'shader:' + material.id + ':' + material.version + ':' + instanced + ':' + srgb;
+		const key = 'shader:' + material.id + ':' + material.version + ':' + instanced + ':' + srgb + ':' + ( lights?.key ?? '' ) + ':' + ( fog ? ( fog.exp2 ? 2 : 1 ) : 0 );
 		let value = programs.get( key );
 		if ( value ) return value;
 		const defines = Object.entries( material.defines ?? {} ).map( ( [ name, v ] ) => ( v === false ? '' : `#define ${name} ${v === true ? '' : v}` ) ).join( '\n' ) + '\n';
-		const flags = ( instanced ? '#define USE_INSTANCING\n' : '' ) + ( material.vertexColors ? '#define USE_COLOR\n' : '' ) + ( material.premultipliedAlpha ? '#define PREMULTIPLIED_ALPHA\n' : '' );
+		const [ directional, point, spot, hemisphere ] = lights?.counts ?? [ 0, 0, 0, 0 ];
+		const lighting = `#define NUM_DIR_LIGHTS ${directional}\n#define NUM_POINT_LIGHTS ${point}\n#define NUM_SPOT_LIGHTS ${spot}\n#define NUM_RECT_AREA_LIGHTS 0\n#define NUM_HEMI_LIGHTS ${hemisphere}\n#define NUM_DIR_LIGHT_SHADOWS 0\n#define NUM_POINT_LIGHT_SHADOWS 0\n#define NUM_SPOT_LIGHT_SHADOWS 0\n#define NUM_SPOT_LIGHT_MAPS 0\n#define NUM_SPOT_LIGHT_COORDS 0\n` + ( lights?.probes ? '#define USE_LIGHT_PROBES\n' : '' ) + ( fog ? '#define USE_FOG\n' + ( fog.exp2 ? '#define FOG_EXP2\n' : '' ) : '' );
+		const flags = lighting + ( instanced ? '#define USE_INSTANCING\n' : '' ) + ( material.vertexColors ? '#define USE_COLOR\n' : '' ) + ( material.premultipliedAlpha ? '#define PREMULTIPLIED_ALPHA\n' : '' );
 		const raw = material.isRawShaderMaterial === true, glsl3 = material.glslVersion === '300 es';
 		const strip = ( source ) => source.replace( /^\s*#version[^\n]*\n/, '' );
 		let vertex, fragment;
@@ -256,6 +264,7 @@ export function installPrograms( ctx ) {
 			if ( ! world.hasAttribute( entry.handle, attribute.name ) ) {
 
 				gl.disableVertexAttribArray( attribute.location );
+				ctx.forgetInput( attribute.location );
 				continue;
 
 			}
@@ -277,6 +286,7 @@ export function installPrograms( ctx ) {
 			gl.vertexAttribDivisor( attribute.location, 0 );
 			if ( attribute.integer ) gl.vertexAttribIPointer( attribute.location, cached.size, gl.INT, 0, 0 );
 			else gl.vertexAttribPointer( attribute.location, cached.size, gl.FLOAT, false, 0, 0 );
+			ctx.forgetInput( attribute.location );
 
 		}
 

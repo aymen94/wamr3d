@@ -3,7 +3,7 @@
 //! A [`World`] owns objects, their components and the resources they use; everything
 //! is referred to by generational [`Handle`]s, so there are no reference cycles and a
 //! stale handle fails instead of reading freed memory. Behaviour follows three.js;
-//! the mapping from its classes is in DECISIONS.md section 5.
+//! the mapping from its classes is in AGENTS.md sections 4.2 and 10.
 
 #![forbid(unsafe_code)]
 

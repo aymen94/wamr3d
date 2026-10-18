@@ -151,7 +151,7 @@ fn vertex(input: VertexInput) -> VertexOutput {
     output.color = input.color;
     output.tint = input.instance_color;
     output.depth = dot(world.xyz - frame.camera_position.xyz, frame.camera_forward.xyz);
-    output.line_distance = 0.0;
+    output.line_distance = input.line_distance;
     return output;
 }
 
@@ -160,6 +160,8 @@ struct QuadInput {
     // per point (or segment): its first and second vertex, their colours and, for dashed
     // lines, their distances along the line
     @location(0) position: vec3<f32>,
+    @location(1) line_distance: f32,
+    @location(2) line_distance_b: f32,
     @location(3) color: vec4<f32>,
     @location(13) position_b: vec3<f32>,
     @location(14) color_b: vec4<f32>,
@@ -190,6 +192,7 @@ fn vertex_quad(input: QuadInput) -> VertexOutput {
         let at_b = corner.x > 0.0;
         world = select(a, b, at_b);
         color = select(input.color, input.color_b, at_b);
+        line_distance = select(input.line_distance, input.line_distance_b, at_b);
         if (material.depth_params.y > 0.5) {
             // width in world units: across the segment and the direction to the camera
             let direction = b.xyz - a.xyz;

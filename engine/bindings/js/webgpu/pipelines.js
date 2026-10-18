@@ -4,7 +4,7 @@
 
 import { Renderer } from '../index.js';
 import { BLEND_FACTORS, HDR_FORMAT, HDR_KEY, RGBA8_KEY, SINGLE_KEY, customBlend } from './formats.js';
-import { PREMULTIPLIED_KEY, QUAD_KEY, TOPOLOGIES, quadBuffers, vertexBuffers } from './constants.js';
+import { ALPHA_TO_COVERAGE_KEY, COLOR_WRITE_OFF_KEY, DEPTH_FORMAT, DEPTH_FUNCTIONS, DEPTH_FUNC_SHIFT, PREMULTIPLIED_KEY, QUAD_KEY, STENCIL_FUNCTIONS, STENCIL_OPERATIONS, TOPOLOGIES, quadBuffers, vertexBuffers } from './constants.js';
 
 /** Adds this part's functions and state to the host context `ctx`. */
 export function installPipelines( ctx ) {
@@ -25,12 +25,42 @@ export function installPipelines( ctx ) {
 
 	}
 
+	// Depth and stencil state: the depth function of the key (always without a depth test),
+	// and from `state` (see `materialState` in ../webgpu.js), when given, the polygon offset
+	// and the stencil test. Lines and points take no depth bias, as WebGPU requires.
+	function depthStencil( key, state, triangles ) {
+
+		const value = { format: DEPTH_FORMAT, depthWriteEnabled: ( key & 8 ) !== 0, depthCompare: key & 16 ? DEPTH_FUNCTIONS[ key >> DEPTH_FUNC_SHIFT & 7 ] : 'always' };
+		if ( ! state ) return value;
+		const [ factor, units, bits, readMask, writeMask ] = state.split( ',' ).map( Number );
+
+		if ( triangles ) {
+
+			value.depthBias = Math.round( units );
+			value.depthBiasSlopeScale = factor;
+
+		}
+
+		if ( bits & 1 ) {
+
+			const face = { compare: STENCIL_FUNCTIONS[ bits >> 1 & 7 ], failOp: STENCIL_OPERATIONS[ bits >> 4 & 7 ], depthFailOp: STENCIL_OPERATIONS[ bits >> 7 & 7 ], passOp: STENCIL_OPERATIONS[ bits >> 10 & 7 ] };
+			value.stencilFront = face;
+			value.stencilBack = face;
+			value.stencilReadMask = readMask;
+			value.stencilWriteMask = writeMask;
+
+		}
+
+		return value;
+
+	}
+
 	// The pipeline of a full-screen effect (`custom` 1 to 6), with the draw's blending and depth.
 	let effectModule = null;
 
 	function effectPipeline( key, custom ) {
 
-		const id = key + custom * 0x2000000;
+		const id = 'effect:' + key + ':' + custom;
 		let value = pipelines.get( id );
 		if ( value ) return value;
 		effectModule ??= device.createShaderModule( { code: Renderer.effectShaderSource() } );
@@ -39,7 +69,7 @@ export function installPipelines( ctx ) {
 			vertex: { module: effectModule, entryPoint: 'vertex_effect', buffers: vertexBuffers( key ) },
 			fragment: { module: effectModule, entryPoint: Renderer.effectEntryPoint( custom ), targets: [ { format: key & HDR_KEY ? HDR_FORMAT : key & RGBA8_KEY ? 'rgba8unorm' : format, blend: blend( key ) } ] },
 			primitive: { topology: 'triangle-list', frontFace: 'ccw', cullMode: 'none' },
-			depthStencil: { format: 'depth24plus', depthWriteEnabled: ( key & 8 ) !== 0, depthCompare: key & 16 ? 'less-equal' : 'always' },
+			depthStencil: depthStencil( key, null, true ),
 			multisample: { count: key & SINGLE_KEY ? 1 : samples }
 		} );
 		pipelines.set( id, value );
@@ -47,10 +77,11 @@ export function installPipelines( ctx ) {
 
 	}
 
-	// `custom` is the material's packed custom blending, read only with CustomBlending.
-	function pipeline( key, custom = 0 ) {
+	// `custom` is the material's packed custom blending, read only with CustomBlending;
+	// `state` its polygon offset and stencil settings ('' when they are the defaults).
+	function pipeline( key, custom = 0, state = '' ) {
 
-		const id = ( key & 4 ) && ( key >> 11 & 7 ) === 5 ? key + ':' + custom : key;
+		const id = custom || state ? key + ':' + custom + ':' + state : key;
 		let value = pipelines.get( id );
 		if ( value ) return value;
 		const quad = ( key & QUAD_KEY ) !== 0, topology = quad ? 'triangle-list' : TOPOLOGIES[ key >> 5 & 3 ];
@@ -58,10 +89,10 @@ export function installPipelines( ctx ) {
 		value = device.createRenderPipeline( {
 			layout,
 			vertex: quad ? { module, entryPoint: 'vertex_quad', buffers: quadBuffers( key ) } : { module, entryPoint: 'vertex', buffers: vertexBuffers( key ) },
-			fragment: { module, entryPoint: 'fragment', targets: [ { format: key & HDR_KEY ? HDR_FORMAT : key & RGBA8_KEY ? 'rgba8unorm' : format, blend: blend( key, custom ) } ] },
+			fragment: { module, entryPoint: 'fragment', targets: [ { format: key & HDR_KEY ? HDR_FORMAT : key & RGBA8_KEY ? 'rgba8unorm' : format, blend: blend( key, custom ), writeMask: key & COLOR_WRITE_OFF_KEY ? 0 : GPUColorWrite.ALL } ] },
 			primitive: { topology, frontFace: 'ccw', cullMode: quad ? 'none' : [ 'back', 'front', 'none' ][ key & 3 ], stripIndexFormat: topology === 'line-strip' ? 'uint32' : undefined },
-			depthStencil: { format: 'depth24plus', depthWriteEnabled: ( key & 8 ) !== 0, depthCompare: key & 16 ? 'less-equal' : 'always' },
-			multisample: { count: key & SINGLE_KEY ? 1 : samples }
+			depthStencil: depthStencil( key, state, topology === 'triangle-list' ),
+			multisample: { count: key & SINGLE_KEY ? 1 : samples, alphaToCoverageEnabled: ( key & ALPHA_TO_COVERAGE_KEY ) !== 0 && ! ( key & SINGLE_KEY ) && samples > 1 }
 		} );
 		pipelines.set( id, value );
 		return value;

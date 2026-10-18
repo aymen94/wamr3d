@@ -18,7 +18,7 @@ pub enum AttributeArray {
 }
 
 /// JS `ToInt32`-style conversion: truncate, then wrap modulo 2^32. Rust's `as` saturates
-/// instead, which would store a different value for out-of-range writes (DECISIONS.md D18).
+/// instead, which would store a different value for out-of-range writes (AGENTS.md D18).
 fn wrap_to_i64(value: f64) -> i64 {
     if !value.is_finite() {
         return 0;

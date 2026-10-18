@@ -4,7 +4,7 @@
 
 import { memory } from '../index.js';
 import { auxRecord } from './formats.js';
-import { ATTRIBUTES, AUX_ATTRIBUTES, AUX_SLOT, VERTEX_COLOR_SLOT, wireframeCount } from './constants.js';
+import { ATTRIBUTES, AUX_ATTRIBUTES, AUX_FLOATS, AUX_OFFSETS, AUX_SIZES, AUX_SLOT, VERTEX_COLOR_SLOT, wireframeCount } from './constants.js';
 
 /** Adds this part's functions and state to the host context `ctx`. */
 export function installBuffers( ctx ) {
@@ -86,15 +86,15 @@ export function installBuffers( ctx ) {
 
 			} else {
 
-				const data = new Float32Array( vertices * 14 ), view = new Float32Array( memory().buffer );
-				const offsets = [ 0, 4, 6, 10 ], sizes = [ 4, 2, 4, 4 ];
+				const data = new Float32Array( vertices * AUX_FLOATS ), view = new Float32Array( memory().buffer );
+				const offsets = AUX_OFFSETS, sizes = AUX_SIZES;
 
 				for ( let a = 0, p = o + 3 + ATTRIBUTES.length * 2; a < AUX_ATTRIBUTES; a ++, p += 2 ) {
 
 					const address = state[ p + 1 ];
 					if ( address === 0 ) continue;
 					const base = address >>> 2, size = sizes[ a ], offset = offsets[ a ];
-					for ( let v = 0; v < vertices; v ++ ) for ( let k = 0; k < size; k ++ ) data[ v * 14 + offset + k ] = view[ base + v * size + k ];
+					for ( let v = 0; v < vertices; v ++ ) for ( let k = 0; k < size; k ++ ) data[ v * AUX_FLOATS + offset + k ] = view[ base + v * size + k ];
 
 				}
 
@@ -179,11 +179,28 @@ export function installBuffers( ctx ) {
 	// its closing segment is drawn too; the result then starts at 0.
 	function quadSource( world, entry, start = 0, count = 0, loop = false ) {
 
-		if ( ! entry.index && ! loop ) return entry;
-		const key = entry.indexVersion + ':' + entry.versions[ 0 ] + ':' + entry.versions[ 3 ] + ( loop ? ':' + start + ':' + count : '' );
+		const dashed = ( ',' + entry.auxVersions ).includes( ',4:' );
+
+		if ( ! entry.index && ! loop ) {
+
+			// line distances in a buffer of their own, read per instance like the positions
+			if ( entry.distanceKey !== entry.auxVersions ) {
+
+				entry.distance?.destroy();
+				entry.distance = dashed ? upload( new Float32Array( world.getAttribute( entry.handle, 'lineDistance' ) ), null, GPUBufferUsage.VERTEX ) : null;
+				entry.distanceKey = entry.auxVersions;
+
+			}
+
+			return entry;
+
+		}
+
+		const key = entry.indexVersion + ':' + entry.versions[ 0 ] + ':' + entry.versions[ 3 ] + ':' + entry.auxVersions + ( loop ? ':' + start + ':' + count : '' );
 		if ( entry.quads && entry.quads.key === key ) return entry.quads;
 		entry.quads?.position?.destroy();
 		entry.quads?.color?.destroy();
+		entry.quads?.distance?.destroy();
 		const position = world.getAttribute( entry.handle, 'position' );
 		let index = entry.index ? world.getIndex( entry.handle ) : null;
 
@@ -207,7 +224,8 @@ export function installBuffers( ctx ) {
 		const colorSize = entry.sizes[ VERTEX_COLOR_SLOT ];
 		const color = entry.buffers[ VERTEX_COLOR_SLOT ] ? upload( unrolled( world.getAttribute( entry.handle, 'color' ), colorSize ), null, GPUBufferUsage.VERTEX ) : null;
 		ctx.zeroBytes = Math.max( ctx.zeroBytes, index.length * 16 );
-		entry.quads = { key, position: upload( unrolled( position, 3 ), null, GPUBufferUsage.VERTEX ), color, index: null };
+		const distance = dashed ? upload( unrolled( world.getAttribute( entry.handle, 'lineDistance' ), 1 ), null, GPUBufferUsage.VERTEX ) : null;
+		entry.quads = { key, position: upload( unrolled( position, 3 ), null, GPUBufferUsage.VERTEX ), color, distance, index: null };
 		entry.quads.buffers = [ entry.quads.position, null, null, color ];
 		return entry.quads;
 
@@ -279,6 +297,8 @@ export function installBuffers( ctx ) {
 		entry.index?.destroy();
 		entry.quads?.position?.destroy();
 		entry.quads?.color?.destroy();
+		entry.quads?.distance?.destroy();
+		entry.distance?.destroy();
 		if ( entry.loops ) for ( const buffer of entry.loops.values() ) buffer.destroy();
 
 	}

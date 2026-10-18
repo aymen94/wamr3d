@@ -43,12 +43,11 @@ Import from `wamr3d` for the handle-based API. It is designed for batched update
 
 ## Compatibility and current limits
 
-WAMR3D covers the scene graph, math, built-in objects, materials, loaders, animation, controls, post-processing and rendering features listed in the migration guide. GLSL `ShaderMaterial` is supported by the WebGL 2 renderer; on WebGPU it draws unlit. TSL is not supported. Other known gaps and backend differences are documented in the status page.
+WAMR3D covers the scene graph, math, built-in objects, materials, loaders, animation, controls, post-processing and rendering features listed in the project README. GLSL `ShaderMaterial` is supported by the WebGL 2 renderer; on WebGPU it draws unlit. TSL is not supported. Other known gaps and backend differences are documented in the status page.
 
-- [Migration guide and supported API](https://github.com/aymen94/wamr3d/blob/main/MIGRATION.md)
+- [Coming from three.js: differences and supported API](https://github.com/aymen94/wamr3d#coming-from-threejs)
 - [Current status and known gaps](https://github.com/aymen94/wamr3d/blob/main/STATUS.md)
 - [Configuration and development checks](https://github.com/aymen94/wamr3d/blob/main/CONFIGURATION.md)
-- [Design decisions](https://github.com/aymen94/wamr3d/blob/main/DECISIONS.md)
 - [Project website and examples](https://github.com/aymen94/wamr3d)
 
 The project is MIT-licensed. Third-party notices are included in the repository.

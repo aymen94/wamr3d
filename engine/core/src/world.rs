@@ -95,7 +95,7 @@ impl<T> Shared<T> {
 /// render targets and interleaved buffers they use.
 ///
 /// Everything is addressed by handle. Dropping the world frees all of it. See
-/// DECISIONS.md section 5.3 for the ownership and disposal rules.
+/// AGENTS.md section 10 (Section 5 / 5.3) for the ownership and disposal rules.
 #[derive(Default)]
 pub struct World {
     entities: Arena<EntityTag>,

@@ -4,7 +4,7 @@
 
 import { Renderer, memory } from '../index.js';
 import { HDR_FORMAT } from './formats.js';
-import { ALPHA_TEST_KEY, COLOR_SLOT, MATRIX_SLOT, vertexBuffers } from './constants.js';
+import { ALPHA_TEST_KEY, COLOR_SLOT, STATE_FLAGS_FLOAT, MATRIX_SLOT, vertexBuffers } from './constants.js';
 
 /** Adds this part's functions and state to the host context `ctx`. */
 export function installShadows( ctx ) {
@@ -225,7 +225,9 @@ export function installShadows( ctx ) {
 
 				const entry = distinct[ slots[ i ] ], material = draws[ o + 6 ], start = draws[ o + 2 ], vertices = draws[ o + 3 ];
 				// surface.w of the material block is its alpha test
-				const key = draws[ o ] | ( materials.view[ material * MATERIAL_FLOATS + 23 ] > 0 ? ALPHA_TEST_KEY : 0 );
+				// a fragment stage for alpha tests and for clipping planes that clip shadows
+				const block = materials.view, at = material * MATERIAL_FLOATS;
+				const key = draws[ o ] | ( block[ at + 23 ] > 0 || ( block[ at + STATE_FLAGS_FLOAT ] & 256 ) ? ALPHA_TEST_KEY : 0 );
 				const instance = instances( draws[ o + 4 ], draws[ o + 5 ], instanceSources ), copies = instance ? draws[ o + 5 ] : 1;
 				if ( key !== state ) pass.setPipeline( shadowPipeline( state = key, variance ) );
 

@@ -15,6 +15,8 @@ export class FrameEnvironment {
 		this.sceneIntensity = 1;
 		this.texture = null;
 		this.rotation = null;
+		// whether materials' own clipping planes apply (renderer.localClippingEnabled)
+		this.localClipping = false;
 
 	}
 

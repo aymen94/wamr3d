@@ -1,7 +1,7 @@
 //! f64 working-precision helpers.
 //!
 //! Public types store f32 but every function computes in f64, exactly as the
-//! JavaScript source does, and rounds once on store (DECISIONS.md D1). The shared
+//! JavaScript source does, and rounds once on store (AGENTS.md D1). The shared
 //! pieces of that arithmetic live here so each formula exists once.
 
 use crate::euler::EulerOrder;

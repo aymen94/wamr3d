@@ -21,7 +21,6 @@ export class RenderPass extends Pass {
 		this.clear = true;
 		this.clearDepth = false;
 		this.needsSwap = false;
-		if ( overrideMaterial ) console.warn( 'WAMR3D: RenderPass: overrideMaterial is not supported and has no effect' );
 
 	}
 
@@ -31,7 +30,10 @@ export class RenderPass extends Pass {
 		if ( this.clearColor !== null ) renderer.setClearColor( this.clearColor );
 		renderer.autoClear = this.clear;
 		renderer.setRenderTarget( this.renderToScreen ? null : readBuffer );
+		const override = this.scene.overrideMaterial;
+		if ( this.overrideMaterial !== null ) this.scene.overrideMaterial = this.overrideMaterial;
 		renderer.render( this.scene, this.camera );
+		this.scene.overrideMaterial = override;
 		renderer.autoClear = autoClear;
 		renderer.setClearColor( clearColor );
 

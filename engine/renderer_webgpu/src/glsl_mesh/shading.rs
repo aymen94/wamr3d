@@ -2,7 +2,29 @@
 
 macro_rules! mesh_fragment_shading {
     () => {
-        r#"vec4 shade() {
+        r#"// A basic, Lambert or Phong material's own environment map (three.js `envMap` with
+// `combine`, `reflectivity` and `refractionRatio`), sampled sharp along the reflected or
+// refracted view ray.
+vec3 with_environment(vec3 color, vec3 n, vec3 world, float strength) {
+    uint state_flags = uint(material.extra.x);
+    if ((state_flags & 32u) == 0u || frame.environment.x <= 0.0) {
+        return color;
+    }
+    vec3 incident = frame.camera_up.w < 0.5 ? frame.camera_forward.xyz : normalize(world - frame.camera_position.xyz);
+    vec3 direction = (state_flags & 64u) != 0u ? refract(incident, n, material.dash.w) : reflect(incident, n);
+    vec3 environment = environment_sample(direction, 0.0) * material.environment.x;
+    float k = strength * material.extra.w;
+    uint combine = uint(material.extra.z + 0.5);
+    if (combine == 1u) {
+        return mix(color, environment, k);
+    }
+    if (combine == 2u) {
+        return color + environment * k;
+    }
+    return mix(color, color * environment, k);
+}
+
+vec4 shade() {
     // flat shading: the triangle's normal from the position's screen-space change,
     // turned towards the viewer as three.js's is
     vec3 flat_cross = cross(dFdx(v_world), dFdy(v_world));
@@ -19,6 +41,18 @@ macro_rules! mesh_fragment_shading {
     vec3 position_dy = dFdy(v_world);
     uint object_flags = uint(object.params.x);
     uint flags = uint(material.params.w);
+    uint state_flags = uint(material.extra.x);
+    if (clipped(v_world)) {
+        discard;
+    }
+    if ((state_flags & 128u) != 0u) {
+        // dashes along the line: drawn while the distance is within a dash of its period
+        float period = max(material.dash.x + material.dash.y, 1e-6);
+        float along = v_line_distance * material.dash.z;
+        if (along - floor(along / period) * period > material.dash.x) {
+            discard;
+        }
+    }
     vec4 texel = map_present(MAP_COLOR) ? map_sample(MAP_COLOR, c) : vec4(1.0);
     vec3 base = material.color.rgb * texel.rgb * v_tint;
     float coverage = material.color.a * texel.a;
@@ -32,9 +66,32 @@ macro_rules! mesh_fragment_shading {
     if (material.surface.w > 0.0 && coverage <= material.surface.w) {
         discard;
     }
+    if ((state_flags & 4u) != 0u && coverage < alpha_hash_threshold(v_world, position_dx, position_dy)) {
+        discard;
+    }
     float alpha = (flags & 2u) != 0u ? coverage : 1.0;
 
-    if (map_present(MAP_NORMAL)) {
+    uint shading = uint(material.params.z + 0.5);
+    if (shading == 7u) {
+        // depth: the fragment's depth in the target, packed
+        return pack_depth(gl_FragCoord.z, uint(material.depth_params.x + 0.5), coverage);
+    }
+    if (shading == 8u) {
+        // distance from the camera between its near and far planes, packed into RGBA
+        float distance_ratio = (length(v_world - frame.camera_position.xyz) - frame.clip.y) / max(frame.clip.z - frame.clip.y, 1e-6);
+        return pack_depth(clamp(distance_ratio, 0.0, 1.0), 3201u, 1.0);
+    }
+    if (shading == 9u) {
+        // shadow only: the colour where shadows fall, transparent elsewhere
+        float mask = (object_flags & 4u) != 0u ? shadow_mask(v_world, geometry_normal, gl_FragCoord.xy) : 1.0;
+        return finish(fogged(material.color.rgb, v_depth), material.color.a * (1.0 - mask));
+    }
+
+    if (map_present(MAP_NORMAL) && (state_flags & 8u) != 0u) {
+        // an object-space normal map: the normal as stored, turned with the object
+        vec3 sampled = map_sample(MAP_NORMAL, c).xyz * 2.0 - 1.0;
+        n = normalize(mat3(object.normal_0.xyz, object.normal_1.xyz, object.normal_2.xyz) * sampled) * face;
+    } else if (map_present(MAP_NORMAL)) {
         MapCoords m = map_coords(MAP_NORMAL, c);
         vec3 sampled = slot_sample(m.slot, m.uv, m.dx, m.dy).xyz * 2.0 - 1.0;
         vec3 map_normal = vec3(sampled.xy * material.environment.zw, sampled.z);
@@ -63,14 +120,32 @@ macro_rules! mesh_fragment_shading {
         baked = map_sample(MAP_LIGHT, c).rgb * material.environment.y;
     }
 
-    uint shading = uint(material.params.z + 0.5);
+    float specular_strength = 1.0;
+    if (map_present(MAP_SPECULAR)) {
+        specular_strength = map_sample(MAP_SPECULAR, c).r;
+    }
     if (shading == 1u) {
         vec3 indirect = map_present(MAP_LIGHT) ? baked * RECIPROCAL_PI : vec3(1.0);
-        return finish(fogged(base * indirect * occlusion, v_depth), alpha);
+        return finish(fogged(with_environment(base * indirect * occlusion, n, v_world, specular_strength), v_depth), alpha);
     }
     if (shading == 4u) {
         vec3 view_normal = vec3(dot(n, frame.camera_right.xyz), dot(n, frame.camera_up.xyz), -dot(n, frame.camera_forward.xyz));
         return finish(srgb_to_linear(normalize(view_normal) * 0.5 + 0.5), alpha);
+    }
+    if (shading == 6u) {
+        // a matcap: the colour the view-space normal points at on a lit sphere's image
+        vec3 view_normal = normalize(vec3(dot(n, frame.camera_right.xyz), dot(n, frame.camera_up.xyz), -dot(n, frame.camera_forward.xyz)));
+        vec3 to_eye = normalize(frame.camera_position.xyz - v_world);
+        vec3 view_dir = vec3(dot(to_eye, frame.camera_right.xyz), dot(to_eye, frame.camera_up.xyz), -dot(to_eye, frame.camera_forward.xyz));
+        vec3 x = normalize(vec3(view_dir.z, 0.0, -view_dir.x));
+        vec3 y = cross(view_dir, x);
+        vec2 uv = vec2(dot(x, view_normal), dot(y, view_normal)) * 0.495 + 0.5;
+        vec3 matcap = vec3(mix(0.2, 0.8, uv.y));
+        if (map_present(MAP_MATCAP)) {
+            int slot = int(material.maps[2 * MAP_MATCAP].w + 0.5) - 1;
+            matcap = slot_sample(slot, vec2(uv.x, 1.0 - uv.y), vec2(0.0), vec2(0.0)).rgb;
+        }
+        return finish(fogged(base * matcap, v_depth), alpha);
     }
 
     bool standard = shading == 2u;
@@ -108,10 +183,6 @@ macro_rules! mesh_fragment_shading {
     float f90 = mix(specular_intensity, 1.0, metalness);
     vec3 f0 = mix(dielectric_f0, base, metalness);
     float shininess = max(material.specular.w, 0.0001);
-    float specular_strength = 1.0;
-    if (map_present(MAP_SPECULAR)) {
-        specular_strength = map_sample(MAP_SPECULAR, c).r;
-    }
 
     bool has_clearcoat = standard && (flags & 131072u) != 0u;
     float clearcoat = material.layers.x;
@@ -395,6 +466,9 @@ macro_rules! mesh_fragment_shading {
         }
     }
     lit += emissive;
+    if (!standard) {
+        lit = with_environment(lit, n, v_world, specular_strength);
+    }
     return finish(fogged(lit, v_depth), alpha);
 }
 

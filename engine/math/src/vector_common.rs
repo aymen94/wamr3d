@@ -4,7 +4,7 @@
 macro_rules! vector_common {
     ($T:ident, $js:literal, $n:literal, $(($i:literal, $f:ident)),+) => {
         impl $T {
-            #[doc = concat!("Widened components (DECISIONS.md D1).")]
+            #[doc = concat!("Widened components (AGENTS.md D1).")]
             #[inline]
             #[allow(dead_code)]
             pub(crate) fn wide(&self) -> [f64; $n] {

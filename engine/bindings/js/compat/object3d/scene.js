@@ -33,6 +33,8 @@ export class Scene extends Object3D {
 		this.backgroundBlurriness = 0;
 		this.backgroundIntensity = 1;
 		this.backgroundRotation = new Euler();
+		// drawn in place of every material that allows it
+		this.overrideMaterial = null;
 
 	}
 

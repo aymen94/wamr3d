@@ -80,11 +80,10 @@ export class RenderTarget {
 		this.depth = 1;
 		this.samples = options.samples ?? 0;
 		this.depthBuffer = options.depthBuffer ?? true;
-		this.stencilBuffer = false;
+		this.stencilBuffer = options.stencilBuffer ?? false;
 		this.scissor = new Vector4( 0, 0, width, height );
 		this.scissorTest = false;
 		this.viewport = new Vector4( 0, 0, width, height );
-		if ( options.stencilBuffer ) ignored( 'RenderTarget stencil buffers' );
 		this.textures = [];
 
 		for ( let i = 0; i < ( options.count ?? 1 ); i ++ ) {

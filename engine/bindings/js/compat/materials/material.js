@@ -8,7 +8,16 @@ import { Color, Matrix4, Vector2 } from '../math.js';
 import { withEvents } from '../events.js';
 import { environmentReady, environmentWidth } from './environment.js';
 
-const MATERIAL_KEYS = new Set( [ 'size', 'sizeAttenuation', 'rotation', 'toneMapped', 'fog', 'color', 'side', 'name', 'map', 'userData', 'transparent', 'opacity', 'depthTest', 'depthWrite', 'vertexColors', 'alphaTest', 'blending', 'blendSrc', 'blendDst', 'blendEquation', 'blendSrcAlpha', 'blendDstAlpha', 'blendEquationAlpha', 'premultipliedAlpha', 'flatShading', 'linewidth', 'linecap', 'linejoin', 'dithering', 'shadowSide', 'visible', 'polygonOffset', 'polygonOffsetFactor', 'polygonOffsetUnits' ] );
+// three.js's state of every material, and its defaults.
+const STATE_DEFAULTS = {
+	depthFunc: () => 3, colorWrite: () => true, alphaToCoverage: () => false, alphaHash: () => false,
+	stencilWrite: () => false, stencilFunc: () => 519, stencilRef: () => 0, stencilFuncMask: () => 0xff, stencilWriteMask: () => 0xff,
+	stencilFail: () => 7680, stencilZFail: () => 7680, stencilZPass: () => 7680,
+	clippingPlanes: () => null, clipIntersection: () => false, clipShadows: () => false, allowOverride: () => true,
+	blendColor: () => new Color( 0, 0, 0 ), blendAlpha: () => 0, forceSinglePass: () => false, precision: () => null
+};
+const STATE_KEYS = Object.keys( STATE_DEFAULTS );
+const MATERIAL_KEYS = new Set( [ 'size', 'sizeAttenuation', 'rotation', 'toneMapped', 'fog', 'color', 'side', 'name', 'map', 'userData', 'transparent', 'opacity', 'depthTest', 'depthWrite', 'vertexColors', 'alphaTest', 'blending', 'blendSrc', 'blendDst', 'blendEquation', 'blendSrcAlpha', 'blendDstAlpha', 'blendEquationAlpha', 'premultipliedAlpha', 'flatShading', 'linewidth', 'linecap', 'linejoin', 'dithering', 'shadowSide', 'visible', 'polygonOffset', 'polygonOffsetFactor', 'polygonOffsetUnits', 'normalMapType', ...STATE_KEYS ] );
 export const EMISSIVE_KEYS = [ 'emissive', 'emissiveIntensity' ];
 export const ENVIRONMENT_KEYS = [ 'envMap', 'envMapIntensity', 'envMapRotation' ];
 // The texture maps beside `map` that materials have by class,
@@ -24,7 +33,7 @@ const MAP_SETTINGS = {
 };
 const MAP_SETTING_KEYS = Object.values( MAP_SETTINGS ).flatMap( ( settings ) => Object.keys( settings ) );
 // Every map in the engine's map table order (`setMaterialMapTextures`, `setMaterialMapUv`).
-const MAP_TABLE = [ 'map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'alphaMap', 'aoMap', 'lightMap', 'bumpMap', 'displacementMap', 'specularMap', 'gradientMap', 'clearcoatMap', 'clearcoatRoughnessMap', 'clearcoatNormalMap', 'sheenColorMap', 'sheenRoughnessMap', 'specularIntensityMap', 'specularColorMap', 'transmissionMap', 'thicknessMap', 'iridescenceMap', 'iridescenceThicknessMap', 'anisotropyMap' ];
+const MAP_TABLE = [ 'map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'alphaMap', 'aoMap', 'lightMap', 'bumpMap', 'displacementMap', 'specularMap', 'gradientMap', 'clearcoatMap', 'clearcoatRoughnessMap', 'clearcoatNormalMap', 'sheenColorMap', 'sheenRoughnessMap', 'specularIntensityMap', 'specularColorMap', 'transmissionMap', 'thicknessMap', 'iridescenceMap', 'iridescenceThicknessMap', 'anisotropyMap', 'matcap' ];
 const _rotation = new Matrix4();
 
 // The inverse of an Euler rotation as a column-major 3x3 matrix (a rotation's inverse
@@ -39,7 +48,7 @@ export function inverseRotation( euler, out = new Float32Array( 9 ) ) {
 
 }
 // Properties `copy` carries over when the source has them, besides the common ones.
-const COPIED_KEYS = [ 'blending', 'blendSrc', 'blendDst', 'blendEquation', 'blendSrcAlpha', 'blendDstAlpha', 'blendEquationAlpha', 'premultipliedAlpha', 'flatShading', 'linewidth', 'size', 'sizeAttenuation', 'rotation', 'toneMapped', 'fog', 'roughness', 'metalness', 'specular', 'shininess', 'alphaTest', 'wireframe', 'wireframeLinewidth', ...EMISSIVE_KEYS, ...ENVIRONMENT_KEYS, ...ALL_MAPS, ...MAP_SETTING_KEYS ];
+const COPIED_KEYS = [ ...STATE_KEYS, 'dithering', 'shadowSide', 'visible', 'polygonOffset', 'polygonOffsetFactor', 'polygonOffsetUnits', 'combine', 'reflectivity', 'refractionRatio', 'dashSize', 'gapSize', 'scale', 'depthPacking', 'normalMapType', 'matcap', 'blending', 'blendSrc', 'blendDst', 'blendEquation', 'blendSrcAlpha', 'blendDstAlpha', 'blendEquationAlpha', 'premultipliedAlpha', 'flatShading', 'linewidth', 'size', 'sizeAttenuation', 'rotation', 'toneMapped', 'fog', 'roughness', 'metalness', 'specular', 'shininess', 'alphaTest', 'wireframe', 'wireframeLinewidth', ...EMISSIVE_KEYS, ...ENVIRONMENT_KEYS, ...ALL_MAPS, ...MAP_SETTING_KEYS ];
 
 // Gives a material the maps of its class, with three.js's defaults.
 export function withMaps( material, maps ) {
@@ -76,6 +85,54 @@ function customBlending( m ) {
 
 }
 
+// three.js's environment mappings that refract rather than reflect.
+const REFRACTION_MAPPINGS = new Set( [ 302, 304 ] );
+
+// The numbers of `setMaterialRenderState`, in its order.
+function renderState( m, out ) {
+
+	out[ 0 ] = m.visible === false ? 0 : 1;
+	out[ 1 ] = m.depthFunc;
+	out[ 2 ] = m.colorWrite === false ? 0 : 1;
+	out[ 3 ] = m.polygonOffset ? 1 : 0;
+	out[ 4 ] = m.polygonOffsetFactor ?? 0;
+	out[ 5 ] = m.polygonOffsetUnits ?? 0;
+	out[ 6 ] = m.alphaToCoverage ? 1 : 0;
+	out[ 7 ] = m.dithering ? 1 : 0;
+	out[ 8 ] = m.alphaHash ? 1 : 0;
+	out[ 9 ] = m.fog === false ? 0 : 1;
+	out[ 10 ] = m.normalMapType === 1 ? 1 : 0;
+	out[ 11 ] = m.blendColor.r;
+	out[ 12 ] = m.blendColor.g;
+	out[ 13 ] = m.blendColor.b;
+	out[ 14 ] = m.blendAlpha;
+	out[ 15 ] = m.stencilWrite ? 1 : 0;
+	out[ 16 ] = m.stencilFunc;
+	out[ 17 ] = m.stencilRef;
+	out[ 18 ] = m.stencilFuncMask;
+	out[ 19 ] = m.stencilWriteMask;
+	out[ 20 ] = m.stencilFail;
+	out[ 21 ] = m.stencilZFail;
+	out[ 22 ] = m.stencilZPass;
+	out[ 23 ] = m.clipIntersection ? 1 : 0;
+	out[ 24 ] = m.clipShadows ? 1 : 0;
+	out[ 25 ] = m.allowOverride === false ? 0 : 1;
+	out[ 26 ] = m.combine ?? 0;
+	out[ 27 ] = m.reflectivity ?? 1;
+	out[ 28 ] = m.refractionRatio ?? 0.98;
+	out[ 29 ] = m.envMap && REFRACTION_MAPPINGS.has( m.envMap.mapping ) ? 1 : 0;
+	out[ 30 ] = m.isLineDashedMaterial || m.dashed === true ? 1 : 0;
+	out[ 31 ] = m.dashSize ?? 3;
+	out[ 32 ] = m.gapSize ?? 1;
+	// LineDashedMaterial scales distances by `scale`, LineMaterial by `dashScale`
+	out[ 33 ] = m.isLineDashedMaterial ? m.scale ?? 1 : m.dashScale ?? 1;
+	out[ 34 ] = m.depthPacking ?? 3200;
+	out[ 35 ] = m.worldUnits === true ? 1 : 0;
+	out[ 36 ] = m.shadowSide === null || m.shadowSide === undefined ? - 1 : m.shadowSide;
+	return out;
+
+}
+
 export class Material {
 
 	constructor( parameters ) {
@@ -101,12 +158,23 @@ export class Material {
 		this.blendEquationAlpha = null;
 		this.premultipliedAlpha = false;
 		this.flatShading = false;
+		this.visible = true;
+		this.fog = true;
+		this.dithering = false;
+		this.shadowSide = null;
+		this.polygonOffset = false;
+		this.polygonOffsetFactor = 0;
+		this.polygonOffsetUnits = 0;
+		for ( const [ key, initial ] of Object.entries( STATE_DEFAULTS ) ) this[ key ] = initial();
 		this.userData = {};
 		this._side = FrontSide;
 		this._sent = new Array( 80 ).fill( NaN );
 		// per map of the table: texture id, then offset, repeat, rotation, centre and uv set
 		this._sentMaps = new Float64Array( MAP_TABLE.length * 9 ).fill( NaN );
 		this._mapIds = new Uint32Array( MAP_TABLE.length );
+		this._state = new Float32Array( 37 ).fill( NaN );
+		this._stateScratch = new Float32Array( 37 );
+		this._planes = new Float32Array( 0 );
 		finalizer.register( this, { kind: MATERIAL, handle: this.handle }, this );
 		if ( parameters ) this.setValues( parameters );
 
@@ -174,6 +242,8 @@ export class Material {
 		const pointSize = this.isPointsMaterial ? this.size : 1, lineWidth = this.linewidth ?? 1;
 		if ( pointSize !== sent[ 62 ] || lineWidth !== sent[ 63 ] ) w().setMaterialSizes( this.handle, sent[ 62 ] = pointSize, sent[ 63 ] = lineWidth );
 
+		this._syncRenderState( environment );
+
 		const lightIntensity = this.lightMapIntensity ?? 1, bumpScale = this.bumpScale ?? 1, displacementScale = this.displacementScale ?? 1, displacementBias = this.displacementBias ?? 0;
 
 		if ( lightIntensity !== sent[ 44 ] || bumpScale !== sent[ 45 ] || displacementScale !== sent[ 46 ] || displacementBias !== sent[ 47 ] ) {
@@ -204,9 +274,13 @@ export class Material {
 
 		}
 
-		if ( this._shading === 2 ) {
+		// standard materials are lit by their envMap or the scene's environment; basic,
+		// Lambert and Phong materials reflect only an envMap of their own
+		const ownOnly = this._shading === 0 || this._shading === 1 || this._shading === 3;
 
-			const intensity = environment.intensityFor( this ), uses = intensity >= 0;
+		if ( this._shading === 2 || ( ownOnly && this.envMap !== undefined ) ) {
+
+			const intensity = ownOnly ? ( this.envMap && environmentReady( this.envMap ) ? this.envMapIntensity ?? 1 : - 1 ) : environment.intensityFor( this ), uses = intensity >= 0;
 			if ( uses !== sent[ 27 ] || ( uses && intensity !== sent[ 28 ] ) ) w().setMaterialEnvironment( this.handle, sent[ 27 ] = uses, sent[ 28 ] = uses ? intensity : 1 );
 			const own = uses && this.envMap && environmentReady( this.envMap ) ? this.envMap : null, id = own ? own.id : 0;
 			const r = this.envMapRotation, width = own ? environmentWidth( own ) : 0;
@@ -220,6 +294,51 @@ export class Material {
 				sent[ 69 ] = r.order;
 
 			}
+
+		}
+
+	}
+
+	// The state three.js keeps on every material (depth function, stencil, polygon offset,
+	// clipping and the rest), and the clipping planes when local clipping is enabled.
+	_syncRenderState( environment ) {
+
+		const values = renderState( this, this._stateScratch ), sent = this._state;
+		let changed = false;
+
+		for ( let i = 0; i < values.length; i ++ ) {
+
+			if ( values[ i ] !== sent[ i ] ) {
+
+				changed = true;
+				break;
+
+			}
+
+		}
+
+		if ( changed ) {
+
+			sent.set( values );
+			w().setMaterialRenderState( this.handle, values );
+
+		}
+
+		const planes = environment.localClipping && this.clippingPlanes ? this.clippingPlanes : null, count = planes ? planes.length : 0;
+		let same = this._planes.length === count * 4;
+
+		for ( let i = 0; same && i < count; i ++ ) {
+
+			const { normal, constant } = planes[ i ], o = i * 4;
+			same = this._planes[ o ] === normal.x && this._planes[ o + 1 ] === normal.y && this._planes[ o + 2 ] === normal.z && this._planes[ o + 3 ] === constant;
+
+		}
+
+		if ( ! same ) {
+
+			this._planes = new Float32Array( count * 4 );
+			for ( let i = 0; i < count; i ++ ) this._planes.set( [ planes[ i ].normal.x, planes[ i ].normal.y, planes[ i ].normal.z, planes[ i ].constant ], i * 4 );
+			w().setMaterialClipPlanes( this.handle, this._planes );
 
 		}
 

@@ -11,7 +11,7 @@
 
 import { Renderer, memory } from './index.js';
 import { HDR_FORMAT, HDR_KEY, SINGLE_KEY, quadInstances } from './webgpu/formats.js';
-import { COLOR_SLOT, CUSTOM_BLENDING_FLOAT, LOOP_KEY, MATRIX_SLOT, QUAD_KEY, UNUSED_FRAMES, VERTEX_COLOR_SLOT, WIREFRAME_KEY, warnOnce, wireframeCount } from './webgpu/constants.js';
+import { BLEND_COLOR_FLOAT, COLOR_SLOT, CUSTOM_BLENDING_FLOAT, LOOP_KEY, POLYGON_OFFSET_FLOAT, STENCIL_FLOAT, MATRIX_SLOT, QUAD_KEY, UNUSED_FRAMES, VERTEX_COLOR_SLOT, WIREFRAME_KEY, warnOnce, wireframeCount } from './webgpu/constants.js';
 import { installState } from './webgpu/state.js';
 import { installPipelines } from './webgpu/pipelines.js';
 import { installTextures } from './webgpu/textures.js';
@@ -92,12 +92,24 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 	installShadows( ctx );
 	const { auxZeros, background, backgroundPipeline, bindGeometry, derivedIndex, distinct, drawShadows, effectPipeline, ensureHdrTargets, ensureTargets, ensureTransmission, entries, environment, environmentPasses, generateMipmaps, geometries, geometry, groups, identity, info, instanced, instances, noEnvironmentView, perInstance, pipeline, pipelines, quadSource, rebuildFrameTextures, release, renderTarget, renderTargets, setGroups, textureSetGroup, textureSets, textures, uploadBones, white } = ctx;
 
+	// A material's polygon offset and stencil settings as a pipeline-cache key: '' for the
+	// defaults (no offset, stencil untouched), else factor, units, packed stencil settings,
+	// read and write masks.
+	function materialState( blocks, at ) {
+
+		const factor = blocks[ at + POLYGON_OFFSET_FLOAT ], units = blocks[ at + POLYGON_OFFSET_FLOAT + 1 ];
+		const bits = blocks[ at + STENCIL_FLOAT ], readMask = blocks[ at + STENCIL_FLOAT + 2 ], writeMask = blocks[ at + STENCIL_FLOAT + 3 ];
+		if ( factor === 0 && units === 0 && ( bits & 1 ) === 0 ) return '';
+		return factor + ',' + units + ',' + bits + ',' + readMask + ',' + writeMask;
+
+	}
+
 	// Records the draws `from` to `to` of the prepared frame into `pass`.
 	function drawRange( pass, world, draws, from, to, variant, frameTextures ) {
 
 		pass.setBindGroup( 0, ctx.frameGroup );
 		pass.setBindGroup( 3, frameTextures );
-		let state = - 1, blendState = 0, bound = null, map = null, triangles = 0, boundInstances = undefined;
+		let state = - 1, blendState = 0, extraState = '', reference = 0, constant = null, bound = null, map = null, triangles = 0, boundInstances = undefined;
 
 		for ( let i = from, o = from * DRAW_FIELDS; i < to; i ++, o += DRAW_FIELDS ) {
 
@@ -113,8 +125,20 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 
 				// three.js's WebGPURenderer draws no GLSL shader materials either; they draw with their colour
 				if ( custom >= 16 ) warnOnce( 'ShaderMaterial and RawShaderMaterial (GLSL) draw only on WebGL 2; drawn unlit' );
-				const blending = ( key & 4 ) && ( key >> 11 & 7 ) === 5 ? ctx.materials.view[ material * MATERIAL_FLOATS + CUSTOM_BLENDING_FLOAT ] : 0;
-				if ( key !== state || blending !== blendState ) pass.setPipeline( pipeline( ( state = key ) | variant, blendState = blending ) );
+				const blocks = ctx.materials.view, at = material * MATERIAL_FLOATS;
+				const blending = ( key & 4 ) && ( key >> 11 & 7 ) === 5 ? blocks[ at + CUSTOM_BLENDING_FLOAT ] : 0;
+				const extra = materialState( blocks, at );
+				if ( key !== state || blending !== blendState || extra !== extraState ) pass.setPipeline( pipeline( ( state = key ) | variant, blendState = blending, extraState = extra ) );
+				const stencilReference = blocks[ at + STENCIL_FLOAT + 1 ];
+				if ( stencilReference !== reference ) pass.setStencilReference( reference = stencilReference );
+
+				if ( blending ) {
+
+					// the constant colour of custom blending (three.js `blendColor`, `blendAlpha`)
+					const r = blocks[ at + BLEND_COLOR_FLOAT ], g = blocks[ at + BLEND_COLOR_FLOAT + 1 ], b = blocks[ at + BLEND_COLOR_FLOAT + 2 ], a = blocks[ at + BLEND_COLOR_FLOAT + 3 ];
+					if ( ! constant || constant.r !== r || constant.g !== g || constant.b !== b || constant.a !== a ) pass.setBlendConstant( constant = { r, g, b, a } );
+
+				}
 
 			}
 			if ( groups[ i ] !== map ) pass.setBindGroup( 2, map = groups[ i ] );
@@ -128,6 +152,7 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 				const [ first, count ] = loop ? [ 0, vertices ] : quadInstances( topology, start, vertices );
 				pass.setVertexBuffer( 0, source.buffers[ 0 ] ?? ctx.zeros );
 				pass.setVertexBuffer( VERTEX_COLOR_SLOT, source.buffers[ VERTEX_COLOR_SLOT ] ?? ctx.zeros );
+				pass.setVertexBuffer( 1, source.distance ?? ctx.zeros );
 				bound = null;
 				if ( count > 0 ) pass.draw( 6, count, 0, first );
 				continue;
@@ -307,7 +332,7 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 				// the background and the opaque draws, into the copy transmissive materials read
 				const copy = encoder.beginRenderPass( {
 					colorAttachments: [ { view: ctx.transmission.target, clearValue: clear, loadOp: 'clear', storeOp: 'store' } ],
-					depthStencilAttachment: { view: ctx.transmission.depthView, depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'discard' }
+					depthStencilAttachment: { view: ctx.transmission.depthView, depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'discard', stencilClearValue: 0, stencilLoadOp: 'clear', stencilStoreOp: 'discard' }
 				} );
 
 				if ( backdrop ) {
@@ -338,7 +363,7 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 			if ( offscreen && offscreen.count > 1 ) colorAttachments.length = 1;
 			const pass = encoder.beginRenderPass( {
 				colorAttachments,
-				depthStencilAttachment: { view: offscreen ? offscreen.depthView : ctx.depthView, depthClearValue: 1, depthLoadOp: load ? 'load' : 'clear', depthStoreOp: offscreen?.depthId || load ? 'store' : 'discard' }
+				depthStencilAttachment: { view: offscreen ? offscreen.depthView : ctx.depthView, stencilClearValue: 0, stencilLoadOp: load ? 'load' : 'clear', stencilStoreOp: 'store', depthClearValue: 1, depthLoadOp: load ? 'load' : 'clear', depthStoreOp: offscreen?.depthId || load ? 'store' : 'discard' }
 			} );
 
 			if ( backdrop ) {
@@ -351,6 +376,7 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 
 			const triangles = drawRange( pass, world, draws, 0, count, variant, ctx.frameTexturesGroup );
 			pass.end();
+			if ( offscreen ) ctx.depthDrawn( offscreen );
 
 			if ( hdr ) {
 
@@ -437,7 +463,10 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 			for ( const resource of [ white, identity, auxZeros, ctx.ones, ctx.zeros, ctx.objectBuffer, ctx.materialBuffer, ctx.frameBuffer, ctx.depthTexture, ctx.colorTexture, ctx.hdrTexture, ctx.hdrMultisample, ctx.outputSettings, ctx.shadowTexture, ctx.shadowCameras, ctx.shadowObjects, ctx.boneTexture, emptyFloat, emptyVsm, ctx.vsmTexture, ctx.vsmScratch, ctx.transmission?.texture, ctx.transmission?.depth, ctx.vsm?.settings, ctx.vsm?.placeholder ] ) resource?.destroy();
 			environmentPasses.dispose();
 			context.unconfigure();
-			device.destroy();
+			// Destroying the device while frames are still queued on the GPU can block the page
+			// for tens of seconds in Chrome (seen when an app swaps renderers under heavy load),
+			// so the device goes once its submitted work is done.
+			device.queue.onSubmittedWorkDone().then( () => device.destroy(), () => device.destroy() );
 
 		}
 

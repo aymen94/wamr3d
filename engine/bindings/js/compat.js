@@ -26,7 +26,7 @@ export { BufferAttribute, InterleavedBuffer, InterleavedBufferAttribute, Float32
 export { Texture, RenderTarget, WebGLRenderTarget, DataTexture, CanvasTexture, DepthTexture, CubeTexture } from './compat/textures.js';
 export { DataUtils } from './compat/data-utils.js';
 export { Cache, LoadingManager, DefaultLoadingManager, Loader, LoaderUtils, FileLoader, ImageLoader, ImageBitmapLoader, TextureLoader, CubeTextureLoader, DataTextureLoader, AnimationLoader, BufferGeometryLoader, MaterialLoader, ObjectLoader } from './compat/loaders.js';
-export { Material, MeshBasicMaterial, LineBasicMaterial, PointsMaterial, SpriteMaterial, MeshLambertMaterial, MeshPhongMaterial, MeshToonMaterial, MeshNormalMaterial, MeshStandardMaterial, MeshPhysicalMaterial, ShaderMaterial, RawShaderMaterial, UniformsUtils } from './compat/materials.js';
+export { Material, MeshBasicMaterial, LineBasicMaterial, PointsMaterial, SpriteMaterial, MeshLambertMaterial, MeshPhongMaterial, MeshToonMaterial, MeshNormalMaterial, MeshStandardMaterial, MeshPhysicalMaterial, LineDashedMaterial, MeshMatcapMaterial, MeshDepthMaterial, MeshDistanceMaterial, ShadowMaterial, ShaderMaterial, RawShaderMaterial, UniformsUtils } from './compat/materials.js';
 export { Raycaster } from './compat/picking.js';
 export { ArrowHelper, BoxHelper, Box3Helper, PlaneHelper, CameraHelper, DirectionalLightHelper, PointLightHelper, SpotLightHelper, HemisphereLightHelper, PolarGridHelper, SkeletonHelper } from './compat/helpers.js';
 export { AudioContext, AudioListener, Audio, PositionalAudio, AudioAnalyser, AudioLoader } from './compat/audio.js';

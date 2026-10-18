@@ -4,7 +4,7 @@
 
 import { ColorRepresentation } from './core.js';
 import { Euler, Vector2 } from './vectors.js';
-import { Color, ColorSpace } from './shapes.js';
+import { Color, ColorSpace, Plane } from './shapes.js';
 
 export class Texture {
 
@@ -102,6 +102,43 @@ export class Material {
 	premultipliedAlpha: boolean;
 	/** Light each triangle with its own face normal (for lit and normal materials). */
 	flatShading: boolean;
+	visible: boolean;
+	/** Whether the scene's fog applies. */
+	fog: boolean;
+	/** Noise below one 8-bit step, against banding. */
+	dithering: boolean;
+	/** Depth test function (`NeverDepth` ... `NotEqualDepth`), used while `depthTest` is true. */
+	depthFunc: number;
+	colorWrite: boolean;
+	polygonOffset: boolean;
+	polygonOffsetFactor: number;
+	polygonOffsetUnits: number;
+	alphaToCoverage: boolean;
+	/** Discards fragments by a hash of their position below their alpha, instead of blending. */
+	alphaHash: boolean;
+	/** The constant colour and alpha of `CustomBlending` (`ConstantColorFactor`, `ConstantAlphaFactor`). */
+	blendColor: Color;
+	blendAlpha: number;
+	stencilWrite: boolean;
+	stencilFunc: number;
+	stencilRef: number;
+	stencilFuncMask: number;
+	stencilWriteMask: number;
+	stencilFail: number;
+	stencilZFail: number;
+	stencilZPass: number;
+	/** World-space planes clipping this material, with `renderer.localClippingEnabled`. */
+	clippingPlanes: Plane[] | null;
+	clipIntersection: boolean;
+	clipShadows: boolean;
+	/** Whether `scene.overrideMaterial` replaces this material. */
+	allowOverride: boolean;
+	/** The side drawn into shadow maps; null for the side opposite `side`. */
+	shadowSide: 0 | 1 | 2 | null;
+	forceSinglePass: boolean;
+	precision: 'highp' | 'mediump' | 'lowp' | null;
+	/** `TangentSpaceNormalMap` or `ObjectSpaceNormalMap`. */
+	normalMapType: number;
 	depthTest: boolean;
 	depthWrite: boolean;
 	/** Multiply the colour by the geometry's `color` attribute (three floats per vertex, or four with alpha). */
@@ -187,13 +224,23 @@ export interface Emissive {
 }
 
 /** Shows its colour (and map) as is, without lighting; a light map adds baked light. */
-export interface MeshBasicMaterial extends AlphaMap, OcclusionMap, LightMap, Wireframe {}
+/** An environment map of the material's own, combined with the surface (basic, Lambert and Phong materials). */
+export interface OwnEnvironment {
+	envMap: Texture | null;
+	envMapRotation: Euler;
+	/** `MultiplyOperation`, `MixOperation` or `AddOperation`. */
+	combine: number;
+	reflectivity: number;
+	/** Used when `envMap.mapping` refracts. */
+	refractionRatio: number;
+}
+export interface MeshBasicMaterial extends AlphaMap, OcclusionMap, LightMap, Wireframe, OwnEnvironment { specularMap: Texture | null }
 export class MeshBasicMaterial extends Material { readonly isMeshBasicMaterial: true }
 /** Diffuse (Lambert) lighting. */
-export interface MeshLambertMaterial extends Emissive, LitMaps {}
+export interface MeshLambertMaterial extends Emissive, LitMaps, OwnEnvironment { specularMap: Texture | null }
 export class MeshLambertMaterial extends Material { readonly isMeshLambertMaterial: true }
 /** Diffuse lighting plus a Blinn-Phong highlight. */
-export interface MeshPhongMaterial extends Emissive, LitMaps {}
+export interface MeshPhongMaterial extends Emissive, LitMaps, OwnEnvironment {}
 export class MeshPhongMaterial extends Material {
 
 	readonly isMeshPhongMaterial: true;
@@ -215,8 +262,41 @@ export class MeshToonMaterial extends Material {
 /** The view-space normal as a colour. */
 export interface MeshNormalMaterial extends NormalMap, SurfaceMaps, Wireframe {}
 export class MeshNormalMaterial extends Material { readonly isMeshNormalMaterial: true }
-/** For `Line`, `LineSegments` and `LineLoop`. Lines are one pixel wide. */
+/** For `Line`, `LineSegments` and `LineLoop`. */
 export class LineBasicMaterial extends Material { readonly isLineBasicMaterial: true }
+/** Dashes along the `lineDistance` attribute (`line.computeLineDistances()`). */
+export class LineDashedMaterial extends LineBasicMaterial {
+
+	readonly isLineDashedMaterial: true;
+	scale: number;
+	dashSize: number;
+	gapSize: number;
+
+}
+/** The colour of `matcap` along the view-space normal; no lights. */
+export interface MeshMatcapMaterial extends NormalMap, SurfaceMaps, AlphaMap {}
+export class MeshMatcapMaterial extends Material {
+
+	readonly isMeshMatcapMaterial: true;
+	matcap: Texture | null;
+
+}
+/** The fragment's depth, grey or packed (`BasicDepthPacking`, `RGBADepthPacking`, `RGBDepthPacking`, `RGDepthPacking`). */
+export interface MeshDepthMaterial extends AlphaMap, Wireframe {}
+export class MeshDepthMaterial extends Material {
+
+	readonly isMeshDepthMaterial: true;
+	depthPacking: number;
+	displacementMap: Texture | null;
+	displacementScale: number;
+	displacementBias: number;
+
+}
+/** The distance from the camera between its near and far planes, packed into RGBA. */
+export interface MeshDistanceMaterial extends AlphaMap {}
+export class MeshDistanceMaterial extends Material { readonly isMeshDistanceMaterial: true }
+/** Only the shadows falling on it, in `color` with `opacity`. */
+export class ShadowMaterial extends Material { readonly isShadowMaterial: true }
 
 /** Physically based lighting from `roughness` and `metalness`, with reflections of `envMap` or `scene.environment` (equirectangular). One environment map is drawn per frame. */
 export interface MeshStandardMaterial extends Emissive, LitMaps {}

@@ -6,7 +6,20 @@ import { w } from '../engine.js';
 import { Color, Euler, Vector2 } from '../math.js';
 import { EMISSIVE_KEYS, ENVIRONMENT_KEYS, LIT_MAPS, MAP_KEYS, Material, WIREFRAME_KEYS, mapKeys, withMaps, withWireframe } from './material.js';
 
-const BASIC_MAPS = [ 'alphaMap', 'aoMap', 'lightMap' ];
+const BASIC_MAPS = [ 'alphaMap', 'aoMap', 'lightMap', 'specularMap' ];
+// an envMap of their own, combined with the surface (three.js `combine`, `reflectivity`,
+// `refractionRatio`), for basic, Lambert and Phong materials
+const OWN_ENVIRONMENT_KEYS = [ 'envMap', 'envMapRotation', 'combine', 'reflectivity', 'refractionRatio' ];
+
+function withOwnEnvironment( material ) {
+
+	material.envMap = null;
+	material.envMapRotation = new Euler();
+	material.combine = 0;
+	material.reflectivity = 1;
+	material.refractionRatio = 0.98;
+
+}
 
 /** Shows its colour (and map) as is, without lighting; a light map adds baked light. */
 export class MeshBasicMaterial extends Material {
@@ -16,6 +29,7 @@ export class MeshBasicMaterial extends Material {
 		super();
 		this.type = 'MeshBasicMaterial';
 		withMaps( this, BASIC_MAPS );
+		withOwnEnvironment( this );
 		withWireframe( this );
 		if ( parameters ) this.setValues( parameters );
 
@@ -24,7 +38,7 @@ export class MeshBasicMaterial extends Material {
 }
 
 MeshBasicMaterial.prototype._shading = 1;
-MeshBasicMaterial.prototype._keys = new Set( [ ...mapKeys( BASIC_MAPS ), ...WIREFRAME_KEYS ] );
+MeshBasicMaterial.prototype._keys = new Set( [ ...mapKeys( BASIC_MAPS ), ...WIREFRAME_KEYS, ...OWN_ENVIRONMENT_KEYS ] );
 MeshBasicMaterial.prototype.isMeshBasicMaterial = true;
 
 /** For `Line`, `LineSegments` and `LineLoop`: the colour as is, without lighting. */
@@ -43,6 +57,28 @@ export class LineBasicMaterial extends Material {
 
 LineBasicMaterial.prototype._shading = 1;
 LineBasicMaterial.prototype.isLineBasicMaterial = true;
+
+/**
+ * For lines with a `lineDistance` attribute (`line.computeLineDistances()`): dashes of
+ * `dashSize` separated by gaps of `gapSize`, along the distance times `scale`.
+ */
+export class LineDashedMaterial extends LineBasicMaterial {
+
+	constructor( parameters ) {
+
+		super();
+		this.type = 'LineDashedMaterial';
+		this.scale = 1;
+		this.dashSize = 3;
+		this.gapSize = 1;
+		if ( parameters ) this.setValues( parameters );
+
+	}
+
+}
+
+LineDashedMaterial.prototype._keys = new Set( [ 'scale', 'dashSize', 'gapSize' ] );
+LineDashedMaterial.prototype.isLineDashedMaterial = true;
 
 /**
  * For `Points`: the colour (and vertex colours, `map` and `alphaMap`) as is, without
@@ -99,7 +135,9 @@ export class MeshLambertMaterial extends Material {
 		this.type = 'MeshLambertMaterial';
 		this.emissive = new Color( 0x000000 );
 		this.emissiveIntensity = 1;
+		this.normalMapType = 0;
 		withMaps( this, this._maps );
+		withOwnEnvironment( this );
 		withWireframe( this );
 		if ( parameters ) this.setValues( parameters );
 
@@ -107,8 +145,8 @@ export class MeshLambertMaterial extends Material {
 
 }
 
-MeshLambertMaterial.prototype._maps = LIT_MAPS;
-MeshLambertMaterial.prototype._keys = new Set( [ ...EMISSIVE_KEYS, ...mapKeys( LIT_MAPS ), ...WIREFRAME_KEYS ] );
+MeshLambertMaterial.prototype._maps = [ ...LIT_MAPS, 'specularMap' ];
+MeshLambertMaterial.prototype._keys = new Set( [ ...EMISSIVE_KEYS, ...mapKeys( MeshLambertMaterial.prototype._maps ), ...WIREFRAME_KEYS, ...OWN_ENVIRONMENT_KEYS, 'normalMapType', 'flatShading' ] );
 MeshLambertMaterial.prototype.isMeshLambertMaterial = true;
 
 /** Diffuse lighting plus a Blinn-Phong highlight (`specular`, `shininess`, scaled by `specularMap`), and `emissive` light. */
@@ -122,7 +160,9 @@ export class MeshPhongMaterial extends Material {
 		this.shininess = 30;
 		this.emissive = new Color( 0x000000 );
 		this.emissiveIntensity = 1;
+		this.normalMapType = 0;
 		withMaps( this, this._maps );
+		withOwnEnvironment( this );
 		withWireframe( this );
 		if ( parameters ) this.setValues( parameters );
 
@@ -133,7 +173,7 @@ export class MeshPhongMaterial extends Material {
 const PHONG_MAPS = [ ...LIT_MAPS, 'specularMap' ];
 MeshPhongMaterial.prototype._shading = 3;
 MeshPhongMaterial.prototype._maps = PHONG_MAPS;
-MeshPhongMaterial.prototype._keys = new Set( [ 'specular', 'shininess', ...EMISSIVE_KEYS, ...mapKeys( PHONG_MAPS ), ...WIREFRAME_KEYS ] );
+MeshPhongMaterial.prototype._keys = new Set( [ 'specular', 'shininess', ...EMISSIVE_KEYS, ...mapKeys( PHONG_MAPS ), ...WIREFRAME_KEYS, ...OWN_ENVIRONMENT_KEYS, 'normalMapType', 'flatShading' ] );
 MeshPhongMaterial.prototype.isMeshPhongMaterial = true;
 
 /** Diffuse lighting in tones: two without a `gradientMap`, else its red channel along n.l. Plus `emissive` light. */
@@ -313,3 +353,83 @@ export class MeshPhysicalMaterial extends MeshStandardMaterial {
 const PHYSICAL_MAP_KEYS = [ 'clearcoatMap', 'clearcoatRoughnessMap', 'clearcoatNormalMap', 'sheenColorMap', 'sheenRoughnessMap', 'specularIntensityMap', 'specularColorMap', 'transmissionMap', 'thicknessMap', 'iridescenceMap', 'iridescenceThicknessMap', 'anisotropyMap' ];
 MeshPhysicalMaterial.prototype._keys = new Set( [ ...MeshStandardMaterial.prototype._keys, ...PHYSICAL_KEYS, ...PHYSICAL_MAP_KEYS ] );
 MeshPhysicalMaterial.prototype.isMeshPhysicalMaterial = true;
+
+const MATCAP_MAPS = [ 'normalMap', 'bumpMap', 'displacementMap', 'alphaMap' ];
+
+/** The colour of `matcap` (a lit sphere's image) along the view-space normal, times `color`; no lights. */
+export class MeshMatcapMaterial extends Material {
+
+	constructor( parameters ) {
+
+		super();
+		this.type = 'MeshMatcapMaterial';
+		this.matcap = null;
+		this.normalMapType = 0;
+		withMaps( this, MATCAP_MAPS );
+		if ( parameters ) this.setValues( parameters );
+
+	}
+
+}
+
+MeshMatcapMaterial.prototype._shading = 6;
+MeshMatcapMaterial.prototype._keys = new Set( [ 'matcap', 'normalMapType', ...mapKeys( MATCAP_MAPS ) ] );
+MeshMatcapMaterial.prototype.isMeshMatcapMaterial = true;
+
+const DEPTH_MAPS = [ 'alphaMap', 'displacementMap' ];
+
+/** The fragment's depth, grey (`BasicDepthPacking`, white near) or packed into RGBA, RGB or RG. */
+export class MeshDepthMaterial extends Material {
+
+	constructor( parameters ) {
+
+		super();
+		this.type = 'MeshDepthMaterial';
+		this.depthPacking = 3200;
+		withMaps( this, DEPTH_MAPS );
+		withWireframe( this );
+		if ( parameters ) this.setValues( parameters );
+
+	}
+
+}
+
+MeshDepthMaterial.prototype._shading = 7;
+MeshDepthMaterial.prototype._keys = new Set( [ 'depthPacking', ...mapKeys( DEPTH_MAPS ), ...WIREFRAME_KEYS ] );
+MeshDepthMaterial.prototype.isMeshDepthMaterial = true;
+
+/** The distance from the camera between its near and far planes, packed into RGBA. */
+export class MeshDistanceMaterial extends Material {
+
+	constructor( parameters ) {
+
+		super();
+		this.type = 'MeshDistanceMaterial';
+		withMaps( this, DEPTH_MAPS );
+		if ( parameters ) this.setValues( parameters );
+
+	}
+
+}
+
+MeshDistanceMaterial.prototype._shading = 8;
+MeshDistanceMaterial.prototype._keys = new Set( mapKeys( DEPTH_MAPS ) );
+MeshDistanceMaterial.prototype.isMeshDistanceMaterial = true;
+
+/** Only the shadows falling on it, in `color` with `opacity`; transparent elsewhere. */
+export class ShadowMaterial extends Material {
+
+	constructor( parameters ) {
+
+		super();
+		this.type = 'ShadowMaterial';
+		this.color.setHex( 0x000000 );
+		this.transparent = true;
+		if ( parameters ) this.setValues( parameters );
+
+	}
+
+}
+
+ShadowMaterial.prototype._shading = 9;
+ShadowMaterial.prototype.isShadowMaterial = true;

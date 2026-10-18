@@ -224,18 +224,18 @@ export function installTextures( ctx ) {
 		if ( depthTexture ) {
 
 			depth = newTexture();
-			gl.texImage2D( gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24, width, height, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null );
+			gl.texImage2D( gl.TEXTURE_2D, 0, gl.DEPTH24_STENCIL8, width, height, 0, gl.DEPTH_STENCIL, gl.UNSIGNED_INT_24_8, null );
 			gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST );
 			gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST );
-			gl.framebufferTexture2D( gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, depth, 0 );
+			gl.framebufferTexture2D( gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.TEXTURE_2D, depth, 0 );
 			renderTargetTextures.set( depthTexture.id, depth );
 
 		} else {
 
 			const buffer = gl.createRenderbuffer();
 			gl.bindRenderbuffer( gl.RENDERBUFFER, buffer );
-			gl.renderbufferStorage( gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, width, height );
-			gl.framebufferRenderbuffer( gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, buffer );
+			gl.renderbufferStorage( gl.RENDERBUFFER, gl.DEPTH24_STENCIL8, width, height );
+			gl.framebufferRenderbuffer( gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, buffer );
 			buffers.push( buffer );
 
 		}
@@ -258,7 +258,7 @@ export function installTextures( ctx ) {
 			};
 
 			storage( float ? gl.RGBA16F : gl.RGBA8, gl.COLOR_ATTACHMENT0 );
-			storage( gl.DEPTH_COMPONENT24, gl.DEPTH_ATTACHMENT );
+			storage( gl.DEPTH24_STENCIL8, gl.DEPTH_STENCIL_ATTACHMENT );
 
 		}
 
@@ -317,7 +317,7 @@ export function installTextures( ctx ) {
 
 		}
 
-		gl.framebufferRenderbuffer( gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, storage( gl.DEPTH_COMPONENT24, samples ) );
+		gl.framebufferRenderbuffer( gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, storage( gl.DEPTH24_STENCIL8, samples ) );
 		gl.bindFramebuffer( gl.FRAMEBUFFER, null );
 		ctx.hdr = {
 			width, height, color, draw, resolve, release() {
@@ -350,11 +350,11 @@ export function installTextures( ctx ) {
 		gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE );
 		const depth = gl.createRenderbuffer();
 		gl.bindRenderbuffer( gl.RENDERBUFFER, depth );
-		gl.renderbufferStorage( gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, width, height );
+		gl.renderbufferStorage( gl.RENDERBUFFER, gl.DEPTH24_STENCIL8, width, height );
 		const framebuffer = gl.createFramebuffer();
 		gl.bindFramebuffer( gl.FRAMEBUFFER, framebuffer );
 		gl.framebufferTexture2D( gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, color, 0 );
-		gl.framebufferRenderbuffer( gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depth );
+		gl.framebufferRenderbuffer( gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, depth );
 		gl.bindFramebuffer( gl.FRAMEBUFFER, null );
 		ctx.transmission = { width, height, color, framebuffer, release() {
 

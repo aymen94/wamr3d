@@ -8,6 +8,34 @@ import { LineBasicMaterial, PointsMaterial, SpriteMaterial } from '../materials.
 import { Vector2 } from '../math.js';
 import { Object3D } from '../object3d.js';
 
+// Distances along a line's vertices (three.js `lineDistance`), for dashed materials: from
+// the first vertex for a strip, restarting at each pair's start for segments.
+function lineDistances( line, pairs ) {
+
+	const geometry = line.geometry, position = geometry.attributes.position;
+
+	if ( geometry.index !== null ) {
+
+		console.warn( 'WAMR3D: Line.computeLineDistances(): computation only possible with non-indexed BufferGeometry.' );
+		return line;
+
+	}
+
+	const count = position.count, distances = new Float32Array( count );
+	const step = ( i ) => Math.hypot( position.getX( i ) - position.getX( i - 1 ), position.getY( i ) - position.getY( i - 1 ), position.getZ( i ) - position.getZ( i - 1 ) );
+
+	for ( let i = 1; i < count; i ++ ) {
+
+		// a pair's first vertex continues from the previous pair's end
+		distances[ i ] = pairs && i % 2 === 0 ? distances[ i - 1 ] : distances[ i - 1 ] + step( i );
+
+	}
+
+	geometry.setAttribute( 'lineDistance', new Float32BufferAttribute( distances, 1 ) );
+	return line;
+
+}
+
 export class Line extends Object3D {
 
 	constructor( geometry = new BufferGeometry(), material = new LineBasicMaterial() ) {
@@ -49,6 +77,12 @@ export class Line extends Object3D {
 	_link() {
 
 		w().setLine( this.handle, this._geometry.handle, this._material.handle, this.isLineSegments === true );
+
+	}
+
+	computeLineDistances() {
+
+		return lineDistances( this, false );
 
 	}
 
@@ -198,6 +232,12 @@ export class LineSegments extends Line {
 
 		super( geometry, material );
 		this.type = 'LineSegments';
+
+	}
+
+	computeLineDistances() {
+
+		return lineDistances( this, true );
 
 	}
 

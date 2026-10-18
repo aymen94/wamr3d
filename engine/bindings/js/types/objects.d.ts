@@ -102,6 +102,8 @@ export class Scene extends Object3D {
 	environment: Texture | null;
 	environmentIntensity: number;
 	environmentRotation: Euler;
+	/** Drawn in place of every material that allows it (`allowOverride`). */
+	overrideMaterial: Material | null;
 	/** Above 0, an equirectangular background is read blurred from its prefiltered map. */
 	backgroundBlurriness: number;
 	backgroundIntensity: number;
@@ -161,6 +163,8 @@ export class Line<G extends BufferGeometry = BufferGeometry, M extends Material 
 	readonly isLine: true;
 	geometry: G;
 	material: M;
+	/** Sets the `lineDistance` attribute of a non-indexed geometry, for dashed materials. */
+	computeLineDistances(): this;
 
 }
 

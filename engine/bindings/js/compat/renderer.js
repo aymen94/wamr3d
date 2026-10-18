@@ -16,6 +16,83 @@ const IDENTITY3 = new Float32Array( [ 1, 0, 0, 0, 1, 0, 0, 0, 1 ] );
 const linear = ( { r, g, b } ) => ( { r, g, b, a: 1 } );
 const BACKENDS = [ 'auto', 'webgpu', 'webgl' ];
 
+// The lights of a frame in world space, for shader materials with `lights` (WebGL).
+function emptyShaderLights( lights ) {
+
+	lights.ambient = [ 0, 0, 0 ];
+	lights.probe = new Array( 27 ).fill( 0 );
+	lights.probes = false;
+	lights.directional = [];
+	lights.point = [];
+	lights.spot = [];
+	lights.hemisphere = [];
+	return lights;
+
+}
+
+function collectShaderLight( lights, light ) {
+
+	const { r, g, b } = light.color, k = light.intensity, color = [ r * k, g * k, b * k ];
+
+	if ( light.isAmbientLight ) {
+
+		for ( let i = 0; i < 3; i ++ ) lights.ambient[ i ] += color[ i ];
+		return;
+
+	}
+
+	if ( light.isLightProbe ) {
+
+		const coefficients = light.sh.coefficients;
+		for ( let i = 0; i < 9; i ++ ) {
+
+			lights.probe[ i * 3 ] += coefficients[ i ].x * k;
+			lights.probe[ i * 3 + 1 ] += coefficients[ i ].y * k;
+			lights.probe[ i * 3 + 2 ] += coefficients[ i ].z * k;
+
+		}
+
+		lights.probes = true;
+		return;
+
+	}
+
+	const m = w().matrixWorld( light.handle ), position = [ m[ 12 ], m[ 13 ], m[ 14 ] ];
+	const t = light.target ? w().matrixWorld( light.target.handle ) : null, towards = t ? [ m[ 12 ] - t[ 12 ], m[ 13 ] - t[ 13 ], m[ 14 ] - t[ 14 ] ] : null;
+	if ( light.isHemisphereLight ) lights.hemisphere.push( { direction: position, skyColor: color, groundColor: [ light.groundColor.r * k, light.groundColor.g * k, light.groundColor.b * k ] } );
+	else if ( light.isDirectionalLight ) lights.directional.push( { direction: towards, color } );
+	else if ( light.isPointLight ) lights.point.push( { position, color, distance: light.distance, decay: light.decay } );
+	else if ( light.isSpotLight ) lights.spot.push( { position, direction: towards, color, distance: light.distance, decay: light.decay, coneCos: Math.cos( light.angle ), penumbraCos: Math.cos( light.angle * ( 1 - light.penumbra ) ) } );
+
+}
+
+// three.js's light uniforms of shader materials, in view space as three.js gives them.
+function shaderLightUniforms( lights, view ) {
+
+	const point = ( p ) => [ view[ 0 ] * p[ 0 ] + view[ 4 ] * p[ 1 ] + view[ 8 ] * p[ 2 ] + view[ 12 ], view[ 1 ] * p[ 0 ] + view[ 5 ] * p[ 1 ] + view[ 9 ] * p[ 2 ] + view[ 13 ], view[ 2 ] * p[ 0 ] + view[ 6 ] * p[ 1 ] + view[ 10 ] * p[ 2 ] + view[ 14 ] ];
+	const direction = ( d ) => {
+
+		const x = view[ 0 ] * d[ 0 ] + view[ 4 ] * d[ 1 ] + view[ 8 ] * d[ 2 ], y = view[ 1 ] * d[ 0 ] + view[ 5 ] * d[ 1 ] + view[ 9 ] * d[ 2 ], z = view[ 2 ] * d[ 0 ] + view[ 6 ] * d[ 1 ] + view[ 10 ] * d[ 2 ];
+		const length = Math.hypot( x, y, z ) || 1;
+		return [ x / length, y / length, z / length ];
+
+	};
+
+	const uniforms = { ambientLightColor: lights.ambient, lightProbe: lights.probe, receiveShadow: false };
+	const add = ( name, list, fields ) => list.forEach( ( light, i ) => {
+
+		for ( const [ field, convert ] of fields ) uniforms[ `${name}[${i}].${field}` ] = convert ? convert( light[ field ] ) : light[ field ];
+
+	} );
+	add( 'directionalLights', lights.directional, [ [ 'direction', direction ], [ 'color' ] ] );
+	add( 'pointLights', lights.point, [ [ 'position', point ], [ 'color' ], [ 'distance' ], [ 'decay' ] ] );
+	add( 'spotLights', lights.spot, [ [ 'position', point ], [ 'direction', direction ], [ 'color' ], [ 'distance' ], [ 'decay' ], [ 'coneCos' ], [ 'penumbraCos' ] ] );
+	add( 'hemisphereLights', lights.hemisphere, [ [ 'direction', direction ], [ 'skyColor' ], [ 'groundColor' ] ] );
+	const counts = [ lights.directional.length, lights.point.length, lights.spot.length, lights.hemisphere.length ];
+	return { uniforms, counts, probes: lights.probes, key: counts.join( ',' ) + ( lights.probes ? ',p' : '' ) };
+
+}
+
 /**
  * The drawing backend for a canvas. `'webgpu'` and `'webgl'` use that API or fail;
  * `'auto'` tries WebGPU on a GPU, then WebGL 2, then the browser's software WebGPU
@@ -78,6 +155,10 @@ export class WebGPURenderer {
 		this.autoClear = true;
 		this.toneMappingExposure = 1;
 		this.shadowMap = { enabled: false, autoUpdate: true, needsUpdate: false, type: PCFShadowMap };
+		// global clipping planes in world space, and whether materials' own planes apply
+		this.clippingPlanes = [];
+		this.localClippingEnabled = false;
+		this._clipping = new Float32Array( 0 );
 		this._backend = null;
 		this._frame = null;
 		this._renderTarget = null;
@@ -187,8 +268,21 @@ export class WebGPURenderer {
 		}
 		const stamp = ++ frameStamp;
 		frame.clearLights();
+		const shaderLights = this._backend.isWebGLBackend && shaderMaterials.size > 0 ? emptyShaderLights( this._shaderLights ??= {} ) : null;
 		const environment = this._environment;
 		environment.begin( scene );
+		environment.localClipping = this.localClippingEnabled === true;
+		this._syncClipping( frame );
+		const override = scene.overrideMaterial ?? null;
+
+		if ( override !== null ) {
+
+			override._frame = stamp;
+			override._sync( environment );
+
+		}
+
+		frame.setOverrideMaterial( override !== null ? override.handle : 0n );
 		const stack = [ scene ];
 
 		while ( stack.length > 0 ) {
@@ -231,6 +325,7 @@ export class WebGPURenderer {
 			} else if ( object.isLight ) {
 
 				const { r, g, b } = object.color, k = object.intensity;
+				if ( shaderLights !== null ) collectShaderLight( shaderLights, object );
 
 				if ( object.isRectAreaLight ) {
 
@@ -319,7 +414,7 @@ export class WebGPURenderer {
 		const backend = this._backend;
 		const rt = this._renderTarget, texture = rt?.texture;
 		const target = rt ? { id: texture.id, width: Math.max( 1, rt.width | 0 ), height: Math.max( 1, rt.height | 0 ), samples: rt.samples, type: texture.type === UnsignedByteType ? 'byte' : 'float', texture, textures: rt.textures, depthTexture: rt.depthTexture ?? null } : null;
-		backend.render( w(), this._frame, scene.handle, camera.handle, linear( scene.background && scene.background.isColor ? scene.background : this._clearColor ), textureSources, instanceSources, target, this._pixelRatio, this._extras( camera, backend ) );
+		backend.render( w(), this._frame, scene.handle, camera.handle, linear( scene.background && scene.background.isColor ? scene.background : this._clearColor ), textureSources, instanceSources, target, this._pixelRatio, this._extras( camera, backend, scene, shaderLights ) );
 		// marks what was drawn into the target, for environments made from it
 		if ( rt ) for ( const each of rt.textures ) each.version ++;
 		this.info.render.calls = backend.info.calls;
@@ -331,12 +426,15 @@ export class WebGPURenderer {
 	// What the backend needs besides the frame: whether to keep what the target holds
 	// (`autoClear` false), and for GLSL shader materials the camera's view and projection
 	// matrices and position.
-	_extras( camera, backend ) {
+	_extras( camera, backend, scene, shaderLights ) {
 
 		const extras = { load: this.autoClear === false };
 		if ( ! backend.isWebGLBackend || shaderMaterials.size === 0 ) return extras;
-		const e = camera.matrixWorld.elements;
-		return Object.assign( extras, { shaderMaterials, view: Float32Array.from( camera.matrixWorldInverse.elements ), projection: Float32Array.from( camera.projectionMatrix.elements ), position: [ e[ 12 ], e[ 13 ], e[ 14 ] ], orthographic: camera.isOrthographicCamera === true } );
+		const e = camera.matrixWorld.elements, view = Float32Array.from( camera.matrixWorldInverse.elements ), fog = scene.fog;
+		// what shader materials with `lights` and `fog` read
+		const lights = shaderLights !== null ? shaderLightUniforms( shaderLights, view ) : null;
+		const fogs = fog ? { exp2: fog.isFogExp2 === true, uniforms: { fogColor: fog.color, fogNear: fog.near ?? 1, fogFar: fog.far ?? 1000, fogDensity: fog.density ?? 0 } } : null;
+		return Object.assign( extras, { shaderMaterials, view, lights, fog: fogs, projection: Float32Array.from( camera.projectionMatrix.elements ), position: [ e[ 12 ], e[ 13 ], e[ 14 ] ], orthographic: camera.isOrthographicCamera === true } );
 
 	}
 
@@ -360,6 +458,26 @@ export class WebGPURenderer {
 	// A texture background as three.js draws it: equirectangular and cube textures around
 	// the camera (blurred from the prefiltered map when `backgroundBlurriness` is above 0),
 	// other textures stretched over the frame. Colours are the clear colour instead.
+	// The global clipping planes (three.js `renderer.clippingPlanes`), sent when they change.
+	_syncClipping( frame ) {
+
+		const planes = this.clippingPlanes ?? [], count = Math.min( planes.length, 8 ), sent = this._clipping;
+		let same = sent.length === count * 4;
+
+		for ( let i = 0; same && i < count; i ++ ) {
+
+			const { normal, constant } = planes[ i ], o = i * 4;
+			same = sent[ o ] === normal.x && sent[ o + 1 ] === normal.y && sent[ o + 2 ] === normal.z && sent[ o + 3 ] === constant;
+
+		}
+
+		if ( same ) return;
+		this._clipping = new Float32Array( count * 4 );
+		for ( let i = 0; i < count; i ++ ) this._clipping.set( [ planes[ i ].normal.x, planes[ i ].normal.y, planes[ i ].normal.z, planes[ i ].constant ], i * 4 );
+		frame.setClippingPlanes( this._clipping );
+
+	}
+
 	_syncBackground( scene ) {
 
 		const frame = this._frame, background = scene.background;

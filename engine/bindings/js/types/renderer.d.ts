@@ -4,7 +4,7 @@
 
 import { ColorRepresentation, ToneMapping, init } from './core.js';
 import { Vector2 } from './vectors.js';
-import { Color } from './shapes.js';
+import { Color, Plane } from './shapes.js';
 import { Camera, Scene } from './objects.js';
 import { RenderTarget } from './rendering.js';
 
@@ -42,6 +42,10 @@ export class WebGPURenderer {
 	/** Applied when drawing to the canvas. `CustomToneMapping` is not supported and draws like `NoToneMapping`. */
 	toneMapping: ToneMapping;
 	toneMappingExposure: number;
+	/** World-space planes clipping everything drawn (at most eight). */
+	clippingPlanes: Plane[];
+	/** Whether materials' own `clippingPlanes` apply. */
+	localClippingEnabled: boolean;
 
 	constructor( parameters?: WebGPURendererParameters );
 	/** False on `WebGLRenderer`. */

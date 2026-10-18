@@ -3,7 +3,7 @@
 // Part of the WebGL 2 host; `../webgl.js` creates the context and draws the frames.
 
 import { memory } from '../index.js';
-import { BONE_UNIT, MATERIAL_FLOATS, MATERIAL_STRIDE, OBJECT_STRIDE } from './constants.js';
+import { BONE_UNIT, MATERIAL_FLOATS, STATE_FLAGS_FLOAT, MATERIAL_STRIDE, OBJECT_STRIDE } from './constants.js';
 
 /** Adds this part's functions and state to the host context `ctx`. */
 export function installShadows( ctx ) {
@@ -170,7 +170,8 @@ export function installShadows( ctx ) {
 			for ( let i = 0, o = 0; i < slots.length; i ++, o += DRAW_FIELDS ) {
 
 				const entry = distinct[ slots[ i ] ], key = draws[ o ], start = draws[ o + 2 ], vertices = draws[ o + 3 ], material = draws[ o + 6 ];
-				const alphaTest = frame.materials[ material * MATERIAL_FLOATS + 23 ] > 0;
+				// a fragment stage for alpha tests and for clipping planes that clip shadows
+				const alphaTest = frame.materials[ material * MATERIAL_FLOATS + 23 ] > 0 || ( frame.materials[ material * MATERIAL_FLOATS + STATE_FLAGS_FLOAT ] & 256 ) !== 0;
 				const shader = alphaTest ? program( 'shadow:alpha', 'shadow.vert', 'shadow.frag', '#define ALPHA_TEST 1' ) : program( 'shadow', 'shadow.vert', 'shadow.frag' );
 
 				if ( shader !== current ) {
