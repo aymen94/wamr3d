@@ -52,9 +52,11 @@ try {
 		pending.get( message.id )?.( message.result );
 
 	} );
-	const send = ( method, params = {} ) => new Promise( ( resolve ) => {
+	// A page that stops answering fails the run instead of stalling it.
+	const send = ( method, params = {} ) => new Promise( ( resolve, reject ) => {
 
-		pending.set( ++ id, resolve );
+		const timer = setTimeout( () => reject( new Error( `the page did not answer ${method} within 30 s` ) ), 30000 );
+		pending.set( ++ id, ( result ) => { clearTimeout( timer ); resolve( result ); } );
 		socket.send( JSON.stringify( { id, method, params } ) );
 
 	} );

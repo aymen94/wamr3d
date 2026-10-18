@@ -140,7 +140,7 @@ function features() {
         ${card('md:col-span-2', 'Object API', 'A familiar way to build scenes.', 'Use three.js-style classes and chaining for supported scene, object, camera, geometry, material and math APIs. Object transforms stay in JavaScript and synchronize with the engine in batches.')}
         ${card('md:col-span-2', 'Batched API', 'Fewer calls for large scenes.', 'Use generational handles and batched operations when many objects change each frame. Geometry and world-matrix data can be read through typed-array views over engine memory.')}
         ${card('md:col-span-2', 'Parity', 'Behavior checked against three.js.', 'The repository includes thousands of generated value checks and stored visual comparisons. See the implementation status and migration guide for current support and known differences.')}
-        ${card('md:col-span-6', 'Current scope', 'An evolving engine.', 'WAMR3D is not a complete replacement for three.js. The current engine still lacks features such as skinned meshes, morph targets, shader materials, point-light shadows, post-processing and most loaders, animation, audio and controls. The website demos use the published0.7.5 package; the repository contains newer, unreleased work. Check the repository status for the full list of gaps.')}
+        ${card('md:col-span-6', 'Current scope', 'Release 0.8.0', 'WAMR3D 0.8.0 covers three.js\'s scene graph, built-in materials, lights, shadows, animation, loaders and the common add-ons, but it is not a complete replacement: TSL node materials are not ported, and GLSL shader materials draw only on WebGL 2. Check the repository status for the full list of limits.')}
       </div>
     </div>
   </section>`;

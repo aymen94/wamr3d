@@ -62,7 +62,7 @@ export function benchmarks() {
     ['Method', `One run per configuration, medians, nothing estimated.`],
     ['Failed configurations', failures.length ? failures.join('; ') : 'None: every configuration produced results.']
   ];
-  return shell(`${pageIntro({ label: 'Benchmarks', title: 'Measured, <span class="text-gradient">with context.</span>', intro: `One machine, one fresh run at four resolutions. Results are kept as a data snapshot; the original raw logs are no longer included. <strong class="text-white">Longer bars are better.</strong>` })}
+  return shell(`${pageIntro({ label: 'Benchmarks', title: 'Measured, <span class="text-gradient">with context.</span>', intro: `One machine, one complete run at four resolutions on ${meta.date}, measured on the 0.7 tree; the raw logs are in <code class="font-mono">bench/results/${meta.date}/</code>. A later check of 0.8.0 at 1280×720 is in <code class="font-mono">bench/results/2026-10-18/</code>. <strong class="text-white">Longer bars are better.</strong>` })}
   <div class="relative bg-gradient-to-b from-transparent via-ink-950/85 to-ink-950">
     <section class="mx-auto max-w-6xl px-6 pb-24">
       ${more('Test setup', `<div class="glass grid gap-5 rounded-3xl p-6 sm:grid-cols-2 lg:grid-cols-3">${setup.map(([k, v]) => `<div><p class="font-mono text-[11px] uppercase tracking-wider text-slate-400">${k}</p><p class="mt-1 text-slate-200">${v}</p></div>`).join('')}</div>`, '-mt-8 mb-14')}

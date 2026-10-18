@@ -1,6 +1,5 @@
 {
   "name": "wamr3d-website",
-  "private": true,
   "version": "1.0.0",
   "type": "module",
   "scripts": {
@@ -14,6 +13,6 @@
     "vite": "^6.4.1"
   },
   "dependencies": {
-    "wamr3d": "^0.7.5"
+    "wamr3d": "^0.8.0"
   }
 }

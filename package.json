@@ -17,6 +17,9 @@
     "test:visual": "node parity/visual/run.mjs",
     "test:showcase": "node examples/showcase/check.mjs",
     "test:types": "tsc -p parity/bindings",
+    "test:gltf": "node parity/bindings/gltf-check.mjs",
+    "test:loaders": "node parity/bindings/loaders-check.mjs",
+    "test:controls": "node parity/bindings/transform-check.mjs",
     "reference:api": "node parity/bindings/check.mjs",
     "reference:bench": "node bench/bench.mjs",
     "reference:fixtures": "node parity/math/gen/generate.mjs && node parity/core/gen/generate.mjs && node parity/objects/gen/generate.mjs && node parity/bindings/compat-check.mjs --generate"

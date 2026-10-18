@@ -223,7 +223,7 @@ export const BASIC = {
 
 		const { scene, camera } = stage( L, 0, 3.4, 5.2 );
 		// A Lambert floor: the same scene with a physically based floor differs from three.js
-		// by about 1.8 of 255 without shadows (STATUS.md), which would hide what is tested here.
+		// by about 1.8 of 255 without shadows, which would hide what is tested here.
 		const floor = new L.Mesh( new L.PlaneGeometry( 8, 8 ), new L.MeshLambertMaterial( { color: 0xd8d4cc } ) );
 		floor.rotation.x = - Math.PI / 2;
 		floor.position.y = - 0.8;

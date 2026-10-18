@@ -6,20 +6,20 @@
 
 **Unlock your imagination without limits.** WAMR3D is a high-performance 3D engine that runs as native WebAssembly in the browser: a Rust core, its own WebGPU renderer and the three.js API you already know.
 
-**1.7× faster on a batched 10,000-transform update than three.js.** *(1.42 ms vs 2.46 ms in the 2026-10-16 Node.js benchmark.)*
+**1.7× faster than three.js on a batched 10,000-transform update.** *(1.50 ms vs 2.57 ms in the 2026-10-18 Node.js benchmark.)*
 
 WAMR3D provides a WebAssembly scene graph, transforms, cameras, geometry processing, culling and draw ordering, plus a separate WebGPU renderer. Drive it from JavaScript through classes that follow three.js conventions or through batched calls for large scenes. The object API keeps user-facing transforms in JavaScript and synchronizes them with the engine in batches. Behaviour is checked against three.js value by value and pixel by pixel.
 
-It has no runtime dependencies and draws with its own WebGPU renderer, switching to a native WebGL 2 renderer where WebGPU is missing: meshes (filled or wireframe), skinned meshes and morph targets, lines and points of any width, sprites and instanced meshes; basic, Lambert, Phong, toon, normal, standard and physical materials (clearcoat, sheen, specular layer, iridescence, anisotropy, transmission with dispersion) and GLSL shader materials on WebGL 2; 24 kinds of texture map, each with its own uv transform and uv set, and vertex tangents; directional, point, spot and rectangular area lights and light probes; basic, PCF and VSM shadows; image-based lighting from up to eight environments per frame; texture backgrounds; tone mapping; render targets with depth textures; three.js's blending modes; post-processing (bloom, FXAA, output); transparency; and fog. Around it are three.js's curves and shapes, animation system, loaders, audio, helpers, and add-ons for controls, post-processing and wide lines. GLTFLoader is not part of it yet; see [Status](#status). The npm package is version `0.6.0` and predates most of this; see the [migration guide](MIGRATION.md).
+It has no runtime dependencies and draws with its own WebGPU renderer, switching to a native WebGL 2 renderer where WebGPU is missing: meshes (filled or wireframe), skinned meshes and morph targets, lines and points of any width, sprites and instanced meshes; basic, Lambert, Phong, toon, normal, matcap, depth, distance, shadow, dashed-line, standard and physical materials (clearcoat, sheen, specular layer, iridescence, anisotropy, transmission with dispersion) and GLSL shader materials with lights and fog on WebGL 2; three.js's per-material state (depth function, stencil, polygon offset, alpha hash and coverage, dithering, colour write) and clipping planes; 24 kinds of texture map, each with its own uv transform and uv set, and vertex tangents; directional, point, spot and rectangular area lights and light probes; basic, PCF and VSM shadows; image-based lighting from up to eight environments per frame; texture backgrounds; tone mapping; render targets with depth textures; three.js's blending modes; post-processing (bloom, FXAA, output); transparency; and fog. Around it are three.js's curves and shapes, animation system, loaders, audio, helpers, and add-ons for controls (including `TransformControls` and `ArcballControls`), loaders (`GLTFLoader` with Draco, KTX2 and meshopt, FBX, OBJ/MTL, RGBE/HDR, EXR), post-processing and wide lines. This is release `0.8.0`; [Status](#status) lists what it does not cover.
 
 ## Why try it
 
-- **Faster batched scene updates.** Setting 10,000 transforms and updating their world matrices in one batched call took 1.48 ms in WAMR3D against 3.19 ms in three.js in the current Node.js benchmark. Through the object API, updating 10,000 meshes took 2.69 ms against 7.30 ms.
+- **Faster batched scene updates.** Setting 10,000 transforms and updating their world matrices in one batched call took 1.50 ms in WAMR3D against 2.57 ms in three.js in the 2026-10-18 Node.js benchmark. Through the object API, setting the rotation and position of 10,000 meshes and updating their world matrices took 2.37 ms against 3.20 ms.
 - **Same results as three.js.** Over 7,600 reference cases generated from the three.js source are replayed against the Rust code. Individual operations agree to about one part in a million.
 - **Explicit low-level ownership.** The handle-based API stores objects in WebAssembly memory and uses explicit destruction; stale handles cannot refer to a different object. The three.js-style object API keeps transforms in JavaScript and releases engine objects when their JavaScript objects are collected.
 - **Zero-copy low-level geometry access.** Read and write geometry attributes through typed-array views straight over engine memory. The compatibility API exposes copies for mutable attribute arrays.
-- **Its own WebGPU and WebGL 2 renderers.** In the 2026-10-16 showcase run at 1280×720, WAMR3D drew 10,000 separate animated meshes at 60 fps on WebGPU (8.9 ms CPU draw submission) and 56 fps on its WebGL 2 renderer; three.js ran at 12 fps on WebGPU (77.0 ms) and 44 fps on WebGL. With 100,000 instanced bodies, WAMR3D ran at 31 fps with 27.9 ms of CPU scene update, against 11 fps and 73.6 ms for three.js WebGPU. Single runs on one machine (i9-10900X, RTX 2070 SUPER, Chrome 155), all four resolutions, in [`bench/results/2026-10-16/`](bench/results/2026-10-16/).
-- **Small and free.** The current SIMD WebAssembly module is about 567 KiB, shaders for both backends included. Nothing to pay, nothing else to install at run time.
+- **Its own WebGPU and WebGL 2 renderers.** In the 2026-10-18 showcase run at 1280×720, WAMR3D drew 10,000 separate animated meshes at 46 fps on WebGPU (13.7 ms CPU draw submission) and 34 fps on its WebGL 2 renderer; three.js ran at 8.5 fps on WebGPU (108.8 ms) and 26 fps on WebGL in the same session. With 100,000 instanced bodies, WAMR3D ran at 14.5 fps with 29.3 ms of CPU scene update, against 11.7 fps and 68.7 ms for three.js WebGPU. Single runs on one machine (i9-10900X, RTX 2070 SUPER, Chrome 155) in [`bench/results/2026-10-18/`](bench/results/2026-10-18/). Every engine, three.js included, ran slower in that session than in the complete 2026-10-16 run at four resolutions ([`bench/results/2026-10-16/`](bench/results/2026-10-16/), measured on the 0.7 tree), so compare engines within one run, not across runs.
+- **Small and free.** The SIMD WebAssembly module is about 745 KiB, shaders for both backends included. Nothing to pay, nothing else to install at run time.
 
 What it is not: a complete replacement for three.js. In the object API, vectors, quaternions, matrices, boxes, spheres and colours are plain JavaScript values, as fast as three.js's own; the scene graph, culling and draw preparation run in WebAssembly. The low-level engine classes (`wamr3d`) cross into WebAssembly on every call, so single small calls there are *slower* than plain JavaScript: batch them.
 
@@ -99,7 +99,50 @@ For the classes WAMR3D has, change the import, initialize once, and use the WebG
 
 Setting `position`, `rotation` and `scale` does not call into WebAssembly: the object API keeps them in JavaScript and sends every change to the engine in one batch per frame.
 
-**[Read the full migration guide →](MIGRATION.md)** It lists which classes exist, the differences to watch for, the batching patterns, and what is not available yet.
+- `init()` loads the WebAssembly module: call it once, before creating anything.
+- `renderer.init()` must finish before the first `render`; `setAnimationLoop` waits for it. `new THREE.WebGLRenderer()` also works (the same renderer on WebGL 2, starting `init()` itself).
+- Serve pages over HTTP and let a bundler or an import map resolve the package name.
+- Unsupported parameters are stored, have no effect and log one warning, so the first run lists what your scene depends on.
+
+### Differences to know
+
+| In three.js | In WAMR3D |
+|---|---|
+| Any number of lights | Up to 16 directional, point, spot and rectangular area lights, plus ambient and hemisphere lights and light probes |
+| Shadows | Directional, spot and point lights; `BasicShadowMap`, `PCFShadowMap` (`PCFSoftShadowMap` draws as PCF, as in three.js's WebGPURenderer) or `VSMShadowMap`; up to 16 shadow maps per frame, six per point light |
+| Environment maps | Equirectangular textures, `CubeTexture` (also HDR) and render-target textures; up to eight distinct environment maps per frame |
+| `RectAreaLight` with `RectAreaLightUniformsLib` | Works without the LTC tables; specular light is an approximation |
+| `ShaderMaterial` / `RawShaderMaterial` | GLSL draws on WebGL 2 (`backend: 'webgl'`) with `lights` and `fog`, but no shadows; on WebGPU it draws unlit, as three.js's WebGPURenderer does not take GLSL |
+| Node materials (TSL) | Not ported; use the built-in materials, or `ShaderMaterial` on WebGL 2 |
+| `three/addons/...` | `wamr3d/addons/...`: controls (including `TransformControls` and `ArcballControls`), loaders (`GLTFLoader` with Draco, KTX2 and meshopt, `FBXLoader`, `OBJLoader`, `MTLLoader`, `RGBELoader`, `HDRLoader`, `EXRLoader`), post-processing, shaders and wide lines |
+| Clipping planes | `renderer.clippingPlanes` and material `clippingPlanes` (with `localClippingEnabled`): up to eight each |
+| `PointsMaterial.size`, `linewidth` | Points and lines above one pixel are drawn as quads (`linewidth` also on `LineBasicMaterial`, which three.js ignores) |
+| `object.matrix.elements[ 12 ] = 5` | Takes effect with `matrixAutoUpdate = false`, as in three.js. `matrixWorld` is read from the engine and its elements are overwritten on the next update |
+| `attribute.array` is what is drawn | Set `attribute.needsUpdate = true` after changing it; integer data is stored as floats |
+| 64-bit numbers | Math values are 64-bit; transforms, geometry and everything drawn are stored by the engine as 32-bit floats (results agree to about `1e-6`) |
+| Garbage collection | Also here; `dispose()` frees engine objects at once |
+
+### Choosing the backend
+
+```js
+new THREE.WebGPURenderer();                        // 'auto': WebGPU, else WebGL 2
+new THREE.WebGPURenderer( { backend: 'webgpu' } ); // WebGPU only; init() rejects without it
+new THREE.WebGPURenderer( { backend: 'webgl' } );  // WebGL 2 only (same as forceWebGL: true)
+```
+
+`'auto'` tries WebGPU on a GPU, then WebGL 2, then the browser's software WebGPU adapter, and logs which one it fell back to; `renderer.backend.isWebGPUBackend` tells which draws. On WebGL 2 render targets are not multisampled, and tone mapping, float render targets and environment maps need `EXT_color_buffer_float` (available almost everywhere).
+
+### Batching hot loops
+
+When thousands of objects change every frame, the handle-based API does the same work in fewer calls:
+
+```js
+const world = THREE.getWorld();
+const handles = BigUint64Array.from( meshes, ( m ) => m.handle );
+world.setTransforms( handles, transforms ); // 10 floats per object: position xyz, quaternion xyzw, scale xyz
+```
+
+Other batched calls: `world.createObjects( count )`, `world.addMany( parents, children )`, `world.matricesWorld( handles )`, and `attributeView( world, geometry, name )` from `wamr3d` for zero-copy geometry (create the view right before use: memory growth invalidates it). Do not mix the two APIs on the same objects.
 
 ## See it run
 
@@ -141,7 +184,7 @@ npm run build --prefix website
 npm run preview --prefix website
 ```
 
-The site is plain JavaScript styled with Tailwind CSS. Its animated backdrop is drawn by WAMR3D itself (`website/src/scene/hero-scene.js`, with WebGPU or WebGL 2; browsers with neither get a static backdrop, and three.js is never loaded). Benchmark figures in `website/src/data/benchmarks.js` are generated from the raw logs of a run in `bench/results/<date>/` with `node website/scripts/benchmark-data.mjs bench/results/<date>`; the commands and the method are on the benchmarks page. The demos, the parity page and the package are served from the repository root in development and copied into `website/dist` by `website/scripts/prepare-pages.mjs`. The site uses the local build: `website/package.json` links `wamr3d` to `../dist/wamr3d`, so run `node engine/bindings/build.mjs` before installing or building it.
+The site is plain JavaScript styled with Tailwind CSS. Its animated backdrop is drawn by WAMR3D itself (`website/src/scene/hero-scene.js`, with WebGPU or WebGL 2; browsers with neither get a static backdrop, and three.js is never loaded). Benchmark figures in `website/src/data/benchmarks.js` are generated from the raw logs of a run in `bench/results/<date>/` with `node website/scripts/benchmark-data.mjs bench/results/<date>`; the commands and the method are on the benchmarks page. The demos, the parity page and the package are served from the repository root in development and copied into `website/dist` by `website/scripts/prepare-pages.mjs`. The site's own pages use the published npm package (`wamr3d` in `website/package.json`); the copied demos use the local build, so run `node engine/bindings/build.mjs` before building the site.
 
 `wrangler.jsonc` at the root serves `website/dist` as static assets on Cloudflare.
 
@@ -178,29 +221,29 @@ The full typed API is in `dist/wamr3d/wamr3d_wasm.d.ts` after a build. A Node.js
 
 ## Status
 
+`0.8.0` follows the three.js API and is verified with the checks and examples in this repository only.
+
 | Area | Unfinished or missing |
 |---|---|
-| Loaders | No GLTFLoader or other format loaders (FBX, OBJ, RGBE, EXR, KTX2, Draco); `ObjectLoader` reads three.js's JSON. |
-| Materials | `ShaderMaterial` draws on WebGL 2 only and gets no lights, fog or shadows; `CustomBlending` draws as normal blending. |
+| Materials | No node (TSL) materials (out of scope). `ShaderMaterial` draws on WebGL 2 only, with lights and fog but no shadows. |
 | Post-processing | The built-in passes draw on both backends; a `ShaderPass` with other GLSL needs WebGL 2. No TSL. |
-| Renderer | Area-light highlights are approximated (no LTC tables); skinned meshes are not frustum-culled; a render target's extra attachments are not written by built-in materials. |
-| Browsers | Draws with WebGPU, or WebGL 2 where WebGPU is missing ([Choosing the backend](MIGRATION.md#choosing-the-backend)). Not yet tried in Firefox or Safari. |
-| Add-ons | No `TransformControls` or `ArcballControls`. |
+| Renderer | Area-light highlights are approximated (no LTC tables); skinned meshes are not frustum-culled; `LineMaterial.dashOffset` has no effect. |
+| Browsers | Draws with WebGPU, or WebGL 2 where WebGPU is missing ([Choosing the backend](#choosing-the-backend)). Tested in Chromium-based browsers only. |
 
-The features of the 2026-10-18 round are implemented but not yet verified: the Rust tests, parity checks and visual cases were last run on the tree before it ([STATUS.md](STATUS.md)). The npm release `0.6.0` predates them; see [NPM.md](NPM.md).
+[STATUS.md](STATUS.md) has the full list of limitations and the results of the last verification; [NPM.md](NPM.md) has the release steps.
 
 ## Tests and measurements
 
 ```
 cd engine
-cargo test --workspace                                  # 659 Rust tests: unit, parity, allocation
+cargo test --workspace                                  # 662 Rust tests: unit, parity, allocation
 cargo build --workspace --target wasm32-unknown-unknown
 cd ..
 node engine/bindings/build.mjs
 node parity/bindings/compat-check.mjs                   # the object API against stored three.js values
 node parity/bindings/check.mjs                          # the low-level API against three.js live (needs `npm install`)
 
-node parity/visual/run.mjs                              # 35 cases against stored three.js images (server running, needs a GPU; --backend=webgl, --console, --headed, --browser=edge)
+node parity/visual/run.mjs                              # 37 cases against stored three.js images (server running, needs a GPU; --backend=webgl, --console, --headed, --browser=edge)
 tsc -p parity/bindings                                  # the typings, against an application-style program
 node examples/ports/check.mjs --three                   # every ported example draws on WAMR3D and on three.js
 node examples/webgpu/smoke.mjs                          # the demo page, and its image against three.js WebGL
@@ -226,7 +269,8 @@ three.js is the reference and is not part of this repository. Nothing in `engine
 | `engine/bindings` | crate `wamr3d`: the JavaScript API, the object API (`js/compat.js` over the modules in `js/compat/`), the WebGPU host (`js/webgpu.js` and `js/webgpu/`), the build script |
 | `examples/` | `showcase` (large scene, four engines, live timings), `basic` (Node.js), `webgpu` (object API demo), `browser` (low-level API demo), `threejs` (baseline), `compare` (side by side) |
 | `bench/`, `parity/` | benchmark, reference fixtures and end-to-end checks |
-| `MIGRATION.md`, `DECISIONS.md`, `STATUS.md` | migration guide, design decisions, current state and open work |
+| `STATUS.md` | limitations and the last verification |
+| `AGENTS.md` | repository rules and the fixed design rules that code comments cite |
 | `CONFIGURATION.md`, `NPM.md` | development setup and commands, package releases |
 
 ## Contributing
@@ -236,7 +280,7 @@ Help is welcome, especially on the renderer (textures, physically based shading,
 1. **Behaviour is checked, not assumed.** New engine code comes with a parity fixture generated from the three.js source (see `parity/*/gen/`) and a test that replays it.
 2. **Speed is measured, not claimed.** If a change is meant to be faster, add or run a benchmark and report the numbers, including the cases where it is slower.
 
-`DECISIONS.md` explains why things are the way they are (32-bit storage with 64-bit arithmetic, generational handles, the ownership rules). `STATUS.md` lists what is unfinished.
+`AGENTS.md` holds the fixed rules (32-bit storage with 64-bit arithmetic, parity tolerance, generational handles, the ownership rules). `STATUS.md` lists what is unfinished.
 
 ## License
 

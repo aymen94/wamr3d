@@ -13,7 +13,7 @@ export { WIDTH, HEIGHT } from './cases/common.js';
 // reference images. Checking against the stored images needs no three.js.
 export const REFERENCE_URL = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.186.1/three.webgpu.js';
 
-// Agreed tolerance (DECISIONS.md D27): mean absolute difference per channel, of 255,
+// Agreed tolerance (AGENTS.md D27): mean absolute difference per channel, of 255,
 // and the fraction of pixels with any channel off by more than PIXEL_THRESHOLD.
 export const MEAN_LIMIT = 1.5, DIFFERENT_LIMIT = 0.02, PIXEL_THRESHOLD = 12;
 

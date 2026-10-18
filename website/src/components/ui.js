@@ -75,7 +75,7 @@ export function footer() {
     <div class="mx-auto grid max-w-6xl gap-10 px-6 py-14 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
       <div class="space-y-4">${wordmark()}<p class="max-w-xs text-sm leading-relaxed text-slate-400">A WebAssembly 3D engine with a Rust core and its own WebGPU renderer, and an API that follows three.js. MIT licensed.</p></div>
       ${col('Product', [['Features', '#features'], ['Benchmarks', '#/benchmarks'], ['Live demos', '#/examples'], ['Install', '#install']])}
-      ${col('Learn', [['Documentation', '#/docs'], ['Migration from three.js', '#/migration'], ['Status', repoFile('STATUS.md')], ['Design decisions', repoFile('DECISIONS.md')]])}
+      ${col('Learn', [['Documentation', '#/docs'], ['Migration from three.js', '#/migration'], ['Status', repoFile('STATUS.md')]])}
       ${col('Project', [['GitHub', REPO], ['npm', NPM], ['Issues', `${REPO}/issues`]])}
     </div>
     <div class="mx-auto flex max-w-6xl flex-col gap-2 border-t border-white/5 px-6 py-6 text-xs text-slate-400 sm:flex-row sm:justify-between">
