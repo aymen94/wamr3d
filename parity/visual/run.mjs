@@ -5,6 +5,7 @@
 //   node parity/visual/run.mjs --generate  draw each case with three.js and store reference/<case>.png
 //   --cases=a,b limits either mode to those cases
 //   --headed opens a visible browser window instead of a headless one; --browser=edge uses Edge.
+//   --console prints what the pages log (warnings, errors, exceptions).
 //
 // Differences and the WAMR3D images go to parity/visual/out/. Needs a GPU that the
 // browser exposes to WebGPU.
@@ -22,6 +23,7 @@ const generate = process.argv.includes( '--generate' );
 // --backend=webgl draws WAMR3D with WebGL 2 instead of WebGPU
 const backendArgument = process.argv.find( ( a ) => a.startsWith( '--backend=' ) )?.slice( 10 );
 const headed = process.argv.includes( '--headed' ), edge = process.argv.includes( '--browser=edge' );
+const showConsole = process.argv.includes( '--console' );
 const port = 9400 + Math.floor( Math.random() * 500 );
 const browser = [
 	'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -56,6 +58,9 @@ try {
 
 		const message = JSON.parse( event.data );
 		pending.get( message.id )?.( message.result );
+		if ( showConsole && message.method === 'Runtime.consoleAPICalled' ) console.log( `  console.${message.params.type}: ${message.params.args.map( ( a ) => a.value ?? a.description ).join( ' ' )}` );
+		if ( showConsole && message.method === 'Log.entryAdded' ) console.log( `  ${message.params.entry.level}: ${message.params.entry.text}` );
+		if ( showConsole && message.method === 'Runtime.exceptionThrown' ) console.log( `  exception: ${message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text}` );
 
 	} );
 	const send = ( method, params = {} ) => new Promise( ( resolve ) => {
@@ -65,6 +70,7 @@ try {
 
 	} );
 
+	if ( showConsole ) await Promise.all( [ send( 'Runtime.enable' ), send( 'Log.enable' ) ] );
 	const out = path.join( here, 'out' );
 	fs.mkdirSync( generate ? path.join( here, 'reference' ) : out, { recursive: true } );
 
