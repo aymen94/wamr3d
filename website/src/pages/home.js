@@ -1,6 +1,7 @@
 import { button, codeBlock, eyebrow, icon, installChip, miniCube, repoFile, sectionHead, shell } from '../components/ui.js';
 import { showcaseChart } from '../components/charts.js';
 import { engines, lowLevel, mathMix, meta, resolutions, showcase, startup } from '../data/benchmarks.js';
+import { frameRateLead, headlineDetail, submissionLead } from '../data/headline.js';
 
 // The home page quotes one resolution; the benchmarks page has all of them.
 const HEADLINE = '1280x720';
@@ -80,6 +81,7 @@ function hero() {
         <p class="mt-6 max-w-lg text-lg leading-relaxed text-slate-300">
           A Rust 3D engine in WebAssembly with the three.js API. Change the import, call <code class="font-mono text-brand-cyan">init()</code>, keep your code.
         </p>
+        ${speedBanner()}
         ${acronymReel()}
         <div class="mt-8 flex flex-wrap items-center gap-3">
           ${button('#install', 'Get started')}
@@ -164,6 +166,20 @@ function pipeline() {
       <p class="mt-8 max-w-3xl text-sm leading-relaxed text-slate-400" data-reveal>The result: the CPU time three.js spends updating and submitting a scene shrinks, and more of each frame is left to the GPU. How much depends on the scene; the <a class="text-brand-cyan hover:text-white" href="#/benchmarks">benchmarks</a> show measured medians, including where WAMR3D is slower.</p>
     </div>
   </section>`;
+}
+
+// The largest measured lead over three.js, with the configuration it was measured in.
+function speedBanner() {
+  if (!frameRateLead) return '';
+  const lead = frameRateLead.ratio.toFixed(1);
+  const submit = submissionLead ? ` Draw submission up to ${submissionLead.ratio.toFixed(1)}× faster (${submissionLead.count.toLocaleString('en-US')} objects at ${submissionLead.resolution}: ${submissionLead.wamr.toFixed(1)} ms against ${submissionLead.three.toFixed(1)} ms).` : '';
+  return `<a href="#/benchmarks" class="group mt-7 flex max-w-xl items-center gap-4 rounded-2xl border border-brand-cyan/30 bg-brand-cyan/[0.07] px-5 py-4 transition hover:border-brand-cyan/60 hover:bg-brand-cyan/10" aria-label="Renders up to ${lead} times faster than three.js: see the benchmarks">
+          <span class="font-display text-4xl font-semibold leading-none tracking-tight text-white sm:text-5xl">${lead}<span class="text-brand-cyan">×</span></span>
+          <span class="min-w-0">
+            <span class="block font-semibold text-white">Renders up to ${lead}× faster than three.js</span>
+            <span class="mt-1 block text-xs leading-relaxed text-slate-300">${headlineDetail}.${submit} <span class="text-brand-cyan group-hover:text-white">Measured, see the benchmarks →</span></span>
+          </span>
+        </a>`;
 }
 
 function performance() {

@@ -3,7 +3,7 @@
 // The logs come from bench/bench.mjs, bench/compat.mjs, bench/math.mjs, examples/showcase/check.mjs --measure
 // and examples/compare/measure.mjs --gpu (commands on the benchmarks page). A configuration
 // that is missing or did not parse is listed in `failures` rather than filled in.
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -30,6 +30,12 @@ const read = (name) => {
 const num = (s) => Number(s);
 
 const meta = { date: basename(dir).match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? basename(dir), dir: relative(root, dir).replaceAll('\\', '/'), canvases: {} };
+// The day each kind of log was written (local time), from the files themselves.
+const written = (names) => [...new Set(names.filter((n) => existsSync(join(dir, n))).map((n) => {
+  const d = statSync(join(dir, n)).mtime;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}))].sort();
+meta.recorded = { browser: written(resolutions.flatMap((r) => [`showcase-${r}.txt`, `showcase100k-${r}.txt`, `compare-${r}.txt`])), node: written(['bench.txt', 'compat.txt', 'math.txt']) };
 
 // Showcase: bodies, mode, renderer, fps, frame, update, submit, calls, build.
 const showcase = {};

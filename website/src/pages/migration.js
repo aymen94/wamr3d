@@ -39,7 +39,7 @@ const steps = [
 
 const choices = [
   ['Familiar object API', '<code>wamr3d/compat</code>', 'Best for existing three.js projects and typical scenes. Keep familiar classes, properties and scene-building patterns while WAMR3D batches object updates into the engine once per frame.', "import * as WAMR3D from 'wamr3d/compat';"],
-  ['Batched low-level API', '<code>wamr3d</code>', 'Best when many objects change every frame or you need direct control. Generational handles and batched calls reduce JavaScript overhead; expect a more explicit, less three.js-like API.', "import { init, World } from 'wamr3d';"],
+  ['Batched low-level API', '<code>wamr3d</code> + <code>wamr3d/math</code>', 'Best when many objects change every frame or you need direct control. Generational handles and batched calls reduce JavaScript overhead; expect a more explicit, less three.js-like API. Do per-value math with the JavaScript values of <code>wamr3d/math</code> and send the results in one batched call.', "import { init, World } from 'wamr3d';\nimport { Vector3, Quaternion } from 'wamr3d/math';"],
   ['WebGPU or WebGL 2', '<code>WebGPURenderer</code>', 'Choose automatic selection for the broadest reach: WebGPU when available, WebGL 2 otherwise. Pin WebGPU for a WebGPU-only product, or WebGL 2 to target a known backend.', "new WAMR3D.WebGPURenderer({ backend: 'auto' });"]
 ];
 

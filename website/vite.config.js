@@ -13,7 +13,13 @@ const prerender = () => ({
 	name: 'wamr3d-prerender',
 	async transformIndexHtml(html) {
 		const { routes } = await import(`${pathToFileURL(path.join(websiteRoot, 'src', 'pages', 'index.js')).href}?t=${Date.now()}`);
-		return html.replace('<!--app-->', routes['/'].render());
+		// The headline in the title and descriptions comes from the measured data, with its condition.
+		const { headlineShort, headlineDetail } = await import(`${pathToFileURL(path.join(websiteRoot, 'src', 'data', 'headline.js')).href}?t=${Date.now()}`);
+		const sentence = headlineShort ? `Renders ${headlineShort} (${headlineDetail}).` : '';
+		return html
+			.replaceAll(', %WAMR3D_HEADLINE%', headlineShort ? `, ${headlineShort}` : '')
+			.replaceAll(' %WAMR3D_HEADLINE_SENTENCE%', sentence ? ` ${sentence}` : '')
+			.replace('<!--app-->', routes['/'].render());
 	}
 });
 
