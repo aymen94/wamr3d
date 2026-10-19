@@ -328,6 +328,9 @@ export async function startHeroScene(canvas, report = () => {}) {
   }
 
   resize();
+  // Shaders are built before the first frame without blocking the page (on releases that
+  // have compileAsync); otherwise the first frame waits for them.
+  if (renderer.compileAsync) await renderer.compileAsync(scene, camera).catch((error) => console.info('WAMR3D could not prebuild its shaders.', error));
   canvas.classList.add('opacity-100');
   // After the fade-in, scroll-driven opacity must follow the frame without easing.
   setTimeout(() => { canvas.style.transition = 'none'; }, 1600);

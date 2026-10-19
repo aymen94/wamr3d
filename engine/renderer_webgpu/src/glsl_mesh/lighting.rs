@@ -372,6 +372,9 @@ vec4 pack_depth(float depth, uint packing, float alpha) {
 // ShadowMaterial.
 float shadow_mask(vec3 world, vec3 normal, vec2 pixel) {
     float mask = 1.0;
+    if ((LIGHT_FEATURES & 1u) == 0u) {
+        return mask;
+    }
     int count = min(int(frame.camera_position.w), 16);
     for (int i = 0; i < 16; i++) {
         if (i >= count) {

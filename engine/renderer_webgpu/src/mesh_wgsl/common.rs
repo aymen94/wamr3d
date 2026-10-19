@@ -33,6 +33,16 @@ const MAP_IRIDESCENCE_THICKNESS = 22u;
 const MAP_ANISOTROPY = 23u;
 const MAP_MATCAP = 24u;
 
+// A pipeline built for one kind of material and frame sets these: bits of the material
+// flags, state flags, maps and light kinds it can meet. Code behind a bit left out is
+// removed when the pipeline is compiled; left at their defaults, every feature is decided
+// at run time. SHADING_MODE is the material's shading, or all ones to read it.
+override MATERIAL_FEATURES: u32 = 0xffffffffu;
+override STATE_FEATURES: u32 = 0xffffffffu;
+override MAP_FEATURES: u32 = 0xffffffffu;
+override LIGHT_FEATURES: u32 = 0xffffffffu;
+override SHADING_MODE: u32 = 0xffffffffu;
+
 struct Light {
     // xyz position, w kind (0 directional, 1 point, 2 spot, 3 rectangular area)
     position: vec4<f32>,
@@ -218,7 +228,7 @@ struct MapCoords {
 };
 
 fn map_present(k: u32) -> bool {
-    return material.maps[2u * k].w > 0.5;
+    return (MAP_FEATURES & (1u << k)) != 0u && material.maps[2u * k].w > 0.5;
 }
 
 fn map_transform(k: u32, uv: vec2<f32>) -> vec2<f32> {

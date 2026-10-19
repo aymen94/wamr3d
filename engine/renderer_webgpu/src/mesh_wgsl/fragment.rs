@@ -30,8 +30,8 @@ fn fragment(input: VertexOutput, @builtin(front_facing) front: bool) -> @locatio
     let position_dx = dpdx(input.world_position);
     let position_dy = dpdy(input.world_position);
     let object_flags = u32(object.params.x);
-    let flags = u32(material.params.w);
-    let state_flags = u32(material.extra.x);
+    let flags = u32(material.params.w) & MATERIAL_FEATURES;
+    let state_flags = u32(material.extra.x) & STATE_FEATURES;
     fragment_pixel = input.clip_position.xy;
     if (clipped(input.world_position)) {
         discard;
@@ -67,7 +67,7 @@ fn fragment(input: VertexOutput, @builtin(front_facing) front: bool) -> @locatio
     }
     var alpha = select(1.0, coverage, (flags & 2u) != 0u);
 
-    let shading = u32(material.params.z + 0.5);
+    let shading = select(SHADING_MODE, u32(material.params.z + 0.5), SHADING_MODE == 0xffffffffu);
     if (shading == 7u) {
         // depth: the fragment's depth in the target, packed
         return pack_depth(input.clip_position.z, u32(material.depth_params.x + 0.5), coverage);
@@ -294,7 +294,7 @@ fn fragment(input: VertexOutput, @builtin(front_facing) front: bool) -> @locatio
 
     for (var i = 0u; i < count; i++) {
         let light = frame.lights[i];
-        if (light.position.w > 2.5) {
+        if ((LIGHT_FEATURES & 2u) != 0u && light.position.w > 2.5) {
             // A rectangular area light (physical materials only, as in three.js): the
             // diffuse part exactly by its form factor, the specular part from its point
             // nearest the reflected view ray, with the lobe widened by the light's size.
@@ -338,7 +338,7 @@ fn fragment(input: VertexOutput, @builtin(front_facing) front: bool) -> @locatio
             }
         }
         let shadow_index = u32(light.cone.z + 0.5);
-        if (shadow_index > 0u && (object_flags & 4u) != 0u) {
+        if ((LIGHT_FEATURES & 1u) != 0u && shadow_index > 0u && (object_flags & 4u) != 0u) {
             var layer = shadow_index - 1u;
             if (light.position.w > 0.5 && light.position.w < 1.5) {
                 // a point light: the face the normal-biased point falls on
@@ -511,7 +511,7 @@ fn fragment(input: VertexOutput, @builtin(front_facing) front: bool) -> @locatio
 // `combine`, `reflectivity` and `refractionRatio`), sampled sharp along the reflected or
 // refracted view ray.
 fn with_environment(color: vec3<f32>, n: vec3<f32>, world: vec3<f32>, strength: f32) -> vec3<f32> {
-    let state_flags = u32(material.extra.x);
+    let state_flags = u32(material.extra.x) & STATE_FEATURES;
     if ((state_flags & 32u) == 0u || frame.environment.x <= 0.0) {
         return color;
     }

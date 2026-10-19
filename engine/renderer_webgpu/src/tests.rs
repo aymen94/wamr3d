@@ -442,6 +442,21 @@ fn every_glsl_pass_is_assembled_for_webgl_2() {
 }
 
 #[test]
+fn mesh_shaders_decide_every_feature_at_run_time_unless_specialised() {
+    // The hosts set these by name (FEATURE_NAMES in webgpu/formats.js); a host that sets
+    // none draws with all features possible, as before specialisation.
+    let wgsl = shader_source();
+    let glsl = glsl_source("mesh.frag").unwrap();
+    for name in ["MATERIAL_FEATURES", "STATE_FEATURES", "MAP_FEATURES", "LIGHT_FEATURES"] {
+        assert!(wgsl.contains(&format!("override {name}: u32 = 0xffffffffu;")), "{name}");
+        assert!(glsl.contains(&format!("#ifndef {name}\n#define {name} 0xffffffffu\n#endif")), "{name}");
+    }
+    assert!(wgsl.contains("override SHADING_MODE: u32 = 0xffffffffu;") && glsl.contains("#ifdef SHADING_MODE"));
+    // one mask bit per map
+    assert!(wgsl.contains("const MAP_MATCAP = 24u;") && glsl.contains("#define MAP_MATCAP 24\n"));
+}
+
+#[test]
 fn skinned_meshes_are_culled_where_their_bones_put_them() {
     // two boxes far to the side; the first one's bone holds it in front of the camera
     let (mut world, root, camera, boxes) = scene(&[[300.0, 0.0, -5.0], [300.0, 0.0, -5.0]]);

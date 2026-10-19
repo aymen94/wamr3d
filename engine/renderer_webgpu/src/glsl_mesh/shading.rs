@@ -6,7 +6,7 @@ macro_rules! mesh_fragment_shading {
 // `combine`, `reflectivity` and `refractionRatio`), sampled sharp along the reflected or
 // refracted view ray.
 vec3 with_environment(vec3 color, vec3 n, vec3 world, float strength) {
-    uint state_flags = uint(material.extra.x);
+    uint state_flags = uint(material.extra.x) & STATE_FEATURES;
     if ((state_flags & 32u) == 0u || frame.environment.x <= 0.0) {
         return color;
     }
@@ -40,8 +40,8 @@ vec4 shade() {
     vec3 position_dx = dFdx(v_world);
     vec3 position_dy = dFdy(v_world);
     uint object_flags = uint(object.params.x);
-    uint flags = uint(material.params.w);
-    uint state_flags = uint(material.extra.x);
+    uint flags = uint(material.params.w) & MATERIAL_FEATURES;
+    uint state_flags = uint(material.extra.x) & STATE_FEATURES;
     if (clipped(v_world)) {
         discard;
     }
@@ -71,7 +71,11 @@ vec4 shade() {
     }
     float alpha = (flags & 2u) != 0u ? coverage : 1.0;
 
+#ifdef SHADING_MODE
+    uint shading = SHADING_MODE;
+#else
     uint shading = uint(material.params.z + 0.5);
+#endif
     if (shading == 7u) {
         // depth: the fragment's depth in the target, packed
         return pack_depth(gl_FragCoord.z, uint(material.depth_params.x + 0.5), coverage);
@@ -277,7 +281,7 @@ vec4 shade() {
             break;
         }
         Light light = frame.lights[i];
-        if (light.position.w > 2.5) {
+        if ((LIGHT_FEATURES & 2u) != 0u && light.position.w > 2.5) {
             if (!standard) {
                 continue;
             }
@@ -319,7 +323,7 @@ vec4 shade() {
             }
         }
         int shadow_index = int(light.cone.z + 0.5);
-        if (shadow_index > 0 && (object_flags & 4u) != 0u) {
+        if ((LIGHT_FEATURES & 1u) != 0u && shadow_index > 0 && (object_flags & 4u) != 0u) {
             int layer = shadow_index - 1;
             if (light.position.w > 0.5 && light.position.w < 1.5) {
                 vec3 biased = v_world + geometry_normal * frame.shadows[layer].params.y;

@@ -5,7 +5,7 @@
 import { ColorRepresentation, ToneMapping, init } from './core.js';
 import { Vector2 } from './vectors.js';
 import { Color, Plane } from './shapes.js';
-import { Camera, Scene } from './objects.js';
+import { Camera, Object3D, Scene } from './objects.js';
 import { RenderTarget } from './rendering.js';
 
 export interface WebGPURendererParameters {
@@ -61,6 +61,8 @@ export class WebGPURenderer {
 	getClearColor( target: Color ): Color;
 	render( scene: Scene, camera: Camera ): void;
 	renderAsync( scene: Scene, camera: Camera ): Promise<void>;
+	/** Builds the shaders that rendering the scene needs without drawing, so that the first `render` does not wait for them. */
+	compileAsync( scene: Object3D, camera: Camera, targetScene?: Scene | null ): Promise<void>;
 	setAnimationLoop( callback: ( ( time: number ) => void ) | null ): void;
 	dispose(): void;
 

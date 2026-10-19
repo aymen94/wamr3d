@@ -247,6 +247,25 @@ export class WebGPURenderer {
 
 	render( scene, camera ) {
 
+		this._renderScene( scene, camera, false );
+
+	}
+
+	/**
+	 * Builds the shader programs or pipelines that rendering `scene` (or `targetScene`,
+	 * which holds `scene`) with `camera` needs, without drawing, so that the first frame
+	 * does not wait for them.
+	 */
+	async compileAsync( scene, camera, targetScene = null ) {
+
+		await this.init();
+		await this._renderScene( targetScene ?? scene, camera, true );
+
+	}
+
+	// Sends the scene to the engine, then draws it, or only builds what drawing it needs.
+	_renderScene( scene, camera, compile ) {
+
 		if ( this._backend === null ) return;
 
 		if ( scene.matrixWorldAutoUpdate ) scene.updateMatrixWorld();
@@ -414,6 +433,7 @@ export class WebGPURenderer {
 		const backend = this._backend;
 		const rt = this._renderTarget, texture = rt?.texture;
 		const target = rt ? { id: texture.id, width: Math.max( 1, rt.width | 0 ), height: Math.max( 1, rt.height | 0 ), samples: rt.samples, type: texture.type === UnsignedByteType ? 'byte' : 'float', texture, textures: rt.textures, depthTexture: rt.depthTexture ?? null } : null;
+		if ( compile ) return backend.compile( w(), this._frame, scene.handle, camera.handle, target, this._extras( camera, backend, scene, shaderLights ) );
 		backend.render( w(), this._frame, scene.handle, camera.handle, linear( scene.background && scene.background.isColor ? scene.background : this._clearColor ), textureSources, instanceSources, target, this._pixelRatio, this._extras( camera, backend, scene, shaderLights ) );
 		// marks what was drawn into the target, for environments made from it
 		if ( rt ) for ( const each of rt.textures ) each.version ++;

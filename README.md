@@ -10,7 +10,7 @@
 
 WAMR3D provides a WebAssembly scene graph, transforms, cameras, geometry processing, culling and draw ordering, plus a separate WebGPU renderer. Drive it from JavaScript through classes that follow three.js conventions or through batched calls for large scenes. The object API keeps user-facing transforms in JavaScript and synchronizes them with the engine in batches. Behaviour is checked against three.js value by value and pixel by pixel.
 
-It has no runtime dependencies and draws with its own WebGPU renderer, switching to a native WebGL 2 renderer where WebGPU is missing: meshes (filled or wireframe), skinned meshes and morph targets, lines and points of any width, sprites and instanced meshes; basic, Lambert, Phong, toon, normal, matcap, depth, distance, shadow, dashed-line, standard and physical materials (clearcoat, sheen, specular layer, iridescence, anisotropy, transmission with dispersion) and GLSL shader materials with lights and fog on WebGL 2; three.js's per-material state (depth function, stencil, polygon offset, alpha hash and coverage, dithering, colour write) and clipping planes; 24 kinds of texture map, each with its own uv transform and uv set, and vertex tangents; directional, point, spot and rectangular area lights and light probes; basic, PCF and VSM shadows; image-based lighting from up to eight environments per frame; texture backgrounds; tone mapping; render targets with depth textures; three.js's blending modes; post-processing (bloom, FXAA, output); transparency; and fog. Around it are three.js's curves and shapes, animation system, loaders, audio, helpers, and add-ons for controls (including `TransformControls` and `ArcballControls`), loaders (`GLTFLoader` with Draco, KTX2 and meshopt, FBX, OBJ/MTL, RGBE/HDR, EXR), post-processing and wide lines. This is release `0.8.0`; [Status](#status) lists what it does not cover.
+It has no runtime dependencies and draws with its own WebGPU renderer, switching to a native WebGL 2 renderer where WebGPU is missing: meshes (filled or wireframe), skinned meshes and morph targets, lines and points of any width, sprites and instanced meshes; basic, Lambert, Phong, toon, normal, matcap, depth, distance, shadow, dashed-line, standard and physical materials (clearcoat, sheen, specular layer, iridescence, anisotropy, transmission with dispersion) and GLSL shader materials with lights and fog on WebGL 2; three.js's per-material state (depth function, stencil, polygon offset, alpha hash and coverage, dithering, colour write) and clipping planes; 24 kinds of texture map, each with its own uv transform and uv set, and vertex tangents; directional, point, spot and rectangular area lights and light probes; basic, PCF and VSM shadows; image-based lighting from up to eight environments per frame; texture backgrounds; tone mapping; render targets with depth textures; three.js's blending modes; post-processing (bloom, FXAA, output); transparency; and fog. Around it are three.js's curves and shapes, animation system, loaders, audio, helpers, and add-ons for controls (including `TransformControls` and `ArcballControls`), loaders (`GLTFLoader` with Draco, KTX2 and meshopt, FBX, OBJ/MTL, RGBE/HDR, EXR), post-processing and wide lines. This is release `0.9.0`; [Status](#status) lists what it does not cover.
 
 ## Why try it
 
@@ -101,6 +101,7 @@ Setting `position`, `rotation` and `scale` does not call into WebAssembly: the o
 
 - `init()` loads the WebAssembly module: call it once, before creating anything.
 - `renderer.init()` must finish before the first `render`; `setAnimationLoop` waits for it. `new THREE.WebGLRenderer()` also works (the same renderer on WebGL 2, starting `init()` itself).
+- Each material gets shaders built for the features it uses (its maps, physical layers, environment; the frame's shadowed and area lights), as in three.js. Building them takes the GPU driver time on the first frame that needs them; `await renderer.compileAsync( scene, camera )` builds them beforehand without blocking the page.
 - Serve pages over HTTP and let a bundler or an import map resolve the package name.
 - Unsupported parameters are stored, have no effect and log one warning, so the first run lists what your scene depends on.
 
@@ -221,7 +222,7 @@ The full typed API is in `dist/wamr3d/wamr3d_wasm.d.ts` after a build. A Node.js
 
 ## Status
 
-`0.8.0` follows the three.js API and is verified with the checks and examples in this repository only.
+`0.9.0` follows the three.js API and is verified with the checks and examples in this repository only.
 
 | Area | Unfinished or missing |
 |---|---|
@@ -236,7 +237,7 @@ The full typed API is in `dist/wamr3d/wamr3d_wasm.d.ts` after a build. A Node.js
 
 ```
 cd engine
-cargo test --workspace                                  # 662 Rust tests: unit, parity, allocation
+cargo test --workspace                                  # 663 Rust tests: unit, parity, allocation
 cargo build --workspace --target wasm32-unknown-unknown
 cd ..
 node engine/bindings/build.mjs

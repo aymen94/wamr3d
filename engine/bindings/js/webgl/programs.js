@@ -4,6 +4,7 @@
 
 import { Renderer } from '../index.js';
 import { BONE_UNIT, ENVIRONMENT_UNIT, SHADOW_UNIT, SLOTS, TRANSMISSION_UNIT, VSM_UNIT } from './constants.js';
+import { FEATURE_NAMES } from '../webgpu/formats.js';
 
 /** Adds this part's functions and state to the host context `ctx`. */
 export function installPrograms( ctx ) {
@@ -24,8 +25,10 @@ export function installPrograms( ctx ) {
 
 	}
 
-	// `defines` go after the `#version` line.
-	function program( key, vertex, fragment, defines = '' ) {
+	// Compiles and links without asking for the result: a status query waits for the
+	// driver, so the programs a frame needs are all started before the first is queried,
+	// letting drivers that compile on worker threads build them side by side.
+	function startProgram( key, vertex, fragment, defines = '' ) {
 
 		let value = programs.get( key );
 		if ( value ) return value;
@@ -37,10 +40,40 @@ export function installPrograms( ctx ) {
 		};
 
 		const id = gl.createProgram();
-		gl.attachShader( id, compile( gl.VERTEX_SHADER, source( vertex ), vertex ) );
-		gl.attachShader( id, compile( gl.FRAGMENT_SHADER, source( fragment ), fragment ) );
+		const stages = [ [ gl.VERTEX_SHADER, vertex ], [ gl.FRAGMENT_SHADER, fragment ] ].map( ( [ type, name ] ) => {
+
+			const shader = gl.createShader( type );
+			gl.shaderSource( shader, source( name ) );
+			gl.compileShader( shader );
+			gl.attachShader( id, shader );
+			return [ shader, name ];
+
+		} );
 		gl.linkProgram( id );
-		if ( ! gl.getProgramParameter( id, gl.LINK_STATUS ) ) throw new Error( `WAMR3D: GLSL ${key}: ${gl.getProgramInfoLog( id )}` );
+		value = { id, key, stages, uniform: ( name ) => gl.getUniformLocation( id, name ) };
+		programs.set( key, value );
+		return value;
+
+	}
+
+	// `defines` go after the `#version` line.
+	const program = ( key, vertex, fragment, defines = '' ) => finishProgram( startProgram( key, vertex, fragment, defines ) );
+
+	// Waits for a started program, then binds its blocks and texture units.
+	function finishProgram( value ) {
+
+		if ( ! value.stages ) return value;
+		const { id, key, stages } = value;
+
+		if ( ! gl.getProgramParameter( id, gl.LINK_STATUS ) ) {
+
+			programs.delete( key );
+			for ( const [ shader, name ] of stages ) if ( ! gl.getShaderParameter( shader, gl.COMPILE_STATUS ) ) throw new Error( `WAMR3D: GLSL ${name}: ${gl.getShaderInfoLog( shader )}` );
+			throw new Error( `WAMR3D: GLSL ${key}: ${gl.getProgramInfoLog( id )}` );
+
+		}
+
+		value.stages = null;
 		gl.useProgram( id );
 
 		const block = ( name, binding ) => {
@@ -73,8 +106,6 @@ export function installPrograms( ctx ) {
 		unit( 'moments', 1 );
 		const flip = gl.getUniformLocation( id, 'flip_y' );
 		if ( flip !== null ) gl.uniform1f( flip, 1 );
-		value = { id, uniform: ( name ) => gl.getUniformLocation( id, name ) };
-		programs.set( key, value );
 		return value;
 
 	}
@@ -311,9 +342,55 @@ export function installPrograms( ctx ) {
 		return out;
 
 	}
-	const meshProgram = ( srgb, quad ) => program( ( quad ? 'quad' : 'mesh' ) + ( srgb ? ':srgb' : '' ), quad ? 'mesh_quad.vert' : 'mesh.vert', 'mesh.frag', define( srgb ) );
+	// `features` is a `meshFeatures` key; with `start` the program is only begun.
+	const meshProgram = ( srgb, quad, features, start = false ) => {
+
+		const key = ( quad ? 'quad:' : 'mesh:' ) + ( srgb ? 'srgb:' : '' ) + features;
+		const value = programs.get( key );
+		if ( value && ! value.stages ) return value;
+		const defines = define( srgb ) + features.split( ',' ).map( ( v, i ) => `\n#define ${FEATURE_NAMES[ i ]} ${v}u` ).join( '' );
+		return ( start ? startProgram : program )( key, quad ? 'mesh_quad.vert' : 'mesh.vert', 'mesh.frag', defines );
+
+	};
 	const backgroundProgram = ( srgb ) => program( srgb ? 'background:srgb' : 'background', 'fullscreen.vert', 'background.frag', define( srgb ) );
 
-	Object.assign( ctx, { backgroundProgram, bindCustomAttributes, effectProgram, meshProgram, multiply, normalMatrix, program, programs, setUniforms, shaderProgram } );
+	// KHR_parallel_shader_compile tells when a program is built without waiting for it.
+	const parallel = gl.getExtension( 'KHR_parallel_shader_compile' );
+
+	// Resolves once the driver has built `started` (programs from `startProgram`) and they
+	// are finished. Without the extension they are finished at once, waiting as `program`.
+	function finishPrograms( started ) {
+
+		return new Promise( ( resolve, reject ) => {
+
+			const poll = () => {
+
+				try {
+
+					if ( parallel && ! gl.isContextLost() && started.some( ( value ) => value.stages && ! gl.getProgramParameter( value.id, parallel.COMPLETION_STATUS_KHR ) ) ) {
+
+						setTimeout( poll, 8 );
+						return;
+
+					}
+
+					for ( const value of started ) finishProgram( value );
+					resolve();
+
+				} catch ( error ) {
+
+					reject( error );
+
+				}
+
+			};
+
+			poll();
+
+		} );
+
+	}
+
+	Object.assign( ctx, { backgroundProgram, bindCustomAttributes, effectProgram, finishPrograms, meshProgram, startProgram, multiply, normalMatrix, program, programs, setUniforms, shaderProgram } );
 
 }

@@ -355,6 +355,9 @@ fn finish(color_in: vec3<f32>, alpha: f32) -> vec4<f32> {
 // `getShadowMask`), for ShadowMaterial.
 fn shadow_mask(world: vec3<f32>, normal: vec3<f32>, pixel: vec2<f32>) -> f32 {
     var mask = 1.0;
+    if ((LIGHT_FEATURES & 1u) == 0u) {
+        return mask;
+    }
     let count = min(u32(frame.camera_position.w), 16u);
     for (var i = 0u; i < count; i++) {
         let light = frame.lights[i];

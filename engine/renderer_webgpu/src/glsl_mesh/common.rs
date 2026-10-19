@@ -96,6 +96,22 @@ layout(std140) uniform MaterialBlock {
 #define MAP_ANISOTROPY 23
 #define MAP_MATCAP 24
 
+// A program built for one kind of material and frame defines these: bits of the material
+// flags, state flags, maps and light kinds it can meet. Code behind a bit left out is not
+// compiled; unset, every feature is decided at run time.
+#ifndef MATERIAL_FEATURES
+#define MATERIAL_FEATURES 0xffffffffu
+#endif
+#ifndef STATE_FEATURES
+#define STATE_FEATURES 0xffffffffu
+#endif
+#ifndef MAP_FEATURES
+#define MAP_FEATURES 0xffffffffu
+#endif
+#ifndef LIGHT_FEATURES
+#define LIGHT_FEATURES 0xffffffffu
+#endif
+
 // Whether a world position is behind any of the material's clipping planes (all of
 // them with clip intersection).
 bool clipped_by_material(vec3 p) {
@@ -135,7 +151,7 @@ bool clipped(vec3 p) {
 }
 
 bool map_present(int k) {
-    return material.maps[2 * k].w > 0.5;
+    return (MAP_FEATURES & (1u << uint(k))) != 0u && material.maps[2 * k].w > 0.5;
 }
 
 vec2 map_transform(int k, vec2 uv) {

@@ -77,3 +77,37 @@ export function quadInstances( topology, start, count ) {
 	return [ start, Math.max( 0, count - 1 ) ];
 
 }
+
+// What a mesh program is specialised for, as `shading,material,state,maps,lights`: the
+// material's shading mode, its flags and state flags with only the costly feature bits
+// that it lacks cleared, the maps it has, and the light kinds of the frame (1 shadowed
+// lights, 2 area lights). The shaders compile out code behind a cleared bit, so draws
+// whose material differs in those features use different programs.
+const MATERIAL_GATED = 0x3f0000, STATE_GATED = 4 | 32 | 64 | 128, MAPS_FLOAT = 64, MAP_COUNT = 25, STATE_FLOAT = 276;
+
+export function lightFeatures( frame ) {
+
+	let features = 0;
+	const count = Math.min( Math.trunc( frame[ 19 ] ), 16 );
+
+	for ( let i = 0, at = 48; i < count; i ++, at += 16 ) {
+
+		if ( frame[ at + 3 ] > 2.5 ) features |= 2;
+		else if ( Math.trunc( frame[ at + 14 ] + 0.5 ) > 0 ) features |= 1;
+
+	}
+
+	return features;
+
+}
+
+export function meshFeatures( blocks, at, lights ) {
+
+	const flags = blocks[ at + 7 ] >>> 0, state = blocks[ at + STATE_FLOAT ] >>> 0;
+	let maps = 0;
+	for ( let k = 0, o = at + MAPS_FLOAT + 3; k < MAP_COUNT; k ++, o += 8 ) if ( blocks[ o ] > 0.5 ) maps |= 1 << k;
+	return ( blocks[ at + 6 ] + 0.5 >>> 0 ) + ',' + ( ( flags | ~ MATERIAL_GATED ) >>> 0 ) + ',' + ( ( state | ~ STATE_GATED ) >>> 0 ) + ',' + ( maps >>> 0 ) + ',' + lights;
+
+}
+
+export const FEATURE_NAMES = [ 'SHADING_MODE', 'MATERIAL_FEATURES', 'STATE_FEATURES', 'MAP_FEATURES', 'LIGHT_FEATURES' ];

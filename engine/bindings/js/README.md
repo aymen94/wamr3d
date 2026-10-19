@@ -37,6 +37,8 @@ renderer.render( scene, camera );
 
 `WebGPURenderer` uses WebGPU when available and WAMR3D's WebGL 2 renderer otherwise. Select a backend with `backend: 'webgpu'` or `backend: 'webgl'` when needed.
 
+Shaders are built for the features each material uses, on the first frame that draws it. To build them without blocking the page, `await renderer.compileAsync( scene, camera )` before the first `render`.
+
 ## Low-level API
 
 Import from `wamr3d` for the handle-based API. It is designed for batched updates; math values use 32-bit floats and methods mutate in place without chaining. Call `.free()` on owned wrapper objects when finished and dispose geometries and materials explicitly. Typed-array views into Wasm memory must be refreshed after memory growth.

@@ -6,7 +6,7 @@
 // uniform blocks are uploaded as the engine packs them: their std140 layout matches.
 
 import { Renderer, memory } from './index.js';
-import { quadInstances } from './webgpu/formats.js';
+import { lightFeatures, meshFeatures, quadInstances } from './webgpu/formats.js';
 import { BONE_UNIT, CUSTOM_BLENDING_FLOAT, ENVIRONMENT_UNIT, LOOP_KEY, MATERIAL_FLOATS, MATERIAL_STRIDE, OBJECT_STRIDE, QUAD_KEY, SHADOW_UNIT, TRANSMISSION_UNIT, UNUSED_FRAMES, VSM_UNIT, WIREFRAME_KEY } from './webgl/constants.js';
 import { installPrograms } from './webgl/programs.js';
 import { installBuffers } from './webgl/buffers.js';
@@ -52,7 +52,7 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 	installTextures( ctx );
 	installShadows( ctx );
 	installEnvironment( ctx );
-	const { applyMaterialState, applyState, resetState, background, backgroundBuffer, backgroundProgram, bindCustomAttributes, bindGeometry, bindInstances, bindMaps, bindQuads, bindRange, depthSampler, distinct, draw, drawShadows, drawWireframe, effectProgram, ensureShadowTexture, entries, environment, environmentFramebuffer, environments, frameBuffer, geometries, geometry, hdrTarget, info, instanced, instances, levelBuffers, materialBuffer, meshProgram, multiply, normalMatrix, objectBuffer, panoramaSampler, perInstance, program, programs, quadSource, release, renderTarget, renderTargets, scratchBuffer, screenSampler, setTextures, setUniforms, shaderProgram, shadowFramebuffer, shadowObjectBuffer, stackFramebuffer, texture, textures, transmissionTarget, unbindArrays, upload, uploadBones, vsmFramebuffer, white } = ctx;
+	const { applyMaterialState, applyState, resetState, background, backgroundBuffer, backgroundProgram, bindCustomAttributes, bindGeometry, bindInstances, bindMaps, bindQuads, bindRange, depthSampler, distinct, draw, drawShadows, drawWireframe, effectProgram, ensureShadowTexture, finishPrograms, entries, environment, environmentFramebuffer, environments, frameBuffer, geometries, geometry, hdrTarget, info, instanced, instances, levelBuffers, materialBuffer, meshProgram, multiply, normalMatrix, objectBuffer, panoramaSampler, perInstance, program, programs, quadSource, release, renderTarget, renderTargets, scratchBuffer, screenSampler, setTextures, setUniforms, shaderProgram, shadowFramebuffer, startProgram, shadowObjectBuffer, stackFramebuffer, texture, textures, transmissionTarget, unbindArrays, upload, uploadBones, vsmFramebuffer, white } = ctx;
 	// ---------------------------------------------------------------- frame
 
 	gl.enable( gl.DEPTH_TEST );
@@ -110,6 +110,30 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 
 	}
 
+	// The feature key of each draw's mesh program.
+	const drawFeatures = [];
+
+	// Starts the mesh programs of draws `from` to `to`, all before any is waited for.
+	// `data` is from `frameData`: building a program can grow the module's memory.
+	function startPrograms( draws, from, to, srgb, data, extras ) {
+
+		const started = [];
+		if ( drawFeatures.length < to ) drawFeatures.length = to;
+
+		for ( let i = from, o = from * DRAW_FIELDS, last = - 1, key = ''; i < to; i ++, o += DRAW_FIELDS ) {
+
+			const custom = draws[ o + 7 ];
+			if ( custom > 0 && ( custom < 16 || extras?.shaderMaterials?.get( custom ) ) ) continue;
+			if ( draws[ o + 6 ] !== last ) key = meshFeatures( data.materials, ( last = draws[ o + 6 ] ) * MATERIAL_FLOATS, ctx.lightFeatures );
+			drawFeatures[ i ] = key;
+			started.push( meshProgram( srgb, ( draws[ o ] & QUAD_KEY ) !== 0, key, true ) );
+
+		}
+
+		return started;
+
+	}
+
 	const customBlending = ( key, materialData, material ) => ( key & 4 && ( key >> 11 & 7 ) === 5 ? materialData[ material * MATERIAL_FLOATS + CUSTOM_BLENDING_FLOAT ] : 0 );
 
 	// Draws `from` to `to` of the prepared frame with the mesh programs, the frame-wide
@@ -129,6 +153,9 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 		gl.activeTexture( gl.TEXTURE0 + BONE_UNIT );
 		gl.bindTexture( gl.TEXTURE_2D, ctx.boneTexture );
 		let state = - 1, blendState = 0, appliedMaterial = - 1, bound = null, set = null, triangles = 0, boundInstances, material = - 1, current = null;
+
+		startPrograms( draws, from, to, srgb, data, extras );
+		const features = drawFeatures;
 
 		for ( let i = from, o = from * DRAW_FIELDS; i < to; i ++, o += DRAW_FIELDS ) {
 
@@ -163,7 +190,7 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 
 			}
 
-			const shader = custom > 0 && custom < 16 ? effectProgram( custom, srgb ) : meshProgram( srgb, quad );
+			const shader = custom > 0 && custom < 16 ? effectProgram( custom, srgb ) : meshProgram( srgb, quad, features[ i ] );
 
 			if ( shader !== current ) {
 
@@ -250,6 +277,23 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 		name: 'webgl', isWebGLBackend: true, gl, info,
 
 		/**
+		 * Builds the mesh programs that `render` with the same scene, camera and target
+		 * would use, without drawing; resolves once they are ready.
+		 */
+		compile( world, renderer, root, camera, target = null, extras = null ) {
+
+			const count = renderer.prepare( world, root, camera );
+			ctx.lightFeatures = lightFeatures( renderer.frameUniforms() );
+			const draws = renderer.drawInfo(), data = frameData( renderer, count );
+			const started = startPrograms( draws, 0, count, ! target && ! floatTargets, data, extras );
+			if ( renderer.transmissiveCount() > 0 ) started.push( ...startPrograms( draws, 0, renderer.opaqueCount(), false, data, extras ) );
+			// the pass that tone-maps and encodes canvas frames drawn through a linear target
+			if ( ! target && floatTargets ) started.push( startProgram( 'output', 'fullscreen.vert', 'output.frag' ) );
+			return finishPrograms( started );
+
+		},
+
+		/**
 		 * Same arguments as the WebGPU host's `render`. `extras` carries what GLSL shader
 		 * materials need: `{ shaderMaterials, view, projection, position, orthographic }`
 		 * (the materials by custom id, the camera's view and projection matrices with WebGL
@@ -266,6 +310,7 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 			info.candidates = renderer.candidateCount();
 			const frameUniforms = renderer.frameUniforms();
 			upload( gl.UNIFORM_BUFFER, frameUniforms, frameBuffer );
+			ctx.lightFeatures = lightFeatures( frameUniforms );
 
 			const geometryState = renderer.geometryState(), slots = renderer.drawGeometrySlots(), draws = renderer.drawInfo();
 			const records = geometryState.length / GEOMETRY_FIELDS;

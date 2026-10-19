@@ -3,7 +3,7 @@
 // Part of the WebGPU host; `../webgpu.js` creates the device and draws the frames.
 
 import { Renderer } from '../index.js';
-import { BLEND_FACTORS, HDR_FORMAT, HDR_KEY, RGBA8_KEY, SINGLE_KEY, customBlend } from './formats.js';
+import { BLEND_FACTORS, FEATURE_NAMES, HDR_FORMAT, HDR_KEY, RGBA8_KEY, SINGLE_KEY, customBlend } from './formats.js';
 import { ALPHA_TO_COVERAGE_KEY, COLOR_WRITE_OFF_KEY, DEPTH_FORMAT, DEPTH_FUNCTIONS, DEPTH_FUNC_SHIFT, PREMULTIPLIED_KEY, QUAD_KEY, STENCIL_FUNCTIONS, STENCIL_OPERATIONS, TOPOLOGIES, quadBuffers, vertexBuffers } from './constants.js';
 
 /** Adds this part's functions and state to the host context `ctx`. */
@@ -78,27 +78,66 @@ export function installPipelines( ctx ) {
 	}
 
 	// `custom` is the material's packed custom blending, read only with CustomBlending;
-	// `state` its polygon offset and stencil settings ('' when they are the defaults).
-	function pipeline( key, custom = 0, state = '' ) {
+	// `state` its polygon offset and stencil settings ('' when they are the defaults);
+	// `features` the `meshFeatures` key the fragment stage is specialised for.
+	function descriptor( key, custom, state, features ) {
 
-		const id = custom || state ? key + ':' + custom + ':' + state : key;
-		let value = pipelines.get( id );
-		if ( value ) return value;
+		const constants = {};
+		if ( features ) features.split( ',' ).forEach( ( v, i ) => constants[ FEATURE_NAMES[ i ] ] = Number( v ) );
 		const quad = ( key & QUAD_KEY ) !== 0, topology = quad ? 'triangle-list' : TOPOLOGIES[ key >> 5 & 3 ];
 
-		value = device.createRenderPipeline( {
+		return {
 			layout,
 			vertex: quad ? { module, entryPoint: 'vertex_quad', buffers: quadBuffers( key ) } : { module, entryPoint: 'vertex', buffers: vertexBuffers( key ) },
-			fragment: { module, entryPoint: 'fragment', targets: [ { format: key & HDR_KEY ? HDR_FORMAT : key & RGBA8_KEY ? 'rgba8unorm' : format, blend: blend( key, custom ), writeMask: key & COLOR_WRITE_OFF_KEY ? 0 : GPUColorWrite.ALL } ] },
+			fragment: { module, entryPoint: 'fragment', constants, targets: [ { format: key & HDR_KEY ? HDR_FORMAT : key & RGBA8_KEY ? 'rgba8unorm' : format, blend: blend( key, custom ), writeMask: key & COLOR_WRITE_OFF_KEY ? 0 : GPUColorWrite.ALL } ] },
 			primitive: { topology, frontFace: 'ccw', cullMode: quad ? 'none' : [ 'back', 'front', 'none' ][ key & 3 ], stripIndexFormat: topology === 'line-strip' ? 'uint32' : undefined },
 			depthStencil: depthStencil( key, state, topology === 'triangle-list' ),
 			multisample: { count: key & SINGLE_KEY ? 1 : samples, alphaToCoverageEnabled: ( key & ALPHA_TO_COVERAGE_KEY ) !== 0 && ! ( key & SINGLE_KEY ) && samples > 1 }
-		} );
+		};
+
+	}
+
+	function pipeline( key, custom = 0, state = '', features = '' ) {
+
+		const id = key + ':' + custom + ':' + state + ':' + features;
+		let value = pipelines.get( id );
+		if ( value ) return value;
+		value = device.createRenderPipeline( descriptor( key, custom, state, features ) );
 		pipelines.set( id, value );
 		return value;
 
 	}
 
-	Object.assign( ctx, { effectPipeline, pipeline, pipelines } );
+	// The same pipeline built off the main thread; `pipeline` finds it once it is ready.
+	const compiling = new Map();
+
+	function pipelineAsync( key, custom = 0, state = '', features = '' ) {
+
+		const id = key + ':' + custom + ':' + state + ':' + features;
+		if ( pipelines.has( id ) ) return Promise.resolve();
+		let promise = compiling.get( id );
+
+		if ( ! promise ) {
+
+			promise = device.createRenderPipelineAsync( descriptor( key, custom, state, features ) ).then( ( value ) => {
+
+				compiling.delete( id );
+				if ( ! pipelines.has( id ) ) pipelines.set( id, value );
+
+			}, ( error ) => {
+
+				compiling.delete( id );
+				throw error;
+
+			} );
+			compiling.set( id, promise );
+
+		}
+
+		return promise;
+
+	}
+
+	Object.assign( ctx, { effectPipeline, pipeline, pipelineAsync, pipelines } );
 
 }

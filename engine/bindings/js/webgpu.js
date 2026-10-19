@@ -10,7 +10,7 @@
  */
 
 import { Renderer, memory } from './index.js';
-import { HDR_FORMAT, HDR_KEY, SINGLE_KEY, quadInstances } from './webgpu/formats.js';
+import { HDR_FORMAT, HDR_KEY, SINGLE_KEY, lightFeatures, meshFeatures, quadInstances } from './webgpu/formats.js';
 import { BLEND_COLOR_FLOAT, COLOR_SLOT, CUSTOM_BLENDING_FLOAT, LOOP_KEY, POLYGON_OFFSET_FLOAT, STENCIL_FLOAT, MATRIX_SLOT, QUAD_KEY, UNUSED_FRAMES, VERTEX_COLOR_SLOT, WIREFRAME_KEY, warnOnce, wireframeCount } from './webgpu/constants.js';
 import { installState } from './webgpu/state.js';
 import { installPipelines } from './webgpu/pipelines.js';
@@ -90,7 +90,7 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 	installTextures( ctx );
 	installBuffers( ctx );
 	installShadows( ctx );
-	const { auxZeros, background, backgroundPipeline, bindGeometry, derivedIndex, distinct, drawShadows, effectPipeline, ensureHdrTargets, ensureTargets, ensureTransmission, entries, environment, environmentPasses, generateMipmaps, geometries, geometry, groups, identity, info, instanced, instances, noEnvironmentView, perInstance, pipeline, pipelines, quadSource, rebuildFrameTextures, release, renderTarget, renderTargets, setGroups, textureSetGroup, textureSets, textures, uploadBones, white } = ctx;
+	const { auxZeros, background, backgroundPipeline, bindGeometry, derivedIndex, distinct, drawShadows, effectPipeline, ensureHdrTargets, ensureTargets, ensureTransmission, entries, environment, environmentPasses, generateMipmaps, geometries, geometry, groups, identity, info, instanced, instances, noEnvironmentView, perInstance, pipeline, pipelineAsync, pipelines, quadSource, rebuildFrameTextures, release, renderTarget, renderTargets, setGroups, textureSetGroup, textureSets, textures, uploadBones, white } = ctx;
 
 	// A material's polygon offset and stencil settings as a pipeline-cache key: '' for the
 	// defaults (no offset, stencil untouched), else factor, units, packed stencil settings,
@@ -109,7 +109,7 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 
 		pass.setBindGroup( 0, ctx.frameGroup );
 		pass.setBindGroup( 3, frameTextures );
-		let state = - 1, blendState = 0, extraState = '', reference = 0, constant = null, bound = null, map = null, triangles = 0, boundInstances = undefined;
+		let state = - 1, blendState = 0, extraState = '', featureState = '', featureMaterial = - 1, features = '', reference = 0, constant = null, bound = null, map = null, triangles = 0, boundInstances = undefined;
 
 		for ( let i = from, o = from * DRAW_FIELDS; i < to; i ++, o += DRAW_FIELDS ) {
 
@@ -128,7 +128,8 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 				const blocks = ctx.materials.view, at = material * MATERIAL_FLOATS;
 				const blending = ( key & 4 ) && ( key >> 11 & 7 ) === 5 ? blocks[ at + CUSTOM_BLENDING_FLOAT ] : 0;
 				const extra = materialState( blocks, at );
-				if ( key !== state || blending !== blendState || extra !== extraState ) pass.setPipeline( pipeline( ( state = key ) | variant, blendState = blending, extraState = extra ) );
+				if ( material !== featureMaterial ) features = meshFeatures( blocks, at, ctx.lightFeatures ), featureMaterial = material;
+				if ( key !== state || blending !== blendState || extra !== extraState || features !== featureState ) pass.setPipeline( pipeline( ( state = key ) | variant, blendState = blending, extraState = extra, featureState = features ) );
 				const stencilReference = blocks[ at + STENCIL_FLOAT + 1 ];
 				if ( stencilReference !== reference ) pass.setStencilReference( reference = stencilReference );
 
@@ -202,6 +203,38 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 		name: fallbackAdapter ? 'webgpu-software' : 'webgpu', isWebGPUBackend: true, device, format, info,
 
 		/**
+		 * Builds the mesh pipelines that `render` with the same scene, camera and target
+		 * would use, without drawing; resolves once they are ready.
+		 */
+		compile( world, renderer, root, camera, target = null ) {
+
+			const offscreen = target ? renderTarget( target ) : null;
+			const count = renderer.prepare( world, root, camera );
+			const frameUniforms = renderer.frameUniforms();
+			ctx.lightFeatures = lightFeatures( frameUniforms );
+			const variant = offscreen ? offscreen.variant : frameUniforms[ TONE_MAPPING ] !== 0 ? HDR_KEY : 0;
+			const draws = renderer.drawInfo(), blocks = new Float32Array( memory().buffer, renderer.materialUniformsPtr(), renderer.materialUniformsLength() );
+			const pending = [];
+			const start = ( to, passVariant ) => {
+
+				for ( let i = 0, o = 0; i < to; i ++, o += DRAW_FIELDS ) {
+
+					const key = draws[ o ], custom = draws[ o + 7 ], at = draws[ o + 6 ] * MATERIAL_FLOATS;
+					if ( custom > 0 && custom < 16 ) continue;
+					const blending = ( key & 4 ) && ( key >> 11 & 7 ) === 5 ? blocks[ at + CUSTOM_BLENDING_FLOAT ] : 0;
+					pending.push( pipelineAsync( key | passVariant, blending, materialState( blocks, at ), meshFeatures( blocks, at, ctx.lightFeatures ) ) );
+
+				}
+
+			};
+
+			start( count, variant );
+			if ( renderer.transmissiveCount() > 0 ) start( renderer.opaqueCount(), HDR_KEY | SINGLE_KEY );
+			return Promise.all( pending ).then( () => {} );
+
+		},
+
+		/**
 		 * `instanceSources` maps instance ids to `{ matrix, matrixVersion, color, colorVersion }`
 		 * (16 floats and optionally 3 floats per instance).
 		 * `clear` is a linear colour `{ r, g, b, a }`. `sources` maps texture ids to `{ image, version, flipY, magFilter, minFilter, wrapS, wrapT, colorSpace, generateMipmaps, type }`.
@@ -232,6 +265,7 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 			}
 
 			device.queue.writeBuffer( ctx.frameBuffer, 0, frameUniforms );
+			ctx.lightFeatures = lightFeatures( frameUniforms );
 
 			const materialCount = renderer.materialUniformsLength() / MATERIAL_FLOATS;
 
