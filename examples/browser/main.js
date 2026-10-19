@@ -1,9 +1,9 @@
-// WAMR3D browser demo. The engine (WebAssembly) owns the scene: objects, hierarchy,
-// transforms, world matrices, camera and projection matrices, and vertex normals, and
-// its own WebGPU renderer draws it. With ?renderer=three (or without WebGPU) the
-// picture is drawn by the reference adapter in render-adapter.js instead.
+// WAMR3D browser demo. JavaScript computes lightweight animation and orbit inputs;
+// batched transforms, world matrices, camera view, culling and drawing run in Wasm.
+// With ?renderer=three (or without WebGPU), render-adapter.js draws the scene instead.
 
 import { init, version, World, Vector3, Quaternion, Matrix4, Timer } from '../../dist/wamr3d/index.js';
+import { Euler as JSEuler, Quaternion as JSQuaternion } from '../../dist/wamr3d/math.js';
 import { createNativeRenderer } from './native-renderer.js';
 
 const PARITY_TOLERANCE = 1e-5;
@@ -135,20 +135,24 @@ async function start() {
 
 	}
 
-	function rotate( i, x, y, z ) {
-
-		world.setRotation( handles[ i ], x, y, z, 'XYZ' );
-		pose[ i ].rotation = [ x, y, z ];
-		if ( reference ) reference.setRotation( i, x, y, z );
-
-	}
-
 	place( CUBE, 0, 1.6, 0 );
 	for ( let k = 0; k < SATELLITES; k ++ ) {
 
 		const angle = k / SATELLITES * Math.PI * 2;
 		place( FIRST_SATELLITE + k, Math.cos( angle ) * 2.6, 0, Math.sin( angle ) * 2.6 );
 		scale( FIRST_SATELLITE + k, 0.28 + 0.12 * ( k % 3 ) );
+
+	}
+	const frameTransforms = new Float32Array( handles.length * 10 );
+	for ( let i = 0, o = 0; i < handles.length; i ++, o += 10 ) {
+
+		frameTransforms[ o ] = pose[ i ].position[ 0 ];
+		frameTransforms[ o + 1 ] = pose[ i ].position[ 1 ];
+		frameTransforms[ o + 2 ] = pose[ i ].position[ 2 ];
+		frameTransforms[ o + 6 ] = 1;
+		frameTransforms[ o + 7 ] = pose[ i ].scale[ 0 ];
+		frameTransforms[ o + 8 ] = pose[ i ].scale[ 1 ];
+		frameTransforms[ o + 9 ] = pose[ i ].scale[ 2 ];
 
 	}
 
@@ -179,7 +183,7 @@ async function start() {
 	const orbit = new Quaternion( 0, 0, 0, 1 ), orientation = new Quaternion( 0, 0, 0, 1 );
 	const look = new Matrix4(), cameraWorld = new Matrix4(), cameraView = new Matrix4(), projection = new Matrix4(), projectionInverse = new Matrix4();
 
-	function updateCamera() {
+	function updateCameraMatrices() {
 
 		const { yaw, pitch, distance, fov, aspect, near, far } = cameraState;
 
@@ -199,6 +203,21 @@ async function start() {
 		projection.makePerspective( - right, right, top, - top, near, far, false, false );
 		projectionInverse.copy( projection );
 		projectionInverse.invert();
+
+	}
+
+	const eyePosition = new Float32Array( 3 );
+
+	function updateCameraEye() {
+
+		const { yaw, pitch, distance } = cameraState;
+		const sinPitch = Math.sin( pitch );
+		const cosPitch = Math.cos( pitch );
+		const sinYaw = Math.sin( yaw );
+		const cosYaw = Math.cos( yaw );
+		eyePosition[ 0 ] = cameraState.target[ 0 ] + distance * cosPitch * sinYaw;
+		eyePosition[ 1 ] = cameraState.target[ 1 ] - distance * sinPitch;
+		eyePosition[ 2 ] = cameraState.target[ 2 ] + distance * cosPitch * cosYaw;
 
 	}
 
@@ -240,6 +259,7 @@ async function start() {
 	// ---- frame loop
 
 	const timer = new Timer( performance.now() );
+	const euler = new JSEuler(), quaternion = new JSQuaternion();
 	let time = 0, framesInWindow = 0, windowStart = performance.now();
 
 	function frame( now ) {
@@ -247,22 +267,50 @@ async function start() {
 		timer.update( now );
 		if ( $( 'spin' ).checked ) time += Math.min( timer.getDelta(), 0.1 );
 
-		rotate( CUBE, time * 0.6, time * 0.9, 0 );
-		rotate( RING, 0, - time * 1.4, Math.sin( time * 0.5 ) * 0.35 );
-		for ( let k = 0; k < SATELLITES; k ++ ) rotate( FIRST_SATELLITE + k, time * ( 1 + k * 0.1 ), time * 0.7, k );
+		pose[ CUBE ].rotation[ 0 ] = time * 0.6; pose[ CUBE ].rotation[ 1 ] = time * 0.9; pose[ CUBE ].rotation[ 2 ] = 0;
+		pose[ RING ].rotation[ 0 ] = 0; pose[ RING ].rotation[ 1 ] = - time * 1.4; pose[ RING ].rotation[ 2 ] = Math.sin( time * 0.5 ) * 0.35;
+		if ( reference ) {
+
+			reference.setRotation( CUBE, ...pose[ CUBE ].rotation );
+			reference.setRotation( RING, ...pose[ RING ].rotation );
+
+		}
+		for ( let k = 0; k < SATELLITES; k ++ ) {
+
+			const index = FIRST_SATELLITE + k, rotation = pose[ index ].rotation;
+			rotation[ 0 ] = time * ( 1 + k * 0.1 );
+			rotation[ 1 ] = time * 0.7;
+			rotation[ 2 ] = k;
+			if ( reference ) reference.setRotation( index, rotation[ 0 ], rotation[ 1 ], rotation[ 2 ] );
+
+		}
+		for ( let i = CUBE; i < handles.length; i ++ ) {
+
+			const rotation = pose[ i ].rotation, offset = i * 10;
+			euler.set( rotation[ 0 ], rotation[ 1 ], rotation[ 2 ], 'XYZ' );
+			quaternion.setFromEuler( euler );
+			frameTransforms[ offset + 3 ] = quaternion.x;
+			frameTransforms[ offset + 4 ] = quaternion.y;
+			frameTransforms[ offset + 5 ] = quaternion.z;
+			frameTransforms[ offset + 6 ] = quaternion.w;
+
+		}
+		world.setTransforms( handles, frameTransforms );
 
 		world.updateMatrixWorld( handles[ ROOT ], false );
-		const matrices = world.matricesWorld( handles );
-		updateCamera();
-
-		const cameraWorldElements = cameraWorld.toArray(), cameraViewElements = cameraView.toArray(), projectionElements = projection.toArray();
+		const matrices = native && ! $( 'compare' ).checked ? null : world.matricesWorld( handles );
+		updateCameraEye();
+		let cameraWorldElements = null, cameraViewElements = null, projectionElements = null;
 
 		if ( native ) {
 
-			native.setCamera( [ eye.x, eye.y, eye.z ], cameraState );
+			native.setCamera( eyePosition, cameraState );
 			status.calls = native.info.calls;
 
 		} else {
+
+			updateCameraMatrices();
+			cameraWorldElements = cameraWorld.toArray(); cameraViewElements = cameraView.toArray(); projectionElements = projection.toArray();
 
 			adapter.setWorldMatrices( matrices );
 			adapter.setCamera( cameraWorldElements, cameraViewElements, projectionElements, projectionInverse.toArray() );
@@ -279,6 +327,13 @@ async function start() {
 			$( 'parity' ).className = 'muted';
 
 		} else if ( $( 'compare' ).checked ) {
+
+			if ( ! cameraWorldElements ) {
+
+				updateCameraMatrices();
+				cameraWorldElements = cameraWorld.toArray(); cameraViewElements = cameraView.toArray(); projectionElements = projection.toArray();
+
+			}
 
 			const largest = reference.check( matrices, cameraWorldElements, cameraViewElements, projectionElements, cameraState );
 			const pass = largest <= PARITY_TOLERANCE;

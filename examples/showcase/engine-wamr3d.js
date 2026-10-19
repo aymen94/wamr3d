@@ -18,18 +18,22 @@ function linear( hex ) {
 }
 
 // `webgl` draws the same prepared frames with the WebGL 2 host instead of WebGPU.
-export async function createEngine( canvas, scene, config, webgl = false ) {
+export async function createEngine( canvas, scene, config, webgl = false, mixed = false ) {
 
 	await init();
 	const backend = webgl ? await createWebGLBackend( canvas, { antialias: true } ) : await createBackend( canvas, { antialias: true } );
 	const world = new World(), frame = new Renderer();
 	const palette = PALETTE.map( linear );
 	const { nodes, bodies, firstBody, parent, position, scale, bodyBelt, bodyShape, groups } = scene;
+	const math = mixed ? await import( '../../dist/wamr3d/math.js' ) : null;
 
 	// ---- scene graph: every node is an engine object; parents and transforms go in as arrays
 
 	const stage = world.createObject(), handles = world.createObjects( nodes );
 	const transforms = new Float32Array( nodes * 10 );
+	const angles = scene.angles;
+	const euler = mixed ? new math.Euler() : null;
+	const quaternion = mixed ? new math.Quaternion() : null;
 
 	for ( let i = 0; i < nodes; i ++ ) transforms.set( [ position[ i * 3 ], position[ i * 3 + 1 ], position[ i * 3 + 2 ], 0, 0, 0, 1, scale[ i ], scale[ i ], scale[ i ] ], i * 10 );
 
@@ -127,8 +131,8 @@ export async function createEngine( canvas, scene, config, webgl = false ) {
 
 	return {
 
-		name: webgl ? 'WAMR3D · batched API · WebGL' : 'WAMR3D · batched API',
-		detail: 'scene graph in WebAssembly, one call per frame for all rotations, WAMR3D WebGPU renderer',
+		name: mixed ? ( webgl ? 'WAMR3D · JS math + WebGL' : 'WAMR3D · JS math + WebGPU' ) : ( webgl ? 'WAMR3D · batched API · WebGL' : 'WAMR3D · batched API' ),
+		detail: mixed ? 'wamr3d/math values build quaternions in JavaScript; the Wasm engine updates the scene and renders' : 'scene graph in WebAssembly, one call per frame for all rotations, WAMR3D renderer',
 
 		setOptions( options ) {
 
@@ -143,7 +147,27 @@ export async function createEngine( canvas, scene, config, webgl = false ) {
 
 		update( time, view ) {
 
-			world.setRotations( handles, animate( time, scene ), 'XYZ' );
+			if ( mixed ) {
+
+				animate( time, scene );
+				for ( let i = 0, a = 0, o = 0; i < nodes; i ++, a += 3, o += 10 ) {
+
+					euler.set( angles[ a ], angles[ a + 1 ], angles[ a + 2 ], 'XYZ' );
+					quaternion.setFromEuler( euler );
+					transforms[ o + 3 ] = quaternion.x;
+					transforms[ o + 4 ] = quaternion.y;
+					transforms[ o + 5 ] = quaternion.z;
+					transforms[ o + 6 ] = quaternion.w;
+
+				}
+
+				world.setTransforms( handles, transforms );
+
+			} else {
+
+				world.setRotations( handles, animate( time, scene ), 'XYZ' );
+
+			}
 			world.updateMatrixWorld( stage, false );
 
 			if ( itemHandles ) {

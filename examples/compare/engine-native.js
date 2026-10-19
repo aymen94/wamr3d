@@ -11,13 +11,14 @@ import { animate, boxData, floorData, COLORS, FLOOR, CUBE, FIRST_SATELLITE } fro
 
 
 // `webgl` draws the same prepared frames with the WebGL 2 host instead of WebGPU.
-export async function createEngine( canvas, description, cameraState, webgl = false ) {
+export async function createEngine( canvas, description, cameraState, webgl = false, mixed = false ) {
 
 	const initStart = performance.now();
 	await init();
 	const wasmInitMs = performance.now() - initStart;
 
 	const backend = webgl ? await createWebGLBackend( canvas, { antialias: true } ) : await createBackend( canvas, { antialias: true } );
+	const math = mixed ? await import( '../../dist/wamr3d/math.js' ) : null;
 	const { count, parents, positions, scales, satellites } = description;
 
 	const world = new World(), frame = new Renderer();
@@ -77,11 +78,13 @@ export async function createEngine( canvas, description, cameraState, webgl = fa
 	frame.setAmbientLight( sky.r * 0.9, sky.g * 0.9, sky.b * 0.9, ground.r * 0.9, ground.g * 0.9, ground.b * 0.9 );
 
 	const angles = new Float32Array( count * 3 );
+	const euler = mixed ? new math.Euler() : null;
+	const quaternion = mixed ? new math.Quaternion() : null;
 	let aspect = 0;
 
 	return {
 
-		name: webgl ? 'WAMR3D (WebGL 2)' : 'WAMR3D (WebGPU)',
+		name: mixed ? ( webgl ? 'WAMR3D JS math (WebGL 2)' : 'WAMR3D JS math (WebGPU)' ) : ( webgl ? 'WAMR3D (WebGL 2)' : 'WAMR3D (WebGPU)' ),
 		wasmInitMs,
 		objectCount: () => world.objectCount() - 1,
 
@@ -89,7 +92,26 @@ export async function createEngine( canvas, description, cameraState, webgl = fa
 		update( time ) {
 
 			animate( time, satellites, angles );
-			world.setRotations( handles, angles, 'XYZ' );
+			if ( mixed ) {
+
+				for ( let i = 0, a = 0, o = 0; i < count; i ++, a += 3, o += 10 ) {
+
+					euler.set( angles[ a ], angles[ a + 1 ], angles[ a + 2 ], 'XYZ' );
+					quaternion.setFromEuler( euler );
+					transforms[ o + 3 ] = quaternion.x;
+					transforms[ o + 4 ] = quaternion.y;
+					transforms[ o + 5 ] = quaternion.z;
+					transforms[ o + 6 ] = quaternion.w;
+
+				}
+
+				world.setTransforms( handles, transforms );
+
+			} else {
+
+				world.setRotations( handles, angles, 'XYZ' );
+
+			}
 			world.updateMatrixWorld( handles[ 0 ], false );
 
 			const { yaw, pitch, distance, target, fov, near, far } = cameraState;

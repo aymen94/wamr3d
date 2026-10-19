@@ -19,7 +19,8 @@ function mathMixSection() {
   const ratio = (a, b) => (a / b).toFixed(1);
   const range = (values) => { const lo = Math.min(...values).toFixed(2), hi = Math.max(...values).toFixed(2); return lo === hi ? lo : `${lo} to ${hi}`; };
   const cell = (ms, three) => `<td class="${td} text-right font-mono tabular-nums ${ms < three / 1.05 ? 'text-emerald-300' : ms > three * 1.05 ? 'text-slate-300' : 'text-slate-200'}">${ms.toFixed(2)} <span class="text-[11px] text-slate-400">(${(ms / three).toFixed(2)}×)</span></td>`;
-  const rows = mathMix.map(([name, three, wasm, js]) => `<tr class="border-t border-white/5"><td class="${td} pl-3 text-slate-300">${name}</td><td class="${td} text-right font-mono tabular-nums text-slate-400">${three.toFixed(2)}</td>${cell(wasm, three)}${cell(js, three)}</tr>`).join('');
+  const strongestFirst = [...mathMix].sort((a, b) => Math.min(a[2] / a[1], a[3] / a[1]) - Math.min(b[2] / b[1], b[3] / b[1]));
+  const rows = strongestFirst.map(([name, three, wasm, js]) => `<tr class="border-t border-white/5"><td class="${td} pl-3 text-slate-300">${name}</td><td class="${td} text-right font-mono tabular-nums text-slate-400">${three.toFixed(2)}</td>${cell(wasm, three)}${cell(js, three)}</tr>`).join('');
   const intro = `Small calls cost more across the WebAssembly boundary than they do in JavaScript: single operations on the low-level Wasm classes took ${range(single.map(([, t, w]) => w / t))}× three.js's time, the same operations as <code class="font-mono">wamr3d/math</code> values ${range(single.map(([, t, , j]) => j / t))}×. Mixing the two wins: math per object in JavaScript, then one batched call, updated ${whole[0].match(/^[\d,]+/)?.[0] ?? '10,000'} objects in ${whole[3].toFixed(2)} ms, against ${whole[1].toFixed(2)} ms for three.js (${ratio(whole[1], whole[3])}× faster) and ${whole[2].toFixed(2)} ms with every vector in WebAssembly.`;
   return `<section class="mx-auto max-w-6xl px-6 py-24">
       ${sectionHead({ label: 'Mix the two', title: 'JavaScript for values, WebAssembly for the scene', intro })}
@@ -145,7 +146,7 @@ node bench/compat.mjs
 # logs saved per size in bench/results/<date>/, then:
 node website/scripts/benchmark-data.mjs bench/results/<date>`, { title: 'terminal', language: 'sh' })}</div>
         <div class="space-y-4 text-slate-400" data-reveal>
-          <p>Or open the <a class="text-brand-cyan hover:text-white" href="./examples/showcase/" target="_blank" rel="noreferrer">live showcase</a> and press “Compare all six renderers”.</p>
+          <p>Or open the <a class="text-brand-cyan hover:text-white" href="./examples/showcase/" target="_blank" rel="noreferrer">live showcase</a> and press “Compare all eight paths”.</p>
           <p>Close other headless browsers first: leftovers can slow every engine by 20–50%.</p>
           <div class="flex flex-wrap gap-3">${button('./examples/showcase/', 'Open the showcase', 'primary', true)}${logs ? button(logs, 'Raw logs of this run', 'secondary', true) : ''}</div>
         </div>

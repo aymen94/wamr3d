@@ -1,7 +1,7 @@
 // Drives the showcase in headless Chrome or Edge.
 //
 //   node examples/browser/serve.mjs                (in another terminal)
-//   node examples/showcase/check.mjs               works through the settings panel and all six engines
+//   node examples/showcase/check.mjs               works through the settings panel and all eight paths
 //   node examples/showcase/check.mjs --measure     runs the built-in comparison and prints the table
 //       [--counts=2000,10000,50000] [--modes=objects,instanced] [--engines=wamr3d,three-webgl]
 //
@@ -17,7 +17,9 @@ const option = ( name, fallback ) => process.argv.find( ( a ) => a.startsWith( `
 const measure = process.argv.includes( '--measure' );
 const [ WIDTH, HEIGHT ] = option( 'size', '1280x720' ).split( 'x' ).map( Number );
 const port = 9400 + Math.floor( Math.random() * 500 );
+const browserChoice = option( 'browser', '' ).toLowerCase();
 const browser = [
+	...( browserChoice === 'edge' ? [ 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe' ] : browserChoice === 'chrome' ? [ 'C:/Program Files/Google/Chrome/Application/chrome.exe' ] : [] ),
 	'C:/Program Files/Google/Chrome/Application/chrome.exe',
 	'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
 	'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -146,7 +148,7 @@ try {
 		state = await settle();
 		check( `10,000 bodies of one shape: ${state.stats?.calls} draw calls, ${Math.round( state.stats?.triangles ).toLocaleString( 'en' )} triangles`, ! state.error && state.stats.calls === 3 && state.stats.triangles > 2_000_000 );
 
-		for ( const [ engine, name ] of [ [ 'wamr3d-api', 'WAMR3D · object API' ], [ 'wamr3d-api-webgl', 'WAMR3D · object API · WebGL' ], [ 'wamr3d-webgl', 'WAMR3D · batched API · WebGL' ], [ 'three-webgpu', 'three.js · WebGPU' ], [ 'three-webgl', 'three.js · WebGL' ], [ 'wamr3d', 'WAMR3D · batched API' ] ] ) {
+		for ( const [ engine, name ] of [ [ 'wamr3d-api', 'WAMR3D · object API' ], [ 'wamr3d-api-webgl', 'WAMR3D · object API · WebGL' ], [ 'wamr3d-webgl', 'WAMR3D · batched API · WebGL' ], [ 'wamr3d-mix', 'WAMR3D · JS math + WebGPU' ], [ 'wamr3d-mix-webgl', 'WAMR3D · JS math + WebGL' ], [ 'three-webgpu', 'three.js · WebGPU' ], [ 'three-webgl', 'three.js · WebGL' ], [ 'wamr3d', 'WAMR3D · batched API' ] ] ) {
 
 			await set( 0, engine );
 			state = await settle();

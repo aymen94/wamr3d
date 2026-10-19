@@ -19,10 +19,12 @@ const option = ( name ) => process.argv.find( ( a ) => a.startsWith( `--${name}=
 const gpu = process.argv.includes( '--gpu' );
 const [ WIDTH, HEIGHT ] = ( option( 'size' )?.[ 0 ] ?? '1280x720' ).split( 'x' ).map( Number );
 const COUNTS = option( 'counts' )?.map( Number ) ?? [ 12, 2000, 10000 ];
-const ENGINES = option( 'engines' ) ?? ( gpu ? [ 'three-webgl', 'three-webgpu', 'api', 'native', 'api-webgl', 'native-webgl', 'three', 'wamr3d' ] : [ 'three', 'wamr3d' ] );
+const ENGINES = option( 'engines' ) ?? ( gpu ? [ 'three-webgl', 'three-webgpu', 'api', 'native', 'native-mix', 'api-webgl', 'native-webgl', 'native-mix-webgl', 'three', 'wamr3d' ] : [ 'three', 'wamr3d' ] );
 const port = 9400 + Math.floor( Math.random() * 500 );
 
+const browserChoice = process.argv.find( ( a ) => a.startsWith( '--browser=' ) )?.slice( 10 ).toLowerCase();
 const browser = [
+	...( browserChoice === 'edge' ? [ 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe' ] : browserChoice === 'chrome' ? [ 'C:/Program Files/Google/Chrome/Application/chrome.exe' ] : [] ),
 	'C:/Program Files/Google/Chrome/Application/chrome.exe',
 	'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
 	'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -107,7 +109,8 @@ try {
 	console.log( `${version.product}, ${os.platform()} ${os.arch()}, ${os.cpus()[ 0 ].model.trim()}` );
 	console.log( `GPU: ${environment}` );
 	console.log( 'three-webgl, three-webgpu: three.js with its own renderer. api: WAMR3D object API and WebGPU renderer. These three run the same scene code.' );
-	console.log( 'native: WAMR3D batched calls and WebGPU renderer. three, wamr3d: three.js and WAMR3D transforms, both drawn by the three.js WebGL renderer (with a grid).' );
+	console.log( 'native: WAMR3D batched API and WebGPU renderer; native-mix: wamr3d/math JavaScript values feed batched transforms to the same Wasm scene and renderer. The -webgl variants use WAMR3D WebGL 2.' );
+	console.log( 'three, wamr3d: three.js and WAMR3D transforms, both drawn by the three.js WebGL renderer (with a grid).' );
 	console.log( `window ${WIDTH}x${HEIGHT}, canvas ${canvasSize}, pixel ratio 1, warm-up ${WARMUP_MS / 1000} s, sample ${SAMPLE_MS / 1000} s per run, one engine per page load` );
 	console.log( '' );
 	console.log( 'objects  engine         frames   frame ms (median / p95)   fps   CPU update ms (median / p95)   draw submit ms (median)   first frame ms   wasm init ms' );

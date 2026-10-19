@@ -9,8 +9,10 @@ import { DEFAULTS, CAMERA, layout } from './scene.js';
 
 const ENGINES = [
 	[ 'wamr3d', 'WAMR3D · batched API' ],
+	[ 'wamr3d-mix', 'WAMR3D · JS math + WebGPU' ],
 	[ 'wamr3d-api', 'WAMR3D · object API' ],
 	[ 'wamr3d-webgl', 'WAMR3D · batched API · WebGL' ],
+	[ 'wamr3d-mix-webgl', 'WAMR3D · JS math + WebGL' ],
 	[ 'wamr3d-api-webgl', 'WAMR3D · object API · WebGL' ],
 	[ 'three-webgpu', 'three.js · WebGPU' ],
 	[ 'three-webgl', 'three.js · WebGL' ]
@@ -82,9 +84,11 @@ async function build() {
 
 			const started = performance.now();
 			scene = layout( config.count, config.shape );
-			const batched = config.engine === 'wamr3d' || config.engine === 'wamr3d-webgl';
+			const batched = config.engine.startsWith( 'wamr3d' ) && ! config.engine.startsWith( 'wamr3d-api' );
 			const module = batched ? await import( './engine-wamr3d.js' ) : await import( './engine-library.js' );
-			engine = batched ? await module.createEngine( canvas, scene, config, config.engine === 'wamr3d-webgl' ) : await module.createEngine( config.engine, canvas, scene, config );
+			const webgl = config.engine === 'wamr3d-webgl' || config.engine === 'wamr3d-api-webgl' || config.engine === 'wamr3d-mix-webgl';
+			const mixed = config.engine === 'wamr3d-mix' || config.engine === 'wamr3d-mix-webgl';
+			engine = batched ? await module.createEngine( canvas, scene, config, webgl, mixed ) : await module.createEngine( config.engine, canvas, scene, config );
 			engine.setOptions( config );
 			state.buildMs = performance.now() - started;
 			state.engine = engine.name;
@@ -322,7 +326,7 @@ async function compare( engines = ENGINES.map( ( [ name ] ) => name ) ) {
 	config.engine = chosen;
 	inputs.engine.value = chosen;
 	await build();
-	$( 'compare' ).textContent = 'Compare all six renderers';
+	$( 'compare' ).textContent = 'Compare all eight paths';
 	$( 'compare' ).disabled = false;
 	comparing = false;
 	return rows;

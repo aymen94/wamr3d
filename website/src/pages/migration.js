@@ -39,7 +39,32 @@ const steps = [
 
 const choices = [
   ['Familiar object API', '<code>wamr3d/compat</code>', 'Best for existing three.js projects and typical scenes. Keep familiar classes, properties and scene-building patterns while WAMR3D batches object updates into the engine once per frame.', "import * as WAMR3D from 'wamr3d/compat';"],
-  ['Batched low-level API', '<code>wamr3d</code> + <code>wamr3d/math</code>', 'Best when many objects change every frame or you need direct control. Generational handles and batched calls reduce JavaScript overhead; expect a more explicit, less three.js-like API. Do per-value math with the JavaScript values of <code>wamr3d/math</code> and send the results in one batched call.', "import { init, World } from 'wamr3d';\nimport { Vector3, Quaternion } from 'wamr3d/math';"],
+  ['Batched low-level API', '<code>wamr3d</code> + <code>wamr3d/math</code>', 'Best when many objects change every frame or you need direct control. Generational handles and batched calls reduce JavaScript overhead; expect a more explicit, less three.js-like API. Do per-value math with the JavaScript values of <code>wamr3d/math</code> and send the results in one batched call.', `import { init, World } from 'wamr3d';
+import { Vector3, Quaternion } from 'wamr3d/math';
+
+await init();
+const world = new World();
+const handles = world.createObjects( 10001 );
+const root = handles[ 0 ], objects = handles.subarray( 1 );
+world.addMany( new BigUint64Array( objects.length ).fill( root ), objects );
+
+const transforms = new Float32Array( handles.length * 10 );
+transforms[ 6 ] = 1;
+transforms[ 7 ] = transforms[ 8 ] = transforms[ 9 ] = 1;
+const position = new Vector3(), rotation = new Quaternion();
+const up = new Vector3( 0, 1, 0 );
+
+for ( let i = 0, o = 10; i < objects.length; i ++, o += 10 ) {
+  position.set( i * 0.01, 0, 0 );
+  rotation.setFromAxisAngle( up, i * 1e-4 );
+  transforms[ o ] = position.x; transforms[ o + 1 ] = position.y; transforms[ o + 2 ] = position.z;
+  transforms[ o + 3 ] = rotation.x; transforms[ o + 4 ] = rotation.y;
+  transforms[ o + 5 ] = rotation.z; transforms[ o + 6 ] = rotation.w;
+  transforms[ o + 7 ] = transforms[ o + 8 ] = transforms[ o + 9 ] = 1;
+}
+
+world.setTransforms( handles, transforms );
+world.updateMatrixWorld( root, false );`],
   ['WebGPU or WebGL 2', '<code>WebGPURenderer</code>', 'Choose automatic selection for the broadest reach: WebGPU when available, WebGL 2 otherwise. Pin WebGPU for a WebGPU-only product, or WebGL 2 to target a known backend.', "new WAMR3D.WebGPURenderer({ backend: 'auto' });"]
 ];
 
@@ -57,7 +82,7 @@ export function migration() {
     </section>
     <section class="mx-auto max-w-6xl px-6 py-24">
       ${sectionHead({ label: 'Differences', title: 'What to watch for' })}
-      <div class="glass relative overflow-x-auto rounded-3xl p-2 sm:p-4" data-reveal><table class="w-full min-w-[36rem] text-left text-sm"><thead class="font-mono text-[11px] uppercase tracking-wider text-slate-400"><tr><th class="w-2/5 py-3 pl-3 pr-4 font-medium">In three.js</th><th class="py-3 pr-4 font-medium">In wamr3d/compat</th></tr></thead><tbody>${differences.map(([a, b]) => `<tr class="border-t border-white/5 align-top"><td class="py-3 pl-3 pr-4 text-slate-300">${code(a)}</td><td class="py-3 pr-4 text-slate-400">${code(b)}</td></tr>`).join('')}</tbody></table></div>
+      <div class="glass min-w-0 overflow-x-auto rounded-3xl p-2 sm:p-4" data-reveal><table class="w-full min-w-[36rem] text-left text-sm"><caption class="sr-only">Differences between three.js and wamr3d/compat</caption><thead class="font-mono text-[11px] uppercase tracking-wider text-slate-400"><tr><th class="w-2/5 py-3 pl-3 pr-4 font-medium">In three.js</th><th class="py-3 pr-4 font-medium">In wamr3d/compat</th></tr></thead><tbody>${differences.map(([a, b]) => `<tr class="border-t border-white/5 align-top"><td class="py-2.5 pl-3 pr-4 text-slate-300">${code(a)}</td><td class="py-2.5 pr-4 text-slate-400">${code(b)}</td></tr>`).join('')}</tbody></table></div>
     </section>
     <section class="mx-auto max-w-6xl px-6 py-24">
       ${sectionHead({ label: 'Not available', title: 'Keep three.js for these', intro: 'If your application depends on any of these features, keep that part outside WAMR3D.' })}
