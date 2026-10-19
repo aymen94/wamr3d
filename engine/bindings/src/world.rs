@@ -139,6 +139,26 @@ impl World {
         Ok(())
     }
 
+    // Unchecked forms of the three per-object setters: they return whether the handle was
+    // alive instead of a `Result`, whose glue allocates a JavaScript array on every call.
+    // `js/index.js` routes `setPosition`, `setScale` and `setQuaternion` through them and
+    // throws the same error.
+
+    #[wasm_bindgen(js_name = __setPosition, skip_typescript)]
+    pub fn set_position_bool(&mut self, object: u64, x: f32, y: f32, z: f32) -> bool {
+        self.inner.transform_mut(entity(object)).map(|t| t.position.set(x, y, z)).is_some()
+    }
+
+    #[wasm_bindgen(js_name = __setScale, skip_typescript)]
+    pub fn set_scale_bool(&mut self, object: u64, x: f32, y: f32, z: f32) -> bool {
+        self.inner.transform_mut(entity(object)).map(|t| t.scale.set(x, y, z)).is_some()
+    }
+
+    #[wasm_bindgen(js_name = __setQuaternion, skip_typescript)]
+    pub fn set_quaternion_bool(&mut self, object: u64, x: f32, y: f32, z: f32, w: f32) -> bool {
+        self.inner.transform_mut(entity(object)).map(|t| t.set_quaternion(wamr_math::Quaternion::new(x, y, z, w))).is_some()
+    }
+
     /// Sets position (xyz), quaternion (xyzw) and scale (xyz) of many objects from one
     /// array of ten numbers per object.
     #[wasm_bindgen(js_name = setTransforms)]

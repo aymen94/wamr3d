@@ -38,7 +38,7 @@ export class Euler {
 		this.x = x;
 		this.y = y;
 		this.z = z;
-		this.order = order;
+		if ( order !== this._order ) this.order = order;
 		return this;
 
 	}

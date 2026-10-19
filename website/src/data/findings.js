@@ -33,7 +33,7 @@ function showcaseFindings() {
   if (inst.length) {
     const f = (e, k) => range(inst.map((r) => get(r, 'instanced', 50000, e)[k]));
     const speed = (e) => range(inst.map((r) => get(r, 'instanced', 50000, e).update / get(r, 'instanced', 50000, 'batched').update));
-    out.push(['Instanced, 50,000 bodies.', `With five draw calls the scene-graph update decides. WAMR3D batched ran at ${f('batched', 'fps')} fps, three.js at ${f('webgpu', 'fps')} (WebGPU) and ${f('webgl', 'fps')} (WebGL); WAMR3D updated the scene ${speed('webgpu')}× and ${speed('webgl')}× faster (${f('batched', 'update')} ms against ${f('webgpu', 'update')} and ${f('webgl', 'update')} ms).`]);
+    out.push(['Instanced, 50,000 bodies.', `With five draw calls, CPU time is mostly the scene update. WAMR3D batched ran at ${f('batched', 'fps')} fps, three.js at ${f('webgpu', 'fps')} (WebGPU) and ${f('webgl', 'fps')} (WebGL); WAMR3D updated the scene ${speed('webgpu')}× and ${speed('webgl')}× faster (${f('batched', 'update')} ms against ${f('webgpu', 'update')} and ${f('webgl', 'update')} ms).`]);
   }
 
   const all = resolutions.filter((r) => get(r, 'instanced', 2000, 'batched') && get(r, 'instanced', 2000, 'webgl'));
@@ -46,6 +46,13 @@ function showcaseFindings() {
   }
   if (lowest && highest && lowest !== highest) parts.push(`At 2,000 separate bodies WAMR3D batched submitted in ${get(lowest, 'objects', 2000, 'batched').submit.toFixed(1)} ms at ${res(lowest)} and ${get(highest, 'objects', 2000, 'batched').submit.toFixed(1)} ms at ${res(highest)}.`);
   if (parts.length) out.push(['Where the gap closes.', parts.join(' ')]);
+
+  // WAMR3D on WebGPU against the faster three.js renderer, wherever WAMR3D drew fewer frames.
+  const slower = [['objects', 10000, 'separate meshes'], ['instanced', 50000, 'instanced bodies']].flatMap(([mode, count, what]) => resolutions
+    .map((r) => [r, get(r, mode, count, 'batched'), ['webgpu', 'webgl'].map((e) => [e, get(r, mode, count, e)]).filter(([, x]) => x).sort((a, b) => b[1].fps - a[1].fps)[0]])
+    .filter(([, w, best]) => w && best && w.fps < best[1].fps)
+    .map(([r, w, [e, t]]) => `${count.toLocaleString('en-US')} ${what} at ${res(r)}: ${w.fps.toFixed(1)} fps against ${t.fps.toFixed(1)} for three.js ${e === 'webgl' ? 'WebGL' : 'WebGPU'}`));
+  if (slower.length) out.push(['Where WAMR3D WebGPU is slower.', `As the resolution grows its frame time rises far more than its CPU time, which points to GPU time (not measured here): ${slower.join('; ')}. WAMR3D's WebGL 2 renderer did not slow down this way.`]);
 
   return out;
 }

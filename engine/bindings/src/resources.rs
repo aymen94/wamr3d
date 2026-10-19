@@ -23,13 +23,14 @@ impl World {
         self.inner.geometry_ref_count(geometry(handle))
     }
 
-    /// Adds or replaces a float attribute, copying `data` into engine memory.
+    /// Adds or replaces a float attribute, copying `data` into engine memory. The vector is
+    /// the copy the glue already made, so the values are copied once.
     #[wasm_bindgen(js_name = setAttribute)]
-    pub fn set_attribute(&mut self, handle: u64, name: &str, data: &[f32], item_size: u32) -> Result<(), JsError> {
+    pub fn set_attribute(&mut self, handle: u64, name: &str, data: Vec<f32>, item_size: u32) -> Result<(), JsError> {
         if item_size == 0 {
             return Err(JsError::new("item size must be at least 1"));
         }
-        let mut attribute = BufferAttribute::new(AttributeArray::Float32(data.to_vec()), item_size as usize, false);
+        let mut attribute = BufferAttribute::new(AttributeArray::Float32(data), item_size as usize, false);
         let geometry = self.geometry_mut(handle)?;
         // Replacing an attribute must still look like a change to the renderer.
         if let Some(previous) = geometry.get_attribute(name) {
@@ -47,10 +48,10 @@ impl World {
     }
 
     #[wasm_bindgen(js_name = setIndex)]
-    pub fn set_index(&mut self, handle: u64, indices: &[u32]) -> Result<(), JsError> {
+    pub fn set_index(&mut self, handle: u64, indices: Vec<u32>) -> Result<(), JsError> {
         let geometry = self.geometry_mut(handle)?;
         let version = geometry.get_index().map_or(0, |index| index.version);
-        geometry.set_index_from_slice(indices);
+        geometry.set_index_from_vec(indices);
         if let Some(index) = geometry.get_index_mut() {
             index.version = version.wrapping_add(1);
         }

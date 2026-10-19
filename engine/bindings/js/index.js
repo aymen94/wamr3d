@@ -6,9 +6,32 @@
 // Everything exported here except `init`, `attributeView`, `memory` and the scalar
 // helpers is implemented in the WebAssembly module; this file only loads it.
 
-import initWasm, { seededRandom, randInt, randFloat, randFloatSpread, generateUUID, setRandomSeed } from './wamr3d_wasm.js';
+import initWasm, { seededRandom, randInt, randFloat, randFloatSpread, generateUUID, setRandomSeed, World } from './wamr3d_wasm.js';
 
 export * from './wamr3d_wasm.js';
+
+// The per-object transform setters are called once per object and property, so they use
+// the module's unchecked forms, which return a flag instead of an error object: the glue
+// of a fallible call allocates an array on every call. A dead handle still throws.
+const deadObject = () => new Error( 'object handle is not alive' );
+
+World.prototype.setPosition = function ( object, x, y, z ) {
+
+	if ( ! this.__setPosition( object, x, y, z ) ) throw deadObject();
+
+};
+
+World.prototype.setScale = function ( object, x, y, z ) {
+
+	if ( ! this.__setScale( object, x, y, z ) ) throw deadObject();
+
+};
+
+World.prototype.setQuaternion = function ( object, x, y, z, w ) {
+
+	if ( ! this.__setQuaternion( object, x, y, z, w ) ) throw deadObject();
+
+};
 
 let wasm;
 

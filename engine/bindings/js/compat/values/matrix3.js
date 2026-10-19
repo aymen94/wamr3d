@@ -32,7 +32,9 @@ export class Matrix3 {
 	copy( m ) {
 
 		const te = this.elements, me = m.elements;
-		for ( let i = 0; i < 9; i ++ ) te[ i ] = me[ i ];
+		te[ 0 ] = me[ 0 ]; te[ 1 ] = me[ 1 ]; te[ 2 ] = me[ 2 ];
+		te[ 3 ] = me[ 3 ]; te[ 4 ] = me[ 4 ]; te[ 5 ] = me[ 5 ];
+		te[ 6 ] = me[ 6 ]; te[ 7 ] = me[ 7 ]; te[ 8 ] = me[ 8 ];
 		return this;
 
 	}

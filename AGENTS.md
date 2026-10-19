@@ -1,6 +1,18 @@
 # AGENTS.md: WAMR3D
 
-**Mission:** Port the core of Three.js to a native engine in **Rust** or **C++**, built to **WebAssembly**, rendering through **WebGPU**. The public API should feel familiar to Three.js users. The internals are typed, explicitly managed, and designed for Wasm.
+Instructions for AI coding agents (and humans) working in this repository. Read this file first, then the document for the area you touch:
+
+| Topic | File |
+|---|---|
+| How the engine is built: crates, JS layer, frame flow, ownership | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| Performance rules, known costs, how to profile | [PERFORMANCE.md](PERFORMANCE.md) |
+| Which checks to run, and how to add tests and fixtures | [TESTING.md](TESTING.md) |
+| Benchmark procedure and recorded results | [BENCHMARKS.md](BENCHMARKS.md) |
+| Tools, build, serving, troubleshooting | [CONFIGURATION.md](CONFIGURATION.md) |
+| Workflow, style, releasing to npm | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| Limitations and the last verification | [STATUS.md](STATUS.md) |
+
+**Mission:** a native WebAssembly 3D engine whose public API feels like three.js. The core is Rust compiled to Wasm; JavaScript hosts draw through WebGPU or WebGL 2. Internals are typed, explicitly owned and designed for Wasm. The five porting phases of section 4 are complete; work now extends coverage and performance.
 
 ---
 
@@ -8,177 +20,97 @@
 
 ```
 WAMRNative/
-├── node_modules/three/     # REFERENCE, optional, not in the repository: `npm install` fetches the
-│   └── src/                # the pinned `three` package. Read-only. `src/` is the only part read for porting
-├── engine/                 # OUR code (Rust crate, or C++ with CMake)
-│   ├── math/               # Phase 1
-│   ├── core/               # Phase 2
-│   ├── objects/            # Phase 3  (cameras + objects + geometries)
-│   ├── renderer_webgpu/    # Phase 4
-│   └── bindings/           # Phase 5  (wasm-bindgen or embind)
-├── parity/                 # expected outputs generated FROM the reference `src/`, committed
-├── STATUS.md               # limitations, verification, handoff notes
-└── AGENTS.md               # this file
+├── engine/                 # OUR code: Rust workspace (cargo runs from here)
+│   ├── math/               # wamr-math: math types (Phase 1)
+│   ├── core/               # wamr-core: World, components, scene graph, resources (Phase 2)
+│   ├── objects/            # wamr-objects: built-in shapes, picking (Phase 3)
+│   ├── renderer_webgpu/    # wamr-renderer: culling, draw order, uniforms, WGSL and GLSL (Phase 4)
+│   └── bindings/           # wamr3d: wasm-bindgen API, build.mjs, and js/ (hosts, object API, add-ons) (Phase 5)
+├── dist/wamr3d/            # build output = the npm package (gitignored; `node engine/bindings/build.mjs`)
+├── parity/                 # fixtures generated FROM the reference `three/src/`, committed; visual cases
+├── examples/               # demos, showcase, comparison pages, ported three.js examples
+├── bench/                  # Node benchmarks and committed results
+├── website/                # project site (Vite); uses the PUBLISHED npm package
+└── node_modules/three/     # REFERENCE, optional, not in the repository (`npm install`)
 ```
 
 Renaming any of our folders is a decision, so record it in section 10.
 
 ---
 
-## 1. Repository Import Rules (critical)
+## 1. Reference Import Rules (critical)
 
-1. **The reference is three.js at the exact version pinned in the root `package.json`.** It is not kept in the repository. `npm install` at the root puts it in `node_modules/three/`; below, `three/src/` means `node_modules/three/src/`. **Read only `three/src/`.** Never feed the AI `build/three.js` or `build/three.module.js`. They are compiled output and lack the structure we need.
-   - Nothing in `engine/`, `dist/wamr3d/` or the primary examples may import three.js, from `node_modules` or from a CDN. The engine builds and its tests run without the reference: parity tests read committed fixtures.
+1. **The reference is three.js at the exact version pinned in the root `package.json`.** `npm install` puts it in `node_modules/three/`; below, `three/src/` means `node_modules/three/src/`. **Read only `three/src/`**, never `build/three*.js` (compiled output without the structure we need).
+   - Nothing in `engine/`, `dist/wamr3d/` or the primary examples may import three.js, from `node_modules` or a CDN. The engine builds and its tests run without the reference: parity tests read committed fixtures.
    - The comparison pages load the pinned builds from a CDN (`examples/three-reference.js`); that is the only place a URL to three.js belongs.
-2. **Ignore everything else in the reference tree.** Do not read, summarize, or port from:
-   - `build/`, `docs/`, `editor/`, `examples/`, `test/`, `devtools/`, `manual/`, `tsl/`, `utils/`, `files/`, `.github/`
-   - Asset folders anywhere (`models/`, `textures/`, `fonts/`, `sounds/`, `luts/`, `ies/`, `screenshots/`, and so on)
-3. **Stay inside your phase's source folders** (listed in section 4). If you need something outside them, stop and log it in `STATUS.md` under "Needs decision" rather than importing it.
-4. **Out of scope for v1, do not port:**
-   - `src/renderers/webgl/`, `src/renderers/webgl-fallback/`, `src/renderers/webxr/`
-   - `src/nodes/` and `src/materials/nodes/` (the TSL node system; see section 6, risk R1)
-   - `src/loaders/`, `src/audio/`, `src/animation/`, `src/extras/`, `src/helpers/` (except `GridHelper.js` and `AxesHelper.js`, which may be ported), `src/textures/`, `src/lights/webgpu/`
-   - `src/renderers/shaders/ShaderLib/` and `ShaderChunk/` (GLSL for WebGL; reference only, see section 6)
-
-   These are candidates for later phases. Add them to `STATUS.md` when we get there.
-5. **Verify file names first.** The first thing each agent does is `ls` its source folder and write the actual file list into `STATUS.md`. File names below come from upstream structure and must be checked against the pinned reference.
+2. **Ignore the rest of the reference tree:** `build/`, `docs/`, `editor/`, `examples/`, `test/`, `devtools/`, `manual/`, `tsl/`, `utils/`, `files/`, `.github/`, and asset folders.
+3. **Out of scope, do not port:** `src/renderers/webgl/`, `src/renderers/webgl-fallback/`, `src/renderers/webxr/`, `src/nodes/`, `src/materials/nodes/` (TSL, risk R1), and the GLSL of `src/renderers/shaders/ShaderLib/` and `ShaderChunk/` (read for intent only, R2). Loaders, audio, animation, extras and helpers are now ported in the JavaScript object API and add-ons; extend them there.
+4. If you need something outside these rules, stop and log it in `STATUS.md` under "Needs decision" rather than importing it.
 
 ---
 
 ## 2. Ground Rules (every agent)
 
-1. **Port behavior, not syntax.** Match Three.js semantics first: defaults, method meaning, edge cases. Optimize only after parity passes.
-2. **Comment only what the code cannot say.** No comments that cite or point to the original source file or function. Comment non-obvious behavior, invariants, ownership or safety constraints, and subtle numerical decisions. Do not restate the code.
-3. **Do not invent API.** If Three.js does not define it, do not add it silently. Log it in `STATUS.md`.
-4. **Do not edit other phases' code** except to fix a compile error. Log any such edit in `STATUS.md`.
-5. **Think about the Wasm boundary from the start.** Data that will cross to JS must be contiguous and typed (`f32`, `u32`), with no hidden pointers.
-6. **Keep attribution.** Three.js is MIT-licensed. Preserve applicable license notices and attribution for derived code. Never remove a legally required notice.
-7. **Done means done.** A task is complete when the code compiles (native and `wasm32`), the relevant tests pass, section 10 records any deviation from the fixed rules, and `STATUS.md` is updated. "It compiles" is not done.
+1. **Port behavior, not syntax.** Match three.js semantics first: defaults, method meaning, edge cases. Optimize only after parity passes.
+2. **Comment only what the code cannot say.** No comments that cite or point to three.js source files or functions. Comment non-obvious behavior, invariants, ownership or safety constraints, and subtle numerical decisions. Do not restate the code.
+3. **Do not invent API.** If three.js does not define it, do not add it silently. Log it in `STATUS.md`.
+4. **Think about the Wasm boundary from the start.** Data that crosses to JS is contiguous and typed (`f32`, `u32`), with no hidden pointers.
+5. **Keep attribution.** three.js is MIT-licensed. Preserve license notices for derived and vendored code (e.g. `compat/lib/earcut.js`).
+6. **Done means done:** the code compiles (native and `wasm32`), the relevant checks of [TESTING.md](TESTING.md) pass, section 10 records any deviation from the fixed rules, and `STATUS.md` is updated. "It compiles" is not done.
+
+### 2.1 Native first
+
+1. **Search before writing.** Look for an existing WAMR3D implementation first (`engine/*/src`, `engine/bindings/js/compat/`, `engine/bindings/js/addons/`), then read the three.js reference in `three/src/` for the behavior to match. Reuse and extend; do not add a parallel path.
+2. **three.js is a reference, never a dependency.** Production code (`engine/`, `dist/wamr3d/`, the primary examples, the website's own pages) does not load it. Comparison pages and fixture generators are the only consumers.
+3. **Put work where it is cheapest** (section 10, Section 6): scene computation and bulk data in Rust/Wasm; small scalar math and per-object property access in JavaScript. Never cross the Wasm boundary per property or per vector.
+
+### 2.2 Performance is a core requirement
+
+Follow [PERFORMANCE.md](PERFORMANCE.md). In short:
+
+1. **Priorities:** startup freezes and long main-thread tasks first, then frame time (CPU submit and GPU), responsiveness, then memory.
+2. **Per frame:** no allocations in hot loops (reuse typed arrays and scratch objects), no per-object Wasm calls (batch them), no repeated uploads of unchanged data, no pipeline or program rebuilds (cache by key).
+3. **Across the boundary:** pass typed arrays, not objects; re-create views over Wasm memory after anything that can grow it (any call into the module can).
+4. **Startup:** keep shader programs and pipelines specialised per material and compile them without blocking (`compileAsync`, parallel compile); do not add work to `init()` that can be lazy.
+5. **Measure, never guess.** Profile before and after a performance change; report the numbers with the machine and method, including regressions. Never fabricate or extrapolate results. Do not run long benchmark suites unless the task needs them ([BENCHMARKS.md](BENCHMARKS.md)).
 
 ---
 
-## 3. Early Decisions (before Phase 1 code)
+## 3. Early Decisions
 
-These were decided before Phase 1; the choices in force are in section 10.
-
-| Decision | Recommendation | Why |
-|---|---|---|
-| Language | Rust | `wasm-bindgen` and `wgpu` are mature; memory safety helps the leak goal |
-| Three.js version | Pinned exactly in `package.json` | Fixtures and comparisons stay reproducible |
-| Matrix layout | Column-major `[f32; 16]` | Same as `Matrix4.elements`, so buffers match |
-| Handedness | Right-handed, +Y up, camera looks down −Z | Three.js default |
-| Euler default order | `XYZ` | Three.js default |
-| Core model (Phase 2) | ECS with generational handles (section 4.2) | Avoids reference cycles and Wasm leaks |
-| Parity generator | Node script that imports `three/src` (the pinned npm package) directly | Ground truth without using `build/` |
+Language, version pinning, matrix layout, handedness, Euler order, the ECS core model and the parity generator were decided before Phase 1. The choices in force are in section 10.
 
 ---
 
-## 4. Phases
+## 4. Phases (complete)
 
-Phases run in order. A phase starts only when the previous phase's exit criteria pass.
+| Phase | Area | Exit criteria | Evidence |
+|---|---|---|---|
+| 1 Mathematician | `three/src/math/` → `engine/math` | parity within `1e-6` (D2); scalar and SIMD agree | `engine/math/tests/parity.rs`, the wasm32 SIMD run (D3) |
+| 2 Cartographer | `three/src/core/` → `engine/core` | 10,000 objects created and destroyed return memory to baseline; ownership recorded | `engine/core/tests/alloc.rs`; section 4.2 and section 10 |
+| 3 Scenegrapher | cameras, objects, geometries → `engine/core`, `engine/objects` | hierarchy world matrices match fixtures; only dirty subtrees recompute | `parity/core`, `parity/objects`; `update_matrix_world_skips_clean_subtrees_unless_forced` |
+| 4 Renderer | `three/src/renderers/{webgpu,common}/`, lights → `engine/renderer_webgpu`, `js/webgpu.js` | cube, lit sphere, textured plane match three.js renders | `parity/visual/` (37 cases) |
+| 5 Diplomat | `engine/bindings` | a three.js example runs with only the import changed; `.d.ts` typings | `examples/ports/`, `parity/bindings/typecheck.ts` |
 
-### Phase 1: Agent 2, The Mathematician
+The WebGL 2 host (`js/webgl.js`, GLSL generated by the engine) was added after Phase 4 as the fallback where WebGPU is missing. Phase 5 asked for a `refreshViews()`; instead, `attributeView()` documents that views are created right before use (README, risk R4).
 
-**Source (`three/src/math/`):**
-`Vector2`, `Vector3`, `Vector4`, `Matrix3`, `Matrix4`, `Quaternion`, `Euler`, `Color`, `Box3`, `Sphere`, `Ray`, `Plane`, `Frustum`, `Triangle`, `Line3`, `Spherical`, `Cylindrical`, `MathUtils`
+#### 4.2 Core design (Rust)
 
-Skip `math/interpolants/` in v1.
-
-**Responsibilities:**
-- Port the types above with Three.js semantics.
-- Store everything as contiguous `f32`. `Matrix4` is `[f32; 16]`, column-major.
-- Implement `Matrix4` multiply and vector transforms with a scalar path first. Add `simd128` (Rust `std::arch::wasm32`, or C++ `-msimd128` intrinsics) behind a feature flag once scalar parity passes. Keep the scalar path as the reference.
-- Implement `Euler` ↔ `Quaternion` ↔ `Matrix4` conversions exactly as Three.js does, including the `XYZ` default.
-
-**Exit criteria:**
-- Parity within `1e-6` against fixtures in `parity/math/` for every ported type.
-- Scalar and SIMD paths agree within `1e-6`.
-
-### Phase 2: Agent 1, The Cartographer
-
-**Source (`three/src/core/`):**
-`Object3D`, `BufferGeometry`, `BufferAttribute`, `InterleavedBuffer`, `InterleavedBufferAttribute`, `InstancedBufferAttribute`, `InstancedBufferGeometry`, `EventDispatcher`, `Layers`, `Uniform`, `Raycaster`, `Clock`, `Timer`, `RenderTarget`
-
-Confirm this list with `ls`. Drop anything that doesn't exist in the pinned reference.
-
-**Responsibilities:**
-- Analyze the class hierarchy in `src/core/` and record the class-to-component map before writing code (section 4.2 and `engine/core/src/lib.rs`).
-- Build the native model described in section 4.2.
-- Define ownership and disposal for geometries, materials, and render targets.
-- Replace string-keyed callbacks in `EventDispatcher` with a typed event enum.
-
-**Exit criteria:**
-- Create and destroy 10,000 objects in a loop. Memory returns to baseline (checked with a counting allocator).
-- The class-to-component map and the ownership rules are recorded (section 10, Section 5 / 5.3).
-
-#### 4.2 Proposed core design (Rust)
-
-Three.js builds the scene from `Object3D` subclasses with parent and child references. In Rust, parent/child cycles of `Rc<RefCell<…>>` leak memory and are slow. Use an ECS with generational handles instead:
+three.js builds the scene from `Object3D` subclasses with parent and child references. In Rust, parent/child cycles of `Rc<RefCell<…>>` leak memory and are slow, so the core is an ECS with generational handles:
 
 ```
-Entity   = u32 index + u32 generation   (passed to JS as a single u64 or two u32s)
-Transform   { position: Vec3, quaternion: Quat, scale: Vec3,
-              matrix: Mat4, world: Mat4, dirty: DirtyFlags }
-Hierarchy   { parent: Option<Entity>, children: SmallVec<Entity> }
-Visibility  { visible: bool, layers: u32 }
+Entity   = u32 index + u32 generation   (passed to JS as a single u64 / BigInt)
+Transform   { position, quaternion, scale, matrix, world, dirty flags }
+Hierarchy   { parent: Option<Entity>, children }
+Visibility  { visible, layers }
 Renderable  { geometry: GeometryHandle, material: MaterialHandle }
 Name        { name: String }
 ```
 
 - **Storage:** one `Arena<T>` per component type (slotmap-style). Handles are generational, so a stale handle fails safely instead of reading freed memory.
-- **Geometry and material stores:** arenas with explicit `dispose()`. Reference counts are kept only where Three.js shares a resource across objects.
-- **Events:** each `World` holds a `Vec<CoreEvent>` queue. The frame loop drains it. Replace `EventDispatcher` callbacks with this queue, plus optional subscriber closures for JS.
-- **Attributes:** `BufferAttribute` owns a `Vec<f32>` (or `u32`) inside the world's linear memory. Expose it to JS as a typed-array view (section 4.5).
-
-#### C++ alternative
-
-If the team chooses C++: keep an inheritance hierarchy that mirrors `Object3D`. Use `std::unique_ptr` for owned children and raw non-owning parent pointers. Use handle-based ID tables for geometries and materials, not `shared_ptr` graphs. Document the ownership rules in section 10.
-
-### Phase 3: Agent 4, The Scenegrapher
-
-**Source:**
-- `three/src/cameras/`: `Camera`, `PerspectiveCamera`, `OrthographicCamera`, `ArrayCamera` (later)
-- `three/src/objects/`: `Mesh`, `Points`, `Line`, `LineSegments`, `Group`, `Sprite`, `LOD`, `InstancedMesh`. `SkinnedMesh` and `Bone` are later.
-- `three/src/geometries/`: start with `BoxGeometry`, `PlaneGeometry`, `SphereGeometry`. Other primitives are later.
-
-**Responsibilities:**
-- Parent/child management with the same semantics as `Object3D.add`, `remove`, and `attach`.
-- World matrix computation with `matrixAutoUpdate` and `matrixWorldNeedsUpdate`. Only dirty subtrees recompute.
-- Projection matrices with Three.js conventions (section 5).
-
-**Exit criteria:**
-- World matrices for a 1,000-node hierarchy match parity fixtures.
-- Changing one node recomputes only its subtree (verified by a counter in tests).
-
-### Phase 4: Agent 3, The Renderer (WebGPU)
-
-**Source:**
-- `three/src/renderers/webgpu/`: the backend, device, and pipeline code. Read the subfolders `descriptors/` and `utils/` first. `nodes/` is the node-system integration (see R1).
-- `three/src/renderers/common/`: shared backend logic (render lists, bindings, pipelines). This is needed, since the WebGPU path depends on it.
-- `three/src/lights/` (non-webgpu files only): light data layout.
-
-**Ignore:** `src/renderers/webgl/`, `src/renderers/webgl-fallback/`, `src/renderers/webxr/`.
-
-**Responsibilities:**
-- Split the renderer as recorded in D32 (section 10): Rust/Wasm prepares each frame (culling, ordering, pipeline state, uniform data, WGSL source) and a thin JavaScript host issues the WebGPU calls (devices, pipelines, bind groups, command encoders). `wgpu` is not used on the web; a native backend may consume the same frame format later.
-- Cache pipelines keyed on material and vertex-layout state. Do not rebuild them every frame.
-- Write WGSL for `MeshBasicMaterial` first, then `MeshStandardMaterial`. Do not try to port GLSL from `ShaderLib`. See section 6.
-- Upload vertex and index buffers only when their data changes.
-
-**Exit criteria:**
-- A cube, a lit sphere, and a textured plane render in headless Chromium with WebGPU enabled. Each matches a Three.js reference screenshot within an agreed pixel tolerance (stored in `parity/visual/`).
-
-### Phase 5: Agent 5, The Diplomat
-
-**Responsibilities:**
-- Bindings with `wasm-bindgen` (Rust) or Emscripten/embind (C++).
-- A JS/TS API that mirrors the Three.js surface for the classes ported so far. Ship `.d.ts` typings.
-- Typed-array views over Wasm linear memory for geometry buffers, with no copying. Document that a view is invalid after Wasm memory grows, and provide `refreshViews()`.
-- Canvas entry point and a `requestAnimationFrame` loop.
-
-**Exit criteria:**
-- A minimal Three.js example (scene, camera, mesh, `renderer.render`) runs with only the import path changed.
-- Static geometry handoff shows no per-frame copy in a benchmark.
+- **Geometry and material stores:** arenas with explicit `dispose()`. Reference counts are kept only where three.js shares a resource across objects, and are informational.
+- **Events:** each `World` holds a `Vec<CoreEvent>` queue that the frame loop drains, replacing `EventDispatcher` callbacks.
+- **Attributes:** `BufferAttribute` owns a `Vec<f32>` (or `u32`) in the world's linear memory, exposed to JS as a typed-array view.
 
 ---
 
@@ -187,9 +119,9 @@ If the team chooses C++: keep an inheritance hierarchy that mirrors `Object3D`. 
 These are the most likely porting bugs. Each one needs a test.
 
 - **Handedness:** right-handed, +Y up, camera looks down −Z.
-- **Clip-space depth:** Three.js projection matrices produce depth in `[-1, 1]` (GL style). WebGPU uses `[0, 1]`. Apply the correction the same way Three.js's WebGPU path does. Test: a point on the near plane maps to NDC depth `0`.
-- **Y axis:** check the NDC-to-framebuffer Y direction against a single-triangle test before building on it.
-- **Winding:** Three.js front faces are counter-clockwise by default. Set the pipeline's front face explicitly.
+- **Clip-space depth:** three.js projection matrices produce depth in `[-1, 1]`; WebGPU uses `[0, 1]`. The engine applies the correction as three.js's WebGPU path does; the WebGL 2 host remaps back in its vertex stages. Test: a point on the near plane maps to NDC depth `0`.
+- **Y axis:** render targets are stored top row first on both backends (`flip_y` on WebGL 2).
+- **Winding:** front faces are counter-clockwise; set the pipeline's front face explicitly.
 
 ---
 
@@ -197,31 +129,30 @@ These are the most likely porting bugs. Each one needs a test.
 
 | ID | Risk | Mitigation |
 |---|---|---|
-| R1 | The reference WebGPU backend is built on the TSL node system (`src/nodes/`, `src/materials/nodes/`). Porting it wholesale would mean porting most of the renderer. | v1 does not port `src/nodes/`. Materials are written as hand-written WGSL that follows the behavior of the node versions. Note in the shader code which three.js material each one follows. Confirm this in the pinned reference before Phase 4. |
-| R2 | `ShaderLib` and `ShaderChunk` are GLSL for WebGL. They cannot be reused as WGSL. | Use them to understand intent (lighting math, UV transforms). Write WGSL from scratch. |
-| R3 | Depth range and Y conventions differ between GL and WebGPU. | Section 5 tests, required before Phase 4 exit. |
-| R4 | Wasm memory growth invalidates typed-array views. | `refreshViews()` in Phase 5. Tests that grow memory on purpose. |
-| R5 | Parity fixtures drift if the reference changes. | Pinned to one exact `three` version in `package.json` and in the CDN URLs. Never regenerate fixtures from a different version without updating section 10. |
+| R1 | The reference WebGPU backend is built on TSL (`src/nodes/`). Porting it means porting most of the renderer. | Not ported. Materials are hand-written WGSL and GLSL that follow the node versions' behavior. |
+| R2 | `ShaderLib`/`ShaderChunk` are GLSL for three.js's WebGL renderer. | Read for intent only; the engine writes its own WGSL and GLSL. |
+| R3 | Depth range and Y conventions differ between GL and WebGPU. | Section 5 tests; visual parity on both backends. |
+| R4 | Wasm memory growth invalidates typed-array views. | Views are re-created after calls that may grow memory (`frameData` in `webgl.js`, `attributeView` before use). No test grows memory on purpose yet (STATUS.md). |
+| R5 | Parity fixtures drift if the reference changes. | One exact `three` version in `package.json` and the CDN URLs. Never regenerate fixtures from another version without updating section 10. |
 
 ---
 
 ## 7. Testing and Parity
 
-- **Language:** the goal is a working Three.js replacement. Keep scene computation and core logic in Rust/Wasm where it provides value, and do not cross the Wasm boundary for every property update; the JavaScript layer may hold code that is simpler or faster there (section 10, Section 6).
-- **Visual reference:** the Three.js WebGPU renderer (D27, section 10).
-- **Parity fixtures:** Generated by a Node script that imports the real `three/src` modules and writes JSON or binary to `parity/`. Fixtures and reference images are committed, so running the tests needs no three.js; only regenerating them does (`npm run reference:fixtures`, `node parity/visual/run.mjs --generate`). Never hand-write expected values from memory.
-- **Unit tests:** Every ported public function has at least one test, placed next to the code.
-- **Visual tests:** Headless Chromium with WebGPU, compared against Three.js renders. Diffs go to `parity/visual/out/` (gitignored).
-- **CI:** On every change to `engine/math/`, `engine/core/`, or `engine/bindings/`, run native tests, the `wasm32` build, and the parity check.
+- Parity fixtures are generated by Node scripts that import the real `three/src` modules (`parity/*/gen/`) and are committed, so tests run without three.js. **Never hand-write expected values.**
+- Every ported public function has at least one test, next to the code. Visual cases compare against stored three.js WebGPU renders (D27).
+- On every change to `engine/` or `engine/bindings/js/`: native tests, the `wasm32` build, and the parity checks for that area. The matrix of which checks to run is in [TESTING.md](TESTING.md); commands and prerequisites are in [CONFIGURATION.md](CONFIGURATION.md).
+- Rebuild `dist/wamr3d` (`node engine/bindings/build.mjs`) before any browser check: pages load the build, not the sources.
 
 ---
 
 ## 8. Handoff Protocol
 
 When you finish or stop:
-1. Update `STATUS.md` with: phase, files touched, tests run and results, open questions, assumptions about other phases.
+1. Update `STATUS.md`: what changed, checks run and their results, open questions.
 2. Leave the tree compiling. If you can't, say so at the top of `STATUS.md`.
-3. If you hit a decision that isn't yours (for example, pulling in a file from section 1.4), write it under "Needs decision" and stop that item.
+3. If you hit a decision that isn't yours (a new dependency, a fixed rule, a version or publishing choice), write it under "Needs decision" in `STATUS.md` and stop that item.
+4. Do not commit, push or publish unless asked.
 
 ---
 
@@ -229,10 +160,11 @@ When you finish or stop:
 
 - Edit anything inside `node_modules/three/`, or copy the reference into the repository.
 - Import three.js from `engine/`, the package in `dist/wamr3d/`, or a primary example.
-- Port from `build/`, `examples/`, `docs/`, `editor/`, `test/`, or asset folders.
-- Port `src/renderers/webgl/`.
-- Change the matrix layout, depth convention, Euler order, or Three.js version without updating section 10 and regenerating all parity fixtures.
-- Add `unsafe` (Rust) or raw owning pointers (C++) without a `// SAFETY:` or ownership comment that states the invariant.
+- Port from `build/`, `examples/`, `docs/`, `editor/`, `test/`, or asset folders, or port `src/renderers/webgl/`.
+- Change the matrix layout, depth convention, Euler order, or three.js version without updating section 10 and regenerating all parity fixtures.
+- Add `unsafe` (all crates `#![forbid(unsafe_code)]`) or raw owning pointers without a `// SAFETY:` comment and a recorded decision.
+- Claim a speed-up without a before/after measurement, or regenerate references to make a failing check pass.
+- Change the uniform layouts in Rust without the hosts (`webgpu.js`, `webgl.js`, `webgpu/formats.js` read them): they ship together (D32).
 
 ---
 
@@ -252,5 +184,6 @@ The choices in force, and the IDs that code comments cite. Change one only toget
 - **D27** Visual parity compares against stored three.js WebGPU renders, within the tolerance in `parity/visual/cases.js`.
 - **D32** Renderer split: Rust/Wasm prepares frame data and the WGSL and GLSL sources; JavaScript hosts (`webgpu.js`, `webgl.js`) own and issue the device, pipeline, buffer, texture and pass calls. Both hosts read the engine's uniform layout, so the engine and hosts ship together.
 - **D39** Random helpers use a SplitMix64 generator, seeded by `init()` and resettable with `setRandomSeed`; `seededRandom` stays Mulberry32.
+- **D40** Mesh shaders are specialised per material: the hosts pass the material's shading mode and present features (`SHADING_MODE`, `MATERIAL_FEATURES`, `STATE_FEATURES`, `MAP_FEATURES`, `LIGHT_FEATURES`) as GLSL `#define`s or WGSL `override`s; unset, every feature is decided at run time. A constant only clears a feature the material does not have, so output is unchanged.
 - **Section 5 / 5.3** Core model and ownership: a `World` owns everything; `destroy` leaves children alive as roots and `destroy_recursive` destroys the subtree; geometries, materials, render targets and interleaved buffers are freed only by `dispose_*`; reference counts are informational; arena slots are reused.
 - **Section 6** Language split: scene computation and core logic in Rust/Wasm; the object API (`wamr3d/compat`) keeps three.js-style values and transforms in JavaScript and sends changes to the engine in batches. Do not mix low-level transform writes with object-API getters on the same objects.

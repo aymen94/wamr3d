@@ -1,6 +1,6 @@
 {
   "name": "wamr3d",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "WAMR3D: a 3D engine core in WebAssembly",
   "license": "MIT",
   "private": false,

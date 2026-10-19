@@ -5,12 +5,17 @@ use wamr_math::{Euler, EulerOrder, Matrix4, Quaternion, Vector3};
 
 /// Local placement of an object, and its cached local and world matrices.
 ///
-/// `rotation` and `quaternion` describe the same orientation and are kept in step:
-/// changing either through its setter recomputes the other, so they are private.
-#[derive(Clone, Debug, PartialEq)]
+/// `rotation` and `quaternion` describe the same orientation and are kept in step, so
+/// they are private. Setting the rotation recomputes the quaternion at once; setting the
+/// quaternion only marks the angles stale, and `rotation()` derives them from it when read.
+/// Both can change only through these setters, so a read returns what an eager update
+/// would have stored, without paying for it on every quaternion write.
+#[derive(Clone, Debug)]
 pub struct Transform {
     pub position: Vector3,
+    /// Angles are valid only while `rotation_stale` is false; the order is always valid.
     rotation: Euler,
+    rotation_stale: bool,
     quaternion: Quaternion,
     pub scale: Vector3,
     /// The direction `look_at` treats as up.
@@ -25,11 +30,29 @@ pub struct Transform {
     pub matrix_world_needs_update: bool,
 }
 
+// Compares the angles a reader would see, not the stored (possibly stale) ones.
+impl PartialEq for Transform {
+    fn eq(&self, other: &Self) -> bool {
+        self.position == other.position
+            && self.rotation() == other.rotation()
+            && self.quaternion == other.quaternion
+            && self.scale == other.scale
+            && self.up == other.up
+            && self.pivot == other.pivot
+            && self.matrix == other.matrix
+            && self.matrix_world == other.matrix_world
+            && self.matrix_auto_update == other.matrix_auto_update
+            && self.matrix_world_auto_update == other.matrix_world_auto_update
+            && self.matrix_world_needs_update == other.matrix_world_needs_update
+    }
+}
+
 impl Default for Transform {
     fn default() -> Self {
         Self {
             position: Vector3::default(),
             rotation: Euler::default(),
+            rotation_stale: false,
             quaternion: Quaternion::default(),
             scale: Vector3::new(1.0, 1.0, 1.0),
             up: Self::DEFAULT_UP,
@@ -53,7 +76,12 @@ impl Transform {
     pub const DEFAULT_MATRIX_WORLD_AUTO_UPDATE: bool = true;
 
     pub fn rotation(&self) -> Euler {
-        self.rotation
+        if !self.rotation_stale {
+            return self.rotation;
+        }
+        let mut rotation = self.rotation;
+        rotation.set_from_quaternion(&self.quaternion, rotation.order);
+        rotation
     }
 
     pub fn quaternion(&self) -> Quaternion {
@@ -63,21 +91,22 @@ impl Transform {
     /// Sets the Euler angles (and their order) and recomputes the quaternion.
     pub fn set_rotation(&mut self, rotation: Euler) {
         self.rotation = rotation;
+        self.rotation_stale = false;
         self.quaternion.set_from_euler(&rotation);
     }
 
     /// Changes the Euler order while keeping the angles, as assigning `rotation.order`
     /// does in three.js. The orientation changes unless at most one angle is non-zero.
     pub fn set_rotation_order(&mut self, order: EulerOrder) {
-        let mut rotation = self.rotation;
+        let mut rotation = self.rotation();
         rotation.order = order;
         self.set_rotation(rotation);
     }
 
-    /// Sets the quaternion and recomputes the Euler angles in the current order.
+    /// Sets the quaternion; the Euler angles follow in the current order when read.
     pub fn set_quaternion(&mut self, quaternion: Quaternion) {
         self.quaternion = quaternion;
-        self.rotation.set_from_quaternion(&quaternion, self.rotation.order);
+        self.rotation_stale = true;
     }
 
     /// Applies `matrix` on top of the local transform and decomposes the result back

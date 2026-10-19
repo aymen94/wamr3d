@@ -140,7 +140,7 @@ function features() {
         ${card('md:col-span-2', 'Object API', 'A familiar way to build scenes.', 'Use three.js-style classes and chaining for supported scene, object, camera, geometry, material and math APIs. Object transforms stay in JavaScript and synchronize with the engine in batches.')}
         ${card('md:col-span-2', 'Batched API', 'Fewer calls for large scenes.', 'Use generational handles and batched operations when many objects change each frame. Geometry and world-matrix data can be read through typed-array views over engine memory.')}
         ${card('md:col-span-2', 'Parity', 'Behavior checked against three.js.', 'The repository includes thousands of generated value checks and stored visual comparisons. See the implementation status and migration guide for current support and known differences.')}
-        ${card('md:col-span-6', 'Current scope', 'Release 0.9.0', 'WAMR3D 0.9.0 covers three.js\'s scene graph, built-in materials, lights, shadows, animation, loaders and the common add-ons, but it is not a complete replacement: TSL node materials are not ported, and GLSL shader materials draw only on WebGL 2. Check the repository status for the full list of limits.')}
+        ${card('md:col-span-6', 'Current scope', 'Release 0.9.1', 'WAMR3D 0.9.1 covers three.js\'s scene graph, built-in materials, lights, shadows, animation, loaders and the common add-ons, but it is not a complete replacement: TSL node materials are not ported, and GLSL shader materials draw only on WebGL 2. Check the repository status for the full list of limits.')}
       </div>
     </div>
   </section>`;
@@ -187,7 +187,7 @@ function performance() {
       <div data-reveal>${showcaseChart('objects', 10000, HEADLINE)}</div>
       <div class="mt-8 grid grid-cols-1 gap-5 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         <p class="text-sm leading-relaxed text-slate-400" data-reveal><strong class="text-slate-200">Where it is slower:</strong> the object API keeps vectors, matrices, quaternions and colours in plain JavaScript, but the low-level engine classes cross into WebAssembly on every call, which has a fixed cost. ${mathSlowdown.length ? `Single low-level math calls measured ${Math.min(...mathSlowdown).toFixed(1)}× to ${Math.max(...mathSlowdown).toFixed(1)}× slower than three.js.` : ''} GPU time is not measured; it only shows in the frame rate.</p>
-        <p class="font-mono text-[11px] leading-relaxed text-slate-400 md:text-right" data-reveal>${meta.cpu}, ${meta.gpu.replace(/ \(0x.*$/, '')}, ${meta.chrome} headless, ${meta.os}.<br>Fresh 1280×720 measurements; the higher-resolution charts use the earlier same-day run.${meta.dir ? ` Raw logs: <a class="text-brand-cyan hover:text-white" href="${repoFile(meta.dir)}" target="_blank" rel="noreferrer">${meta.dir}</a>.` : ''}</p>
+        <p class="font-mono text-[11px] leading-relaxed text-slate-400 md:text-right" data-reveal>${meta.cpu}, ${meta.gpu.replace(/ \(0x.*$/, '')}, ${meta.chrome} headless, ${meta.os}.<br>Every chart comes from one run on ${meta.date}.${meta.dir ? ` Raw logs: <a class="text-brand-cyan hover:text-white" href="${repoFile(meta.dir)}" target="_blank" rel="noreferrer">${meta.dir}</a>.` : ''}</p>
       </div>
       <div class="mt-8" data-reveal>${button('#/benchmarks', 'All benchmark results', 'secondary')}</div>
     </div>

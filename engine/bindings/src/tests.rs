@@ -58,7 +58,7 @@ fn geometry_state_describes_each_distinct_geometry_once() {
     assert_eq!(state[GEOMETRY_STATE_FIELDS - 1], 3);
 
     // colours with alpha are bound with four floats each
-    assert!(world.set_attribute(geometry, "color", &vec![1.0; 24 * 4], 4).is_ok());
+    assert!(world.set_attribute(geometry, "color", vec![1.0; 24 * 4], 4).is_ok());
     assert_eq!(renderer.prepare(&mut world, root, camera).ok(), Some(2));
     let state = renderer.geometry_state();
     assert!(state[10] != 0);

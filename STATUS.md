@@ -2,10 +2,7 @@
 
 ## Release
 
-- Version **`0.9.0`**: the npm package (`engine/bindings/js/package.json`) and the Rust bindings crate (`engine/bindings/Cargo.toml`); internal crates stay at `0.1.0`.
-- The latest version on npm is `0.8.0`, and the website's own pages depend on it until `0.9.0` is published ([NPM.md](NPM.md)).
-- Compared with `0.8.0`: mesh shaders are built per material features, WebGL 2 programs are linked in parallel, and `renderer.compileAsync` is new ([Startup](#startup)). Custom hosts of the low-level `Renderer` need no change: the new shader constants default to the previous behaviour.
-- Compared with `0.7.5`, the vertex layout (a fifth auxiliary attribute, `lineDistance`, 60-byte stride) and the material block (512 floats) changed. Code that drives the low-level `Renderer` with its own host must follow both.
+- Version **`0.9.1`** (not yet published; npm has `0.9.0`): faster per-object transform setters, lazy Euler angles after quaternion writes, single-copy geometry uploads, and object-API `Euler.set` and matrix `copy`. The npm package (`engine/bindings/js/package.json`) and the Rust bindings crate (`engine/bindings/Cargo.toml`); internal crates stay at `0.1.0`.
 
 ## Verification (2026-10-19, on the current tree)
 
@@ -44,8 +41,8 @@ A new combination of features builds its program on the first frame that draws i
 
 ## Benchmarks
 
-- [`bench/results/2026-10-18/`](bench/results/2026-10-18/): the release tree at 1280×720 — Node.js (`bench.txt`, `compat.txt`) and the showcase (`showcase-1280x720.txt`, `showcase100k-1280x720.txt`; its 50,000 instanced rows come from a second run on the same build). The three.js comparison scene (`examples/compare/measure.mjs`) was not run for this release. Every engine ran slower in this session than on 2026-10-16 (three.js at 10,000 objects: 28% fewer frames on WebGPU, 42% on WebGL), so compare engines within a run, not across runs.
-- [`bench/results/2026-10-16/`](bench/results/2026-10-16/): the last complete set (four resolutions, showcase and comparison), measured on the 0.7 tree. The website's benchmarks page shows this set.
+- [`bench/results/2026-10-19/`](bench/results/2026-10-19/): the complete set on 0.9.1 (Node.js `bench.txt` and `compat.txt`; showcase with separate and instanced meshes at 2,000, 10,000 and 50,000 bodies, 100,000 instanced bodies, and the three.js comparison scene, each at 1280×720, 1920×1080, 2560×1440 and 3840×2160). i9-10900X, RTX 2070 SUPER, Chrome 155 headless, Windows 11, Node.js 24.20.0; one run per configuration, no failures. The website's benchmarks page and the README figures come from this set. It replaces a same-day run on 0.9.0. Against that run: one call per object and property 2.86 → 1.01 ms, the batched update 1.43 → 0.69 ms, the geometry upload 0.52 → 0.35 ms. `bench/compat.mjs` now runs each library in its own process; in one process the math workloads had looked 1.01× to 3.68× slower, which was the benchmark, not the code. Picking (100 rays, 1,000 boxes) is still 1.15× three.js's time: the per-object steps match three.js's, and a fused sphere transform measured slower, so it was reverted.
+- Slower cases in this run: WAMR3D on WebGPU loses frame rate as resolution grows while its CPU update and submit times change far less, which points to GPU time (not measured by the suites). At 3840×2160 it drew 10,000 separate meshes at 19.2 fps (three.js WebGL 45.3) and 50,000 instanced bodies at 6.5 fps (three.js WebGPU 22.3); the same scenes on WAMR3D's WebGL 2 renderer ran at 44.7 and 55.6 fps. In the comparison scene at 3840×2160, WAMR3D on WebGPU ran at 20 fps against 60 for the WebGL engines. Not yet investigated.
 
 ## Limitations
 

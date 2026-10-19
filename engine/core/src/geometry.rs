@@ -89,8 +89,13 @@ impl BufferGeometry {
     /// Sets the index from a list, stored as 16-bit unless a value needs 32 bits.
     /// 65535 already selects 32 bits: it is the primitive-restart index of 16-bit buffers.
     pub fn set_index_from_slice(&mut self, indices: &[u32]) -> &mut Self {
+        self.set_index_from_vec(indices.to_vec())
+    }
+
+    /// As `set_index_from_slice`, keeping the vector itself when it needs 32 bits.
+    pub fn set_index_from_vec(&mut self, indices: Vec<u32>) -> &mut Self {
         let array = if indices.iter().any(|i| *i >= 65535) {
-            AttributeArray::Uint32(indices.to_vec())
+            AttributeArray::Uint32(indices)
         } else {
             AttributeArray::Uint16(indices.iter().map(|i| *i as u16).collect())
         };

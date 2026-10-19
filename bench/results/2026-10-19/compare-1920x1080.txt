@@ -1,0 +1,31 @@
+Chrome/155.0.8059.84, win32 x64, Intel(R) Core(TM) i9-10900X CPU @ 3.70GHz
+GPU: ANGLE (NVIDIA, NVIDIA GeForce RTX 2070 SUPER (0x00001E84) Direct3D11 vs_5_0 ps_5_0, D3D11)
+three-webgl, three-webgpu: three.js with its own renderer. api: WAMR3D object API and WebGPU renderer. These three run the same scene code.
+native: WAMR3D batched calls and WebGPU renderer. three, wamr3d: three.js and WAMR3D transforms, both drawn by the three.js WebGL renderer (with a grid).
+window 1920x1080, canvas 1920x1080, pixel ratio 1, warm-up 3 s, sample 8 s per run, one engine per page load
+
+objects  engine         frames   frame ms (median / p95)   fps   CPU update ms (median / p95)   draw submit ms (median)   first frame ms   wasm init ms
+     19 three-webgl      456         17.40 / 18.20       57           0.000 / 0.100                 0.100                290             -   three.js (WebGL)
+     19 three-webgpu     455         17.40 / 18.20       57           0.000 / 0.100                 0.300                293             -   three.js (WebGPU)
+     19 api              458         17.40 / 18.10       57           0.000 / 0.100                 0.200                223           6.2   WAMR3D object API (WebGPU)
+     16 native           458         17.40 / 18.10       57           0.000 / 0.100                 0.200                115           5.1   WAMR3D (WebGPU)
+     19 api-webgl        457         17.40 / 18.20       57           0.000 / 0.100                 0.200                550           5.0   WAMR3D object API (WebGL 2)
+     16 native-webgl     456         17.40 / 18.20       57           0.000 / 0.100                 0.200                 92           4.9   WAMR3D (WebGL 2)
+     16 three            456         17.40 / 18.20       57           0.000 / 0.100                 0.100                 65             -   three.js
+     16 wamr3d           456         17.40 / 18.20       57           0.000 / 0.100                 0.100                 64           5.2   WAMR3D
+   2007 three-webgl      457         17.40 / 18.20       57           0.700 / 1.100                 3.200                 73             -   three.js (WebGL)
+   2007 three-webgpu     450         18.10 / 18.20       55           0.700 / 0.800                12.500                299             -   three.js (WebGPU)
+   2007 api              455         17.50 / 18.30       57           0.600 / 1.000                 2.300                232           5.4   WAMR3D object API (WebGPU)
+   2004 native           455         17.50 / 18.20       57           0.400 / 0.800                 2.100                116           4.8   WAMR3D (WebGPU)
+   2007 api-webgl        456         17.40 / 18.10       57           0.500 / 0.900                 2.800                156           5.1   WAMR3D object API (WebGL 2)
+   2004 native-webgl     456         17.40 / 18.20       57           0.400 / 0.700                 2.600                 94           4.9   WAMR3D (WebGL 2)
+   2004 three            458         17.40 / 18.20       57           0.700 / 1.000                 3.200                 71             -   three.js
+   2004 wamr3d           457         17.40 / 18.20       57           0.400 / 0.800                 3.400                 81           5.1   WAMR3D
+  10007 three-webgl      405         18.00 / 35.50       56           3.400 / 3.600                16.100                117             -   three.js (WebGL)
+  10007 three-webgpu      96         88.10 / 90.60       11           5.300 / 5.600                77.400                663             -   three.js (WebGPU)
+  10007 api              450         18.10 / 18.20       55           3.200 / 3.400                10.500                450           5.7   WAMR3D object API (WebGPU)
+  10004 native           447         18.00 / 18.30       56           2.000 / 2.400                 9.300                156           5.1   WAMR3D (WebGPU)
+  10007 api-webgl        446         18.00 / 18.20       56           3.300 / 3.600                13.000                238           5.0   WAMR3D object API (WebGL 2)
+  10004 native-webgl     434         18.00 / 18.20       56           1.900 / 2.300                11.400                166           5.0   WAMR3D (WebGL 2)
+  10004 three            406         16.70 / 33.40       60           3.300 / 3.600                16.300                202             -   three.js
+  10004 wamr3d           439         16.70 / 33.30       60           1.500 / 1.600                16.400                136           5.1   WAMR3D
