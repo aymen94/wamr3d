@@ -170,15 +170,20 @@ export function showcaseChart(mode = 'objects', count = 10000, resolution = defa
 // Speed of WAMR3D against three.js from two median times: a bar that grows right from the
 // centre when WAMR3D is faster and left when it is slower, on a log scale so 4× faster and
 // 4× slower are the same length. The label always says which, in words.
-export function speedTable(rows, caption) {
+// Within 5% either way a single run cannot tell the two apart.
+const SAME = 1.05;
+
+// `unranked(name)` marks rows that are not like-for-like comparisons: they get no medal.
+export function speedTable(rows, caption, { unranked = () => false } = {}) {
   const speeds = rows.map(([, three, wamr]) => three / wamr);
-  const places = rankPlaces(speeds);
+  const places = rankPlaces(speeds.map((s, i) => s >= SAME && !unranked(rows[i][0]) ? s : null));
   const span = Math.max(...speeds.map((s) => Math.abs(Math.log2(s))), 1);
-  const label = (s) => s >= 1 ? `${s.toFixed(s < 10 ? 1 : 0)}× faster` : `${(1 / s).toFixed(1 / s < 10 ? 1 : 0)}× slower`;
+  const same = (s) => s < SAME && s > 1 / SAME;
+  const label = (s) => same(s) ? 'about the same' : s >= 1 ? `${s.toFixed(s < 10 ? 1 : 0)}× faster` : `${(1 / s).toFixed(1 / s < 10 ? 1 : 0)}× slower`;
   const th = 'py-3 pr-4 font-medium';
   const td = 'py-2.5 pr-4';
   const body = rows.map(([name, three, wamr], i) => {
-    const s = speeds[i], faster = s >= 1;
+    const s = speeds[i], faster = s >= 1, clearlyFaster = s >= SAME;
     const place = places[i];
     const w = `${(Math.abs(Math.log2(s)) / span * 50).toFixed(2)}%`;
     return `<tr class="border-t border-white/5">
@@ -189,7 +194,7 @@ export function speedTable(rows, caption) {
         <div class="absolute inset-y-[-3px] left-1/2 w-px bg-slate-400/60"></div>
         <div class="absolute inset-y-0 ${faster ? 'left-1/2 rounded-r-[4px]' : 'right-1/2 rounded-l-[4px]'} ${place === 1 ? 'benchmark-fastest-bar' : ''}" style="width: ${w}; background: var(--color-series-${faster ? 3 : 2})"></div>
       </div></td>
-      <td class="${td} whitespace-nowrap text-right font-mono text-xs tabular-nums ${faster ? 'text-emerald-300' : 'text-slate-300'}">${label(s)}</td>
+      <td class="${td} whitespace-nowrap text-right font-mono text-xs tabular-nums ${clearlyFaster ? 'text-emerald-300' : 'text-slate-300'}">${label(s)}</td>
     </tr>`;
   }).join('');
   return `<div class="glass relative overflow-x-auto rounded-3xl p-2 sm:p-4"><table class="w-full min-w-[44rem] text-left text-sm">

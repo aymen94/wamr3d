@@ -44,13 +44,16 @@ function showcaseFindings() {
     const fps = all.flatMap((r) => ['batched', 'object', 'webgpu', 'webgl'].map((e) => get(r, 'instanced', 2000, e)?.fps).filter((v) => v !== undefined));
     parts.push(`At 2,000 instanced bodies every engine ran at ${range(fps)} fps, and three.js WebGL submitted draws in ${range(all.map((r) => get(r, 'instanced', 2000, 'webgl').submit))} ms against ${range(all.map((r) => get(r, 'instanced', 2000, 'batched').submit))} ms for WAMR3D.`);
   }
-  if (lowest && highest && lowest !== highest) parts.push(`At 2,000 separate bodies WAMR3D batched submitted in ${get(lowest, 'objects', 2000, 'batched').submit.toFixed(1)} ms at ${res(lowest)} and ${get(highest, 'objects', 2000, 'batched').submit.toFixed(1)} ms at ${res(highest)}.`);
+  if (lowest && highest && lowest !== highest) {
+    const [lo, hi] = [lowest, highest].map((r) => get(r, 'objects', 2000, 'batched').submit.toFixed(1));
+    parts.push(lo === hi ? `At 2,000 separate bodies WAMR3D batched submitted in ${lo} ms from ${res(lowest)} to ${res(highest)}.` : `At 2,000 separate bodies WAMR3D batched submitted in ${lo} ms at ${res(lowest)} and ${hi} ms at ${res(highest)}.`);
+  }
   if (parts.length) out.push(['Where the gap closes.', parts.join(' ')]);
 
   // WAMR3D on WebGPU against the faster three.js renderer, wherever WAMR3D drew fewer frames.
   const slower = [['objects', 10000, 'separate meshes'], ['instanced', 50000, 'instanced bodies']].flatMap(([mode, count, what]) => resolutions
     .map((r) => [r, get(r, mode, count, 'batched'), ['webgpu', 'webgl'].map((e) => [e, get(r, mode, count, e)]).filter(([, x]) => x).sort((a, b) => b[1].fps - a[1].fps)[0]])
-    .filter(([, w, best]) => w && best && w.fps < best[1].fps)
+    .filter(([, w, best]) => w && best && w.fps < best[1].fps / 1.05)
     .map(([r, w, [e, t]]) => `${count.toLocaleString('en-US')} ${what} at ${res(r)}: ${w.fps.toFixed(1)} fps against ${t.fps.toFixed(1)} for three.js ${e === 'webgl' ? 'WebGL' : 'WebGPU'}`));
   if (slower.length) out.push(['Where WAMR3D WebGPU is slower.', `As the resolution grows its frame time rises far more than its CPU time, which points to GPU time (not measured here): ${slower.join('; ')}. WAMR3D's WebGL 2 renderer did not slow down this way.`]);
 

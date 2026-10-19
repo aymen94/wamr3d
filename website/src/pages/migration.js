@@ -53,7 +53,7 @@ export function migration() {
     </section>
     <section id="migration-choices" class="mx-auto max-w-6xl scroll-mt-24 px-6 pb-16">
       ${sectionHead({ label: 'Choose your setup', title: 'One engine, two ways to build', intro: 'Start with the API and rendering backend that fit your project. You can move from the familiar route to batched calls later, without changing the engine.' })}
-      <div class="grid gap-4 md:grid-cols-3">${choices.map(([title, api, body, sample], i) => `<article class="glass rounded-3xl p-6" data-reveal style="--reveal-delay:${i * 70}ms"><p class="font-mono text-[11px] uppercase tracking-wider text-brand-cyan">Option 0${i + 1}</p><h2 class="mt-3 font-display text-xl font-semibold text-white">${title}</h2><p class="mt-1 font-mono text-xs text-slate-400">${code(api)}</p><p class="mt-4 text-sm leading-relaxed text-slate-400">${code(body)}</p>${codeBlock(sample, { title: 'app.js', className: 'mt-5' })}</article>`).join('')}</div>
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-3">${choices.map(([title, api, body, sample], i) => `<article class="glass min-w-0 rounded-3xl p-6" data-reveal style="--reveal-delay:${i * 70}ms"><p class="font-mono text-[11px] uppercase tracking-wider text-brand-cyan">Option 0${i + 1}</p><h2 class="mt-3 font-display text-xl font-semibold text-white">${title}</h2><p class="mt-1 font-mono text-xs text-slate-400">${code(api)}</p><p class="mt-4 text-sm leading-relaxed text-slate-400">${code(body)}</p>${codeBlock(sample, { title: 'app.js', className: 'mt-5' })}</article>`).join('')}</div>
     </section>
     <section class="mx-auto max-w-6xl px-6 py-24">
       ${sectionHead({ label: 'Differences', title: 'What to watch for' })}

@@ -21,7 +21,7 @@ It has no runtime dependencies and draws with its own WebGPU renderer, switching
 - **Its own WebGPU and WebGL 2 renderers.** In the 2026-10-19 showcase run at 1280×720, WAMR3D drew 10,000 separate animated meshes at 60 fps on WebGPU (12.3 ms CPU draw submission) and 45 fps on its WebGL 2 renderer; three.js ran at 12.4 fps on WebGPU (74.6 ms) and 44 fps on WebGL. With 100,000 instanced bodies, WAMR3D ran at 15.4 fps on WebGPU and 35.8 fps on WebGL 2 with 24.7 ms of CPU scene update, against 11.5 fps (70.0 ms) for three.js WebGPU and 11.4 fps (76.2 ms) for three.js WebGL. Where the GPU limits the frame, WAMR3D's WebGPU renderer is slower: at 3840×2160 it drew the 10,000 separate meshes at 19 fps against 45 fps for three.js WebGL, and 50,000 instanced bodies at 6.5 fps against 22.3 fps for three.js WebGPU. Single runs of 0.9.1 on one machine (i9-10900X, RTX 2070 SUPER, Chrome 155) in [`bench/results/2026-10-19/`](bench/results/2026-10-19/).
 - **Small and free.** The SIMD WebAssembly module is about 748 KiB, shaders for both backends included. Nothing to pay, nothing else to install at run time.
 
-What it is not: a complete replacement for three.js. In the object API, vectors, quaternions, matrices, boxes, spheres and colours are plain JavaScript values, as in three.js, and take about the same time (0.88× to 1.07× of three.js's in the math workloads of `bench/compat.mjs` on 2026-10-19); the scene graph, culling and draw preparation run in WebAssembly. The low-level engine classes (`wamr3d`) cross into WebAssembly on every call, so single small calls there are *slower* than plain JavaScript: batch them.
+What it is not: a complete replacement for three.js. In the object API, vectors, quaternions, matrices, boxes, spheres and colours are plain JavaScript values, as in three.js, and take about the same time (0.88× to 1.07× of three.js's in the math workloads of `bench/compat.mjs` on 2026-10-19); the scene graph, culling and draw preparation run in WebAssembly. The low-level engine classes (`wamr3d`) cross into WebAssembly on every call, so single small calls there are *slower* than plain JavaScript: batch them, and do per-value math with the JavaScript values of `wamr3d/math` (see [Mixing JavaScript and WebAssembly](#mixing-javascript-and-webassembly)).
 
 ## Install
 
@@ -145,6 +145,32 @@ world.setTransforms( handles, transforms ); // 10 floats per object: position xy
 
 Other batched calls: `world.createObjects( count )`, `world.addMany( parents, children )`, `world.matricesWorld( handles )`, and `attributeView( world, geometry, name )` from `wamr3d` for zero-copy geometry (create the view right before use: memory growth invalidates it). Do not mix the two APIs on the same objects.
 
+### Mixing JavaScript and WebAssembly
+
+Use each side for what it does fastest: small math in JavaScript, scene work in WebAssembly. A call on the low-level math classes (`Vector3`, `Matrix4` from `wamr3d`) crosses into WebAssembly, which costs more than the arithmetic of one vector. `wamr3d/math` has the same values as plain JavaScript (`Vector2/3/4`, `Quaternion`, `Euler`, `Matrix3/4`, `Box3`, `Sphere`; they chain and need no `init()`). Compute with them, write the results into one typed array, and send it in one call:
+
+```js
+import { init, World } from 'wamr3d';
+import { Vector3, Quaternion } from 'wamr3d/math';
+
+await init();
+const world = new World();
+const handles = world.createObjects( 10000 );
+const transforms = new Float32Array( handles.length * 10 );
+const p = new Vector3(), q = new Quaternion(), up = new Vector3( 0, 1, 0 );
+
+for ( let i = 0, o = 0; i < handles.length; i ++, o += 10 ) {
+	p.set( i * 0.01, 0, 0 );
+	q.setFromAxisAngle( up, i * 1e-4 );
+	transforms[ o ] = p.x; transforms[ o + 1 ] = p.y; transforms[ o + 2 ] = p.z;
+	transforms[ o + 3 ] = q.x; transforms[ o + 4 ] = q.y; transforms[ o + 5 ] = q.z; transforms[ o + 6 ] = q.w;
+	transforms[ o + 7 ] = transforms[ o + 8 ] = transforms[ o + 9 ] = 1;
+}
+world.setTransforms( handles, transforms );
+```
+
+In `bench/math.mjs` (2026-10-20, Node.js), this pattern updated 10,000 objects (per-object math, transforms, world matrices) in 1.39 ms, against 6.12 ms for three.js and 3.80 ms with every vector in the low-level Wasm classes. Single operations on `wamr3d/math` values took 0.80× to 1.37× of three.js's time, against 1.52× to 8.94× on the Wasm classes ([`math.txt`](bench/results/2026-10-19/math.txt)).
+
 ## See it run
 
 ```
@@ -222,7 +248,7 @@ The full typed API is in `dist/wamr3d/wamr3d_wasm.d.ts` after a build. A Node.js
 
 ## Status
 
-`0.9.1` follows the three.js API and is verified with the checks and examples in this repository only.
+`0.9.2` follows the three.js API and is verified with the checks and examples in this repository only.
 
 | Area | Unfinished or missing |
 |---|---|

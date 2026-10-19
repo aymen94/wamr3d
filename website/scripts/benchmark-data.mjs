@@ -1,6 +1,6 @@
 // Turns the raw logs of one benchmark run into website/src/data/benchmarks.js.
 //   node website/scripts/benchmark-data.mjs bench/results/<date>
-// The logs come from bench/bench.mjs, bench/compat.mjs, examples/showcase/check.mjs --measure
+// The logs come from bench/bench.mjs, bench/compat.mjs, bench/math.mjs, examples/showcase/check.mjs --measure
 // and examples/compare/measure.mjs --gpu (commands on the benchmarks page). A configuration
 // that is missing or did not parse is listed in `failures` rather than filled in.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -95,6 +95,9 @@ const startup = init ? { wamrImport: num(init[1]), wasmKiB: num(init[2]), wamrIn
 
 const objectApi = read('compat.txt').split('\n').map((line) => line.match(/^(\S.*?)\s{2,}([\d.]+)\s+([\d.]+)\s+[\d.]+x\s*$/)).filter(Boolean).map((m) => [m[1].trim(), num(m[2]), num(m[3])]);
 
+// node bench/math.mjs: [workload, three.js ms, low-level Wasm classes ms, wamr3d/math ms].
+const mathMix = read('math.txt').split('\n').map((line) => line.match(/^(\S.*?)\s{2,}([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+[\d.]+x\s+[\d.]+x\s*$/)).filter(Boolean).map((m) => [m[1].trim(), num(m[2]), num(m[3]), num(m[4])]);
+
 const allEngines = [
   { id: 'batched', label: 'WAMR3D · batched API', short: 'WAMR3D batched', series: 1 },
   { id: 'object', label: 'WAMR3D · object API', short: 'WAMR3D object API', series: 2 },
@@ -129,7 +132,10 @@ export const startup = ${json(startup)};
 // node bench/compat.mjs: [workload, three.js median ms, WAMR3D median ms].
 export const objectApi = ${json(objectApi)};
 
+// node bench/math.mjs: [workload, three.js ms, low-level Wasm math classes ms, wamr3d/math ms].
+export const mathMix = ${json(mathMix)};
+
 export const failures = ${json(failures)};
 `);
-console.log(`wrote website/src/data/benchmarks.js from ${meta.dir}: ${lowLevel.length} + ${objectApi.length} Node.js rows, ${failures.length} failures`);
+console.log(`wrote website/src/data/benchmarks.js from ${meta.dir}: ${lowLevel.length} + ${objectApi.length} + ${mathMix.length} Node.js rows, ${failures.length} failures`);
 for (const f of failures) console.log(`  ${f}`);

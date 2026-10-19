@@ -1,0 +1,13 @@
+node v24.20.0, win32 x64; 5 warm-up runs, median of 25; each library in its own process
+wasm: low-level wamr3d math classes (every call crosses into WebAssembly); js: wamr3d/math (JavaScript values).
+In the last row both WAMR3D sides send the transforms in one setTransforms call and update world matrices in the engine.
+
+workload                                                    three ms   wasm ms     js ms   wasm/three   js/three
+Vector3.applyMatrix4 (100,000)                                0.715     3.643     0.618        5.09x      0.86x
+Vector3.applyQuaternion (100,000)                             0.654     5.847     0.723        8.94x      1.11x
+Matrix4.multiplyMatrices (100,000)                            4.750    12.552     6.506        2.64x      1.37x
+Matrix4.invert, copy + invert (100,000)                       6.003    11.317     5.431        1.89x      0.90x
+getter v.x (100,000)                                          1.564     2.384     1.254        1.52x      0.80x
+10,000 objects: math per object, set transforms, update       6.122     3.802     1.390        0.62x      0.23x
+
+x/three: below 1 means faster than three.js.

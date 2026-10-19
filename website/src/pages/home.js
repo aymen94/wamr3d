@@ -1,6 +1,6 @@
 import { button, codeBlock, eyebrow, icon, installChip, miniCube, repoFile, sectionHead, shell } from '../components/ui.js';
 import { showcaseChart } from '../components/charts.js';
-import { engines, lowLevel, meta, showcase, startup } from '../data/benchmarks.js';
+import { engines, lowLevel, mathMix, meta, resolutions, showcase, startup } from '../data/benchmarks.js';
 
 // The home page quotes one resolution; the benchmarks page has all of them.
 const HEADLINE = '1280x720';
@@ -140,7 +140,7 @@ function features() {
         ${card('md:col-span-2', 'Object API', 'A familiar way to build scenes.', 'Use three.js-style classes and chaining for supported scene, object, camera, geometry, material and math APIs. Object transforms stay in JavaScript and synchronize with the engine in batches.')}
         ${card('md:col-span-2', 'Batched API', 'Fewer calls for large scenes.', 'Use generational handles and batched operations when many objects change each frame. Geometry and world-matrix data can be read through typed-array views over engine memory.')}
         ${card('md:col-span-2', 'Parity', 'Behavior checked against three.js.', 'The repository includes thousands of generated value checks and stored visual comparisons. See the implementation status and migration guide for current support and known differences.')}
-        ${card('md:col-span-6', 'Current scope', 'Release 0.9.1', 'WAMR3D 0.9.1 covers three.js\'s scene graph, built-in materials, lights, shadows, animation, loaders and the common add-ons, but it is not a complete replacement: TSL node materials are not ported, and GLSL shader materials draw only on WebGL 2. Check the repository status for the full list of limits.')}
+        ${card('md:col-span-6', 'Current scope', 'Release 0.9.2', 'WAMR3D 0.9.2 covers three.js\'s scene graph, built-in materials, lights, shadows, animation, loaders and the common add-ons, but it is not a complete replacement: TSL node materials are not ported, and GLSL shader materials draw only on WebGL 2. Check the repository status for the full list of limits.')}
       </div>
     </div>
   </section>`;
@@ -170,6 +170,14 @@ function performance() {
   const sep = showcase[HEADLINE].objects[10000], inst = showcase[HEADLINE].instanced[50000];
   const res = HEADLINE.replace('x', '×');
   const mathSlowdown = lowLevel.filter(([name]) => /^(Matrix4|Vector3)\./.test(name)).map(([, three, wamr]) => wamr / three);
+  const threeUpdate = Math.min(inst.webgl.update, inst.webgpu.update);
+  const mixed = mathMix.find(([name]) => name.startsWith('10,000 objects'));
+  const glRatio = sep['batched-webgl'] ? sep['batched-webgl'].fps / sep.webgl.fps : null;
+  const cpu = (x) => (x.update + x.submit).toFixed(1);
+  const gpuName = meta.gpu.match(/^ANGLE \([^,]+, (.+?) \(0x/)?.[1] ?? meta.gpu;
+  // The largest canvas where WAMR3D WebGPU drew 10,000 separate meshes slower than three.js WebGL.
+  const slowRes = [...resolutions].reverse().find((r) => { const x = showcase[r]?.objects?.[10000]; return x?.batched && x?.webgl && x.batched.fps < x.webgl.fps / 1.05; });
+  const slow = slowRes ? showcase[slowRes].objects[10000] : null;
   const stat = (value, unit, label, detail) => `<div class="glass gradient-border rounded-3xl p-7" data-reveal>
     <p class="font-display text-5xl font-semibold tracking-tight text-white">${value}<span class="ml-1 text-2xl text-slate-400">${unit}</span></p>
     <p class="mt-3 font-semibold text-slate-200">${label}</p>
@@ -180,14 +188,14 @@ function performance() {
       ${sectionHead({ label: 'Measured, not promised', title: 'Batch the work.<br><span class="text-gradient">See the difference.</span>', intro: `The same scene, ${engines.length} renderers, one engine at a time. Medians from a single run on one machine; higher is better in every figure here. Open the showcase to measure yours.` })}
       <div class="mb-8 grid gap-5 ${sep['batched-webgl'] ? 'md:grid-cols-2 lg:grid-cols-4' : 'md:grid-cols-3'}">
         ${stat(sep.batched.fps.toFixed(0), 'fps', `10,000 separate meshes at ${res}`, `WAMR3D batched. three.js ran at ${sep.webgl.fps.toFixed(1)} fps with WebGL and ${sep.webgpu.fps.toFixed(1)} fps with WebGPU.`)}
-        ${stat(inst.batched.fps.toFixed(0), 'fps', `50,000 instanced bodies at ${res}`, `WAMR3D batched. three.js ran at ${inst.webgl.fps.toFixed(1)} fps with WebGL and ${inst.webgpu.fps.toFixed(1)} fps with WebGPU; its scene update took ${inst.webgl.update.toFixed(0)} to ${inst.webgpu.update.toFixed(0)} ms against ${inst.batched.update.toFixed(1)} ms.`)}
+        ${stat((threeUpdate / inst.batched.update).toFixed(1), '× faster', `Scene update, 50,000 instanced bodies at ${res}`, `WAMR3D batched updated the scene in ${inst.batched.update.toFixed(1)} ms; three.js took ${inst.webgl.update.toFixed(1)} ms with WebGL and ${inst.webgpu.update.toFixed(1)} ms with WebGPU. With five draw calls the frame rates were close: ${inst.batched.fps.toFixed(1)}, ${inst.webgl.fps.toFixed(1)} and ${inst.webgpu.fps.toFixed(1)} fps.`)}
         ${stat((sep.webgl.submit / sep.batched.submit).toFixed(1), '× faster', 'Draw submission than three.js WebGL', `10,000 separate meshes at ${res}: ${sep.batched.submit.toFixed(1)} ms of CPU time per frame against ${sep.webgl.submit.toFixed(1)} ms. Computed from the measured medians.`)}
-        ${sep['batched-webgl'] ? stat(sep['batched-webgl'].fps.toFixed(0), 'fps', `The same 10,000 meshes on WebGL 2`, `WAMR3D batched on its WebGL 2 renderer, for machines without WebGPU: ${(sep['batched-webgl'].fps / sep.webgl.fps).toFixed(1)}× the frame rate of three.js WebGL (${sep.webgl.fps.toFixed(1)} fps) on the same graphics API.`) : ''}
+        ${sep['batched-webgl'] ? stat(sep['batched-webgl'].fps.toFixed(0), 'fps', `The same 10,000 meshes on WebGL 2`, `WAMR3D batched on its WebGL 2 renderer, for machines without WebGPU: ${Math.abs(glRatio - 1) < 0.05 ? 'about the frame rate' : `${glRatio.toFixed(1)}× the frame rate`} of three.js WebGL (${sep.webgl.fps.toFixed(1)} fps) on the same graphics API, with ${cpu(sep['batched-webgl'])} ms of CPU per frame against ${cpu(sep.webgl)} ms.`) : ''}
       </div>
       <div data-reveal>${showcaseChart('objects', 10000, HEADLINE)}</div>
       <div class="mt-8 grid grid-cols-1 gap-5 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-        <p class="text-sm leading-relaxed text-slate-400" data-reveal><strong class="text-slate-200">Where it is slower:</strong> the object API keeps vectors, matrices, quaternions and colours in plain JavaScript, but the low-level engine classes cross into WebAssembly on every call, which has a fixed cost. ${mathSlowdown.length ? `Single low-level math calls measured ${Math.min(...mathSlowdown).toFixed(1)}× to ${Math.max(...mathSlowdown).toFixed(1)}× slower than three.js.` : ''} GPU time is not measured; it only shows in the frame rate.</p>
-        <p class="font-mono text-[11px] leading-relaxed text-slate-400 md:text-right" data-reveal>${meta.cpu}, ${meta.gpu.replace(/ \(0x.*$/, '')}, ${meta.chrome} headless, ${meta.os}.<br>Every chart comes from one run on ${meta.date}.${meta.dir ? ` Raw logs: <a class="text-brand-cyan hover:text-white" href="${repoFile(meta.dir)}" target="_blank" rel="noreferrer">${meta.dir}</a>.` : ''}</p>
+        <p class="text-sm leading-relaxed text-slate-400" data-reveal><strong class="text-slate-200">Where it is slower:</strong> the object API keeps vectors, matrices, quaternions and colours in plain JavaScript, but the low-level engine classes cross into WebAssembly on every call, which has a fixed cost. ${mathSlowdown.length ? `Single low-level math calls measured ${Math.min(...mathSlowdown).toFixed(1)}× to ${Math.max(...mathSlowdown).toFixed(1)}× slower than three.js.` : ''}${mixed ? ` For per-value math next to the low-level API, use the JavaScript values of <code class="font-mono">wamr3d/math</code> and send results in one batched call: that updated 10,000 objects in ${mixed[3].toFixed(2)} ms, against ${mixed[1].toFixed(2)} ms for three.js.` : ''} ${slow ? ` At ${slowRes.replace('x', '×')}, WAMR3D's WebGPU renderer drew the 10,000 separate meshes at ${slow.batched.fps.toFixed(1)} fps against ${slow.webgl.fps.toFixed(1)} for three.js WebGL${slow.batched.update + slow.batched.submit < slow.webgl.update + slow.webgl.submit ? ', while spending less CPU time, which points to GPU time' : ''}.` : ''} GPU time is not measured; it only shows in the frame rate.</p>
+        <p class="font-mono text-[11px] leading-relaxed text-slate-400 md:text-right" data-reveal>${meta.cpu}, ${gpuName}, ${meta.chrome} headless, ${meta.os}.<br>Every chart comes from one run on ${meta.date}.${meta.dir ? ` Raw logs: <a class="text-brand-cyan hover:text-white" href="${repoFile(meta.dir)}" target="_blank" rel="noreferrer">${meta.dir}</a>.` : ''}</p>
       </div>
       <div class="mt-8" data-reveal>${button('#/benchmarks', 'All benchmark results', 'secondary')}</div>
     </div>

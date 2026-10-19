@@ -1,6 +1,6 @@
 {
   "name": "wamr3d",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "WAMR3D: a 3D engine core in WebAssembly",
   "license": "MIT",
   "private": false,
@@ -31,6 +31,10 @@
       "types": "./compat.d.ts",
       "default": "./compat.js"
     },
+    "./math": {
+      "types": "./math.d.ts",
+      "default": "./math.js"
+    },
     "./wamr3d_wasm_bg.wasm": "./wamr3d_wasm_bg.wasm",
     "./addons/*": "./addons/*"
   },
@@ -40,6 +44,8 @@
     "index.d.ts",
     "compat.js",
     "compat.d.ts",
+    "math.js",
+    "math.d.ts",
     "types/",
     "compat/",
     "webgpu.js",

@@ -43,6 +43,8 @@ Shaders are built for the features each material uses, on the first frame that d
 
 Import from `wamr3d` for the handle-based API. It is designed for batched updates; math values use 32-bit floats and methods mutate in place without chaining. Call `.free()` on owned wrapper objects when finished and dispose geometries and materials explicitly. Typed-array views into Wasm memory must be refreshed after memory growth.
 
+Each call on the low-level math classes crosses into WebAssembly. For per-value math, use `wamr3d/math`: the object API's `Vector2/3/4`, `Quaternion`, `Euler`, `Matrix3/4`, `Box3` and `Sphere` as plain JavaScript values, without the rest of the object API and without `init()`. Write the results into one typed array and send it in one call such as `world.setTransforms`.
+
 ## Compatibility and current limits
 
 WAMR3D covers the scene graph, math, built-in objects, materials, loaders, animation, controls, post-processing and rendering features listed in the project README. GLSL `ShaderMaterial` is supported by the WebGL 2 renderer; on WebGPU it draws unlit. TSL is not supported. Other known gaps and backend differences are documented in the status page.

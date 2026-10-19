@@ -5,6 +5,8 @@
 //   tsc -p parity/bindings
 
 import * as THREE from '../../dist/wamr3d/compat.js';
+import { init, World } from '../../dist/wamr3d/index.js';
+import { Vector3, Quaternion, Matrix4 } from '../../dist/wamr3d/math.js';
 
 export async function main( canvas: HTMLCanvasElement ): Promise<void> {
 
@@ -107,5 +109,28 @@ export async function main( canvas: HTMLCanvasElement ): Promise<void> {
 		renderer.render( scene, camera );
 
 	} );
+
+}
+
+// Low-level API with JavaScript math values: per-object math in JavaScript, one batched
+// call into the engine.
+export async function mixed(): Promise<void> {
+
+	await init();
+	const world = new World();
+	const handles = world.createObjects( 100 );
+	const transforms = new Float32Array( handles.length * 10 );
+	const p = new Vector3(), q = new Quaternion(), axis = new Vector3( 0, 1, 0 ), m: Matrix4 = new Matrix4();
+	for ( let i = 0; i < handles.length; i ++ ) {
+
+		p.set( i, 0, 0 ).applyMatrix4( m );
+		q.setFromAxisAngle( axis, i * 0.1 );
+		const o = i * 10;
+		transforms[ o ] = p.x; transforms[ o + 1 ] = p.y; transforms[ o + 2 ] = p.z;
+		transforms[ o + 3 ] = q.x; transforms[ o + 4 ] = q.y; transforms[ o + 5 ] = q.z; transforms[ o + 6 ] = q.w;
+		transforms[ o + 7 ] = transforms[ o + 8 ] = transforms[ o + 9 ] = 1;
+
+	}
+	world.setTransforms( handles, transforms );
 
 }

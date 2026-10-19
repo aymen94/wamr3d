@@ -8,5 +8,5 @@
 		"noEmit": true,
 		"skipLibCheck": false
 	},
-	"files": [ "typecheck.ts", "../../dist/wamr3d/compat.d.ts", "../../dist/wamr3d/index.d.ts" ]
+	"files": [ "typecheck.ts", "../../dist/wamr3d/compat.d.ts", "../../dist/wamr3d/index.d.ts", "../../dist/wamr3d/math.d.ts" ]
 }

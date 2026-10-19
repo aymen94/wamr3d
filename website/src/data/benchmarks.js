@@ -79,4 +79,7 @@ export const startup = {"wamrImport":20,"wasmKiB":748,"wamrInit":25.7};
 // node bench/compat.mjs: [workload, three.js median ms, WAMR3D median ms].
 export const objectApi = [["math: vector chain (set, applyQuaternion, add, normalize, dot)",2.257,2.191],["math: new Vector3 per operation (allocation churn)",0.803,0.819],["math: Matrix4 compose, multiply, invert",3.011,3.233],["math: Quaternion.setFromEuler + slerp",10.974,10.969],["math: Box3.expandByPoint + Sphere.containsPoint",0.822,0.82],["math: Color.setHSL + lerp",4.298,3.791],["scene: 10,000 meshes, set rotation + position.y, updateMatrixWorld",4.091,2.616],["scene: 10,000 meshes, rotation.y += and position.x read",4.166,2.118],["scene: read matrixWorld.elements of 10,000 meshes",0.325,0.293],["scene: getWorldPosition of 10,000 meshes",2.889,2.497],["scene: object.lookAt on 10,000 meshes",5.08,2.853],["scene: create + add + remove 10,000 meshes",32.155,28.523],["picking: 100 rays against 1,000 boxes",6.137,7.071]];
 
+// node bench/math.mjs: [workload, three.js ms, low-level Wasm math classes ms, wamr3d/math ms].
+export const mathMix = [["Vector3.applyMatrix4 (100,000)",0.715,3.643,0.618],["Vector3.applyQuaternion (100,000)",0.654,5.847,0.723],["Matrix4.multiplyMatrices (100,000)",4.75,12.552,6.506],["Matrix4.invert, copy + invert (100,000)",6.003,11.317,5.431],["getter v.x (100,000)",1.564,2.384,1.254],["10,000 objects: math per object, set transforms, update",6.122,3.802,1.39]];
+
 export const failures = [];

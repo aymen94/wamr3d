@@ -1,6 +1,6 @@
 import { button, codeBlock, more, pageIntro, repoFile, sectionHead, shell } from '../components/ui.js';
 import { better, showcaseChart, speedTable } from '../components/charts.js';
-import { compare, failures, lowLevel, meta, objectApi, resolutions, startup } from '../data/benchmarks.js';
+import { compare, failures, lowLevel, mathMix, meta, objectApi, resolutions, startup } from '../data/benchmarks.js';
 import { findings } from '../data/findings.js';
 
 const th = 'py-3 pr-4 font-medium';
@@ -11,6 +11,47 @@ const resLabel = (r) => r.replace('x', '×');
 const compareOrder = ['api', 'native', 'api-webgl', 'native-webgl', 'three-webgpu', 'three-webgl', 'wamr3d', 'three'];
 const compareNames = { wamr3d: 'WAMR3D transforms, three.js WebGL renderer', three: 'three.js transforms, three.js WebGL renderer' };
 const compareName = (k) => compareNames[k.engine] ?? k.name;
+
+// bench/math.mjs: the same math as low-level Wasm classes and as `wamr3d/math` values.
+function mathMixSection() {
+  if (!mathMix.length) return '';
+  const single = mathMix.slice(0, -1), whole = mathMix[mathMix.length - 1];
+  const ratio = (a, b) => (a / b).toFixed(1);
+  const range = (values) => { const lo = Math.min(...values).toFixed(2), hi = Math.max(...values).toFixed(2); return lo === hi ? lo : `${lo} to ${hi}`; };
+  const cell = (ms, three) => `<td class="${td} text-right font-mono tabular-nums ${ms < three / 1.05 ? 'text-emerald-300' : ms > three * 1.05 ? 'text-slate-300' : 'text-slate-200'}">${ms.toFixed(2)} <span class="text-[11px] text-slate-400">(${(ms / three).toFixed(2)}×)</span></td>`;
+  const rows = mathMix.map(([name, three, wasm, js]) => `<tr class="border-t border-white/5"><td class="${td} pl-3 text-slate-300">${name}</td><td class="${td} text-right font-mono tabular-nums text-slate-400">${three.toFixed(2)}</td>${cell(wasm, three)}${cell(js, three)}</tr>`).join('');
+  const intro = `Small calls cost more across the WebAssembly boundary than they do in JavaScript: single operations on the low-level Wasm classes took ${range(single.map(([, t, w]) => w / t))}× three.js's time, the same operations as <code class="font-mono">wamr3d/math</code> values ${range(single.map(([, t, , j]) => j / t))}×. Mixing the two wins: math per object in JavaScript, then one batched call, updated ${whole[0].match(/^[\d,]+/)?.[0] ?? '10,000'} objects in ${whole[3].toFixed(2)} ms, against ${whole[1].toFixed(2)} ms for three.js (${ratio(whole[1], whole[3])}× faster) and ${whole[2].toFixed(2)} ms with every vector in WebAssembly.`;
+  return `<section class="mx-auto max-w-6xl px-6 py-24">
+      ${sectionHead({ label: 'Mix the two', title: 'JavaScript for values, WebAssembly for the scene', intro })}
+      <div class="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+        <div class="glass min-w-0 overflow-x-auto rounded-3xl p-2 sm:p-4" data-reveal><table class="w-full min-w-[34rem] text-left text-sm"><caption class="sr-only">Math in JavaScript and in WebAssembly against three.js, milliseconds</caption>
+          <thead class="font-mono text-[11px] uppercase tracking-wider text-slate-400"><tr><th class="${th} pl-3">Workload</th><th class="${th} text-right">three.js ms</th><th class="${th} text-right">Wasm classes ms</th><th class="${th} text-right">wamr3d/math ms</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+          <p class="px-3 pb-2 pt-3 text-xs text-slate-400">Lower is better; in brackets, the time against three.js. Node.js, each library in its own process, median of 25 (<code class="font-mono">bench/math.mjs</code>).</p></div>
+        <div class="min-w-0" data-reveal>${codeBlock(`import { init, World } from 'wamr3d';
+import { Vector3, Quaternion } from 'wamr3d/math'; // JavaScript values
+
+await init();
+const world = new World();
+const handles = world.createObjects( 10000 );
+const transforms = new Float32Array( handles.length * 10 );
+const p = new Vector3(), q = new Quaternion(), up = new Vector3( 0, 1, 0 );
+
+function frame( t ) {
+  for ( let i = 0, o = 0; i < handles.length; i ++, o += 10 ) {
+    p.set( i * 0.01, 0, 0 );              // math: JavaScript
+    q.setFromAxisAngle( up, t + i * 1e-4 );
+    transforms[ o ] = p.x; transforms[ o + 1 ] = p.y; transforms[ o + 2 ] = p.z;
+    transforms[ o + 3 ] = q.x; transforms[ o + 4 ] = q.y; transforms[ o + 5 ] = q.z; transforms[ o + 6 ] = q.w;
+    transforms[ o + 7 ] = transforms[ o + 8 ] = transforms[ o + 9 ] = 1;
+  }
+  world.setTransforms( handles, transforms ); // one call into the engine
+}`, { title: 'mixed.js' })}</div>
+      </div>
+    </section>
+
+`;
+}
 
 function compareRows() {
   const keys = [...new Map(resolutions.flatMap((r) => (compare[r] ?? []).map((x) => [`${x.objects}|${x.engine}`, x]))).values()]
@@ -79,11 +120,11 @@ export function benchmarks() {
 
     <section class="mx-auto max-w-6xl px-6 py-24">
       ${sectionHead({ label: 'Low-level API', title: 'Where WebAssembly pays', intro: `${matrixNote} The table also shows where individual calls cost more across the Wasm boundary.` })}
-      <div data-reveal>${speedTable(lowLevel, 'Low-level API benchmark: WAMR3D speed against three.js')}</div>
+      <div data-reveal>${speedTable(lowLevel, 'Low-level API benchmark: WAMR3D speed against three.js', { unranked: (name) => name.startsWith('scene: create + parent + destroy') })}</div>
       ${more('Details', `<p>Node.js, no GPU, 5 warm-up runs and 25 samples per workload (<code class="font-mono">bench/bench.mjs</code>).${startup ? ` Compiling and instantiating ${startup.wasmKiB} KiB of WebAssembly took ${startup.wamrInit} ms.` : ''}</p><p class="mt-2">The create + parent + destroy row is not an equal comparison: three.js leaves freeing to the garbage collector, outside the timed region. Read it as “object churn is cheap here”, not as a speed-up.</p>`)}
     </section>
 
-    <section class="mx-auto max-w-6xl px-6 py-24">
+    ${mathMixSection()}<section class="mx-auto max-w-6xl px-6 py-24">
       ${sectionHead({ label: 'Object API', title: 'The three.js-style classes', intro: 'Scene work is faster; math values are plain JavaScript, as in three.js, and take about the same time. Each library runs in its own Node.js process.' })}
       <div data-reveal>${speedTable(objectApi, 'Object API benchmark: WAMR3D speed against three.js')}</div>
       ${more('Details', '<p>The same application code run against <code class="font-mono">wamr3d/compat</code> and three.js in Node.js, median of 21 (<code class="font-mono">bench/compat.mjs</code>). Use the math classes for convenience rather than speed: each call crosses into WebAssembly.</p>')}
