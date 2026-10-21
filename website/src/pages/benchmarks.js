@@ -8,7 +8,7 @@ const td = 'py-2.5 pr-4';
 const resLabel = (r) => r.replace('x', '×');
 
 // Rows that run on their own renderer, in a fixed order; the adapter pair is the transform-only baseline.
-const compareOrder = ['api', 'native', 'api-webgl', 'native-webgl', 'three-webgpu', 'three-webgl', 'wamr3d', 'three'];
+const compareOrder = ['api', 'native', 'native-mix', 'api-webgl', 'native-webgl', 'native-mix-webgl', 'three-webgpu', 'three-webgl', 'wamr3d', 'three'];
 const compareNames = { wamr3d: 'WAMR3D transforms, three.js WebGL renderer', three: 'three.js transforms, three.js WebGL renderer' };
 const compareName = (k) => compareNames[k.engine] ?? k.name;
 
@@ -74,8 +74,10 @@ function compareTable() {
     const x = find(r, k);
     return x ? `<td class="${td} text-right font-mono tabular-nums text-slate-300">${(x.update + x.submit).toFixed(1)}</td>` : `<td class="${td} text-center text-slate-400">–</td>`;
   };
-  const head = (unit) => `<thead class="font-mono text-[11px] uppercase tracking-wider text-slate-400"><tr><th class="${th} pl-3">Objects</th><th class="${th}">Engine</th>${resolutions.map((r) => `<th class="${th}">${resLabel(r)} ${unit}</th>`).join('')}</tr></thead>`;
-  const rowsHtml = (cell) => keys.map((k) => `<tr class="border-t border-white/5 ${k.name.startsWith('WAMR3D') ? 'bg-white/[0.02]' : ''}"><td class="${td} pl-3 font-mono text-slate-400">${k.objects.toLocaleString('en-US')}</td><td class="${td} text-slate-300">${compareName(k)}</td>${resolutions.map((r) => cell(r, k)).join('')}</tr>`).join('');
+  // Only the sizes the comparison scene was run at.
+  const sizes = resolutions.filter((r) => compare[r]?.length);
+  const head = (unit) => `<thead class="font-mono text-[11px] uppercase tracking-wider text-slate-400"><tr><th class="${th} pl-3">Objects</th><th class="${th}">Engine</th>${sizes.map((r) => `<th class="${th}">${resLabel(r)} ${unit}</th>`).join('')}</tr></thead>`;
+  const rowsHtml = (cell) => keys.map((k) => `<tr class="border-t border-white/5 ${k.name.startsWith('WAMR3D') ? 'bg-white/[0.02]' : ''}"><td class="${td} pl-3 font-mono text-slate-400">${k.objects.toLocaleString('en-US')}</td><td class="${td} text-slate-300">${compareName(k)}</td>${sizes.map((r) => cell(r, k)).join('')}</tr>`).join('');
   return `<div class="glass relative overflow-x-auto rounded-3xl p-2 sm:p-4">
     <div class="flex items-center justify-between gap-3 px-3 pt-2"><p class="text-sm font-semibold text-white">Frames per second</p>${better('higher')}</div>
     <table class="mt-2 w-full min-w-[52rem] text-left text-sm"><caption class="sr-only">Comparison scene: frames per second per resolution</caption>${head('fps')}<tbody>${rowsHtml(fpsCell)}</tbody></table>
@@ -90,11 +92,12 @@ export function benchmarks() {
   const logs = meta.dir ? repoFile(meta.dir) : null;
   const canvasNote = resolutions.map((r) => `${resLabel(r)} → ${(meta.canvases[r] ?? ['not recorded']).map(resLabel).join(', ')}`).join('; ');
   const matrixReadback = lowLevel.find(([name]) => name === 'scene: read back 10,000 world matrices into one Float32Array');
-  const webgpuAt10k = compare['1280x720'] ?? [];
+  const compareRes = resolutions.find((r) => compare[r]?.length);
+  const webgpuAt10k = compare[compareRes] ?? [];
   const wamrSubmission = webgpuAt10k.find((row) => row.engine === 'native' && row.objects >= 10000);
   const threeSubmission = webgpuAt10k.find((row) => row.engine === 'three-webgpu' && row.objects >= 10000);
   const matrixNote = matrixReadback ? `Reading 10,000 world matrices into one Float32Array took ${matrixReadback[2]} ms in WAMR3D against ${matrixReadback[1]} ms in three.js (${(matrixReadback[1] / matrixReadback[2]).toFixed(1)}× faster).` : 'Reading world matrices into one Float32Array is measured below.';
-  const submissionNote = wamrSubmission && threeSubmission ? `At about 10,000 objects and 1280×720, WAMR3D WebGPU submitted a frame ${(threeSubmission.submit / wamrSubmission.submit).toFixed(1)}× faster than three.js WebGPU (${wamrSubmission.submit.toFixed(1)} ms against ${threeSubmission.submit.toFixed(1)} ms).` : 'The table compares frame timing at each available resolution.';
+  const submissionNote = wamrSubmission && threeSubmission ? `At about 10,000 objects and ${resLabel(compareRes)}, WAMR3D WebGPU submitted a frame ${(threeSubmission.submit / wamrSubmission.submit).toFixed(1)}× faster than three.js WebGPU (${wamrSubmission.submit.toFixed(1)} ms against ${threeSubmission.submit.toFixed(1)} ms).` : 'The table compares frame timing at each available resolution.';
   const setup = [
     ['Hardware', `${meta.cpu}; ${meta.gpu}`],
     ['Browser and OS', `${meta.chrome}, headless (<code class="font-mono">--headless=new</code>, GPU enabled, ANGLE on Direct3D 11), ${meta.os}; Node.js ${meta.node}`],
@@ -102,9 +105,10 @@ export function benchmarks() {
     ['Resolution requested → canvas drawn', canvasNote],
     ['What is timed', 'CPU time in JavaScript, 0.1 ms resolution. GPU time is not measured; it shows only in the frame rate, which the display caps at 60.'],
     ['Method', `One run per configuration, medians, nothing estimated.`],
-    ['Failed configurations', failures.length ? failures.join('; ') : 'None: every configuration produced results.']
+    ['Failed configurations', failures.length ? failures.join('; ') : 'None: every configuration produced results.'],
+    ...(meta.skipped?.length ? [['Not run in this run', meta.skipped.map((f) => `<code class="font-mono">${f}</code>`).join(', ')]] : [])
   ];
-  return shell(`${pageIntro({ label: 'Benchmarks', title: 'Measured, <span class="text-gradient">with context.</span>', intro: `One machine, one complete run of the WAMR3D 0.9.2 engine at four resolutions: browser suites on ${meta.recorded?.browser?.join(', ') ?? meta.date}, Node.js suites on ${meta.recorded?.node?.join(', ') ?? meta.date}. The raw logs are in <code class="font-mono">${meta.dir}/</code>. <strong class="text-white">Longer bars are better.</strong>` })}
+  return shell(`${pageIntro({ label: 'Benchmarks', title: 'Measured, <span class="text-gradient">with context.</span>', intro: `One machine, one run of the WAMR3D 0.9.3 engine at ${resolutions.map(resLabel).join(' and ')}: browser suites on ${meta.recorded?.browser?.join(', ') ?? meta.date}, Node.js suites on ${meta.recorded?.node?.join(', ') ?? meta.date}. The raw logs are in <code class="font-mono">${meta.dir}/</code>. <strong class="text-white">Longer bars are better.</strong>` })}
   <div class="relative bg-gradient-to-b from-transparent via-ink-950/85 to-ink-950">
     <section class="mx-auto max-w-6xl px-6 pb-24">
       ${more('Test setup', `<div class="glass grid gap-5 rounded-3xl p-6 sm:grid-cols-2 lg:grid-cols-3">${setup.map(([k, v]) => `<div><p class="font-mono text-[11px] uppercase tracking-wider text-slate-400">${k}</p><p class="mt-1 text-slate-200">${v}</p></div>`).join('')}</div>`, '-mt-8 mb-14')}
@@ -143,8 +147,8 @@ node examples/compare/measure.mjs --gpu --size=1280x720
 node bench/bench.mjs                     # needs npm install (the pinned three)
 node bench/compat.mjs
 
-# logs saved per size in bench/results/<date>/, then:
-node website/scripts/benchmark-data.mjs bench/results/<date>`, { title: 'terminal', language: 'sh' })}</div>
+# logs replace the last run in bench/results/, then:
+node website/scripts/benchmark-data.mjs`, { title: 'terminal', language: 'sh' })}</div>
         <div class="space-y-4 text-slate-400" data-reveal>
           <p>Or open the <a class="text-brand-cyan hover:text-white" href="./examples/showcase/" target="_blank" rel="noreferrer">live showcase</a> and press “Compare all eight paths”.</p>
           <p>Close other headless browsers first: leftovers can slow every engine by 20–50%.</p>

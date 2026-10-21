@@ -86,7 +86,7 @@ function scalingPanel(mode, count) {
     }).join('')}</div>
   </div>`).join('');
   return `<figure class="rounded-2xl bg-ink-950/50 p-4 ring-1 ring-white/5">
-    ${panelHead('Frames per second at each resolution', 'higher', 'fps · same scene, four canvas sizes')}
+    ${panelHead('Frames per second at each resolution', 'higher', `fps · same scene, ${resolutions.length} canvas sizes`)}
     <div class="space-y-4">${rows}</div>
   </figure>`;
 }
@@ -154,7 +154,7 @@ export function showcaseChart(mode = 'objects', count = 10000, resolution = defa
   return `<div class="glass rounded-3xl p-5 sm:p-8" data-chart data-mode="${mode}" data-count="${count}" data-resolution="${resolution}">
     <div class="mb-6 flex flex-col gap-4">
       <div>
-        <h3 class="font-display text-xl font-semibold text-white">The showcase scene, four renderers</h3>
+        <h3 class="font-display text-xl font-semibold text-white">The showcase scene, ${engines.length} renderers</h3>
         <p class="mt-1 text-sm text-slate-400">Sun, belts, clusters and bodies: a four-level scene graph where every rotation changes each frame. Longer bars are better in the two frame-rate charts; the CPU chart below them is marked separately.</p>
       </div>
       <div class="flex flex-wrap gap-2">

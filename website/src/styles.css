@@ -48,6 +48,8 @@
     --color-series-4: #c98500;
     --color-series-5: #9b72e0;
     --color-series-6: #d4589a;
+    --color-series-7: #3fb0c6;
+    --color-series-8: #a4a63a;
     --code-keyword: #c792ff; --code-string: #7ee7c7; --code-comment: #6b7394; --code-number: #ffb86b;
     --code-removed: #ff8b8b; --code-added: #8bffb7;
     --scrollbar-thumb: #2a3156;
@@ -78,6 +80,8 @@
     --color-series-4: #eda100;
     --color-series-5: #8257d1;
     --color-series-6: #c94489;
+    --color-series-7: #128ea3;
+    --color-series-8: #7d7f17;
     --code-keyword: #7c3aed; --code-string: #047857; --code-comment: #6b7280; --code-number: #b45309;
     --code-removed: #b42318; --code-added: #067647;
     --scrollbar-thumb: #c3cadb;

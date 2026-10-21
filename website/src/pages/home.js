@@ -1,7 +1,7 @@
 import { button, codeBlock, eyebrow, icon, installChip, miniCube, repoFile, sectionHead, shell } from '../components/ui.js';
 import { showcaseChart } from '../components/charts.js';
 import { engines, lowLevel, mathMix, meta, resolutions, showcase, startup } from '../data/benchmarks.js';
-import { frameRateLead, headlineDetail, submissionLead } from '../data/headline.js';
+import { frameRateLead, headlineDetail, leads } from '../data/headline.js';
 
 // The home page quotes one resolution; the benchmarks page has all of them.
 const HEADLINE = '1280x720';
@@ -142,7 +142,7 @@ function features() {
         ${card('md:col-span-2', 'Object API', 'A familiar way to build scenes.', 'Use three.js-style classes and chaining for supported scene, object, camera, geometry, material and math APIs. Object transforms stay in JavaScript and synchronize with the engine in batches.')}
         ${card('md:col-span-2', 'Batched API', 'Fewer calls for large scenes.', 'Use generational handles and batched operations when many objects change each frame. Geometry and world-matrix data can be read through typed-array views over engine memory.')}
         ${card('md:col-span-2', 'Parity', 'Behavior checked against three.js.', 'The repository includes thousands of generated value checks and stored visual comparisons. See the implementation status and migration guide for current support and known differences.')}
-        ${card('md:col-span-6', 'Current scope', 'Release 0.9.2', 'WAMR3D 0.9.2 covers three.js\'s scene graph, built-in materials, lights, shadows, animation, loaders and the common add-ons, but it is not a complete replacement: TSL node materials are not ported, and GLSL shader materials draw only on WebGL 2. Check the repository status for the full list of limits.')}
+        ${card('md:col-span-6', 'Current scope', 'Release 0.9.3', 'WAMR3D 0.9.3 covers three.js\'s scene graph, built-in materials, lights, shadows, animation, loaders and the common add-ons, but it is not a complete replacement: TSL node materials are not ported, and GLSL shader materials draw only on WebGL 2. Check the repository status for the full list of limits.')}
       </div>
     </div>
   </section>`;
@@ -172,13 +172,19 @@ function pipeline() {
 function speedBanner() {
   if (!frameRateLead) return '';
   const lead = frameRateLead.ratio.toFixed(1);
-  const submit = submissionLead ? ` Draw submission up to ${submissionLead.ratio.toFixed(1)}× faster (${submissionLead.count.toLocaleString('en-US')} objects at ${submissionLead.resolution}: ${submissionLead.wamr.toFixed(1)} ms against ${submissionLead.three.toFixed(1)} ms).` : '';
-  return `<a href="#/benchmarks" class="group mt-7 flex max-w-xl items-center gap-4 rounded-2xl border border-brand-cyan/30 bg-brand-cyan/[0.07] px-5 py-4 transition hover:border-brand-cyan/60 hover:bg-brand-cyan/10" aria-label="Renders up to ${lead} times faster than three.js: see the benchmarks">
-          <span class="font-display text-4xl font-semibold leading-none tracking-tight text-white sm:text-5xl">${lead}<span class="text-brand-cyan">×</span></span>
-          <span class="min-w-0">
-            <span class="block font-semibold text-white">Renders up to ${lead}× faster than three.js</span>
-            <span class="mt-1 block text-xs leading-relaxed text-slate-300">${headlineDetail}.${submit} <span class="text-brand-cyan group-hover:text-white">Measured, see the benchmarks →</span></span>
+  const chips = leads.map((x) => `<li class="rounded-xl bg-white/5 px-3 py-2 ring-1 ring-white/10" title="${x.detail}">
+              <span class="font-display text-xl font-semibold text-white">${x.ratio.toFixed(1)}<span class="text-brand-cyan">×</span></span>
+              <span class="block text-[11px] leading-tight text-slate-300">${x.label}</span>
+            </li>`).join('');
+  return `<a href="#/benchmarks" class="group mt-7 block max-w-xl rounded-2xl border border-brand-cyan/30 bg-brand-cyan/[0.07] px-5 py-4 transition hover:border-brand-cyan/60 hover:bg-brand-cyan/10" aria-label="Renders up to ${lead} times faster than three.js: see the benchmarks">
+          <span class="flex items-center gap-4">
+            <span class="font-display text-4xl font-semibold leading-none tracking-tight text-white sm:text-5xl">${lead}<span class="text-brand-cyan">×</span></span>
+            <span class="min-w-0">
+              <span class="block font-semibold text-white">Renders up to ${lead}× faster than three.js</span>
+              <span class="mt-1 block text-xs leading-relaxed text-slate-300">${headlineDetail}. <span class="text-brand-cyan group-hover:text-white">Measured, see the benchmarks →</span></span>
+            </span>
           </span>
+          ${chips ? `<ul class="mt-4 grid grid-cols-3 gap-2" aria-label="Other measured leads over three.js">${chips}</ul>` : ''}
         </a>`;
 }
 

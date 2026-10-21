@@ -1,0 +1,53 @@
+Chrome/156.0.8078.48, Intel(R) Core(TM) i9-10900X CPU @ 3.70GHz; window 1280x720; medians over 4 s after a 1.5 s warm-up; one engine at a time
+update = animation, transforms and world matrices on the CPU; submit = the renderer on the CPU. GPU time is not measured; it only shows in fps (display limit 60).
+
+bodies   drawn as    renderer                           fps   frame ms   update ms   submit ms   draw calls   build ms
+  2000   objects     WAMR3D ┬╖ batched API              60.0       16.7        0.40        2.00         1926        245
+  2000   objects     WAMR3D ┬╖ JS math + WebGPU         60.0       16.7        0.70        2.00         1932         74
+  2000   objects     WAMR3D ┬╖ object API               60.2       16.7        0.60        2.20         1941        189
+  2000   objects     WAMR3D ┬╖ batched API ┬╖ WebGL      60.0       16.7        0.40        2.00         1956         13
+  2000   objects     WAMR3D ┬╖ JS math + WebGL          60.0       16.7        0.70        2.20         1977         13
+  2000   objects     WAMR3D ┬╖ object API ┬╖ WebGL       60.0       16.7        0.60        2.40         1981         22
+  2000   objects     three.js ┬╖ WebGPU                 60.0       16.7        0.90       13.10         1980        204
+  2000   objects     three.js ┬╖ WebGL                  60.0       16.7        0.90        3.50         1980         56
+ 10000   objects     WAMR3D ┬╖ batched API              60.0       16.7        1.70        8.70         9872         57
+ 10000   objects     WAMR3D ┬╖ JS math + WebGPU         60.0       16.7        3.20        9.00         9895         56
+ 10000   objects     WAMR3D ┬╖ object API               60.0       16.7        3.80        9.80         9875         81
+ 10000   objects     WAMR3D ┬╖ batched API ┬╖ WebGL      45.3       16.7        1.60       19.90         9794         21
+ 10000   objects     WAMR3D ┬╖ JS math + WebGL          45.7       16.7        3.10       18.10         9758         24
+ 10000   objects     WAMR3D ┬╖ object API ┬╖ WebGL       45.4       16.7        3.80       17.60         9723         45
+ 10000   objects     three.js ┬╖ WebGPU                 12.2       83.4        5.70       75.90         9714         68
+ 10000   objects     three.js ┬╖ WebGL                  42.1       16.9        4.80       18.60         9700        123
+ 50000   objects     WAMR3D ┬╖ batched API              16.4       66.6        8.60       42.90        48514         82
+ 50000   objects     WAMR3D ┬╖ JS math + WebGPU         16.3       66.6       16.30       43.00        48701        126
+ 50000   objects     WAMR3D ┬╖ object API               13.9       66.7       19.70       51.60        49229        237
+ 50000   objects     WAMR3D ┬╖ batched API ┬╖ WebGL       7.9      133.3        8.90      116.00        49775         65
+ 50000   objects     WAMR3D ┬╖ JS math + WebGL           7.4      133.4       17.10      117.00        49979         47
+ 50000   objects     WAMR3D ┬╖ object API ┬╖ WebGL        6.7      150.1       21.10      126.90        50002        152
+ 50000   objects     three.js ┬╖ WebGPU                  2.2      450.2       24.40      427.40        50003        213
+ 50000   objects     three.js ┬╖ WebGL                   6.8      150.1       24.70      122.70        50002        509
+  2000   instanced   WAMR3D ┬╖ batched API              60.0       16.7        0.50        0.20            5         50
+  2000   instanced   WAMR3D ┬╖ JS math + WebGPU         59.7       16.7        0.80        0.20            5         37
+  2000   instanced   WAMR3D ┬╖ object API               60.0       16.7        1.00        0.50            5         66
+  2000   instanced   WAMR3D ┬╖ batched API ┬╖ WebGL      60.0       16.7        0.40        0.20            5          9
+  2000   instanced   WAMR3D ┬╖ JS math + WebGL          60.0       16.7        0.70        0.20            5         14
+  2000   instanced   WAMR3D ┬╖ object API ┬╖ WebGL       60.0       16.7        1.20        0.40            5         21
+  2000   instanced   three.js ┬╖ WebGPU                 60.0       16.7        1.20        0.60            6         53
+  2000   instanced   three.js ┬╖ WebGL                  60.0       16.7        1.10        0.30            5         37
+ 10000   instanced   WAMR3D ┬╖ batched API              60.0       16.7        2.00        0.50            5         59
+ 10000   instanced   WAMR3D ┬╖ JS math + WebGPU         60.0       16.7        3.70        0.50            5         62
+ 10000   instanced   WAMR3D ┬╖ object API               60.0       16.7        5.20        2.10            5         78
+ 10000   instanced   WAMR3D ┬╖ batched API ┬╖ WebGL      60.0       16.7        2.00        0.40            5         33
+ 10000   instanced   WAMR3D ┬╖ JS math + WebGL          59.7       16.7        3.70        0.40            5         15
+ 10000   instanced   WAMR3D ┬╖ object API ┬╖ WebGL       60.0       16.7        6.00        1.80            5         48
+ 10000   instanced   three.js ┬╖ WebGPU                 60.0       16.7        6.10        1.50            6         61
+ 10000   instanced   three.js ┬╖ WebGL                  60.0       16.7        6.80        1.20            5         52
+ 50000   instanced   WAMR3D ┬╖ batched API              60.0       16.7       10.00        2.10            5         88
+ 50000   instanced   WAMR3D ┬╖ JS math + WebGPU         50.4       16.7       17.10        2.10            5         81
+ 50000   instanced   WAMR3D ┬╖ object API               21.1       50.0       34.60       12.30            5        247
+ 50000   instanced   WAMR3D ┬╖ batched API ┬╖ WebGL      60.0       16.7        9.70        1.30            5         61
+ 50000   instanced   WAMR3D ┬╖ JS math + WebGL          52.4       16.7       17.30        1.40            5         51
+ 50000   instanced   WAMR3D ┬╖ object API ┬╖ WebGL       17.8       50.1       45.40       10.10            5        188
+ 50000   instanced   three.js ┬╖ WebGPU                 21.4       50.0       35.90       10.40            6        187
+ 50000   instanced   three.js ┬╖ WebGL                  19.8       50.0       41.50        8.50            5        209
+canvas 1280x720, device pixel ratio 1
