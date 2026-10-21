@@ -12,6 +12,38 @@ const compareOrder = ['api', 'native', 'native-mix', 'api-webgl', 'native-webgl'
 const compareNames = { wamr3d: 'WAMR3D transforms, three.js WebGL renderer', three: 'three.js transforms, three.js WebGL renderer' };
 const compareName = (k) => compareNames[k.engine] ?? k.name;
 
+// Summaries of a [workload, three.js ms, WAMR3D ms] table, by workload prefix. Speed is three.js's
+// time over WAMR3D's; within 5% counts as the same, as in the table.
+const speedOf = ([, three, wamr]) => three / wamr;
+const speedRange = (rows, slower = false) => {
+  const v = rows.map((r) => (slower ? 1 / speedOf(r) : speedOf(r)));
+  const lo = Math.min(...v).toFixed(1), hi = Math.max(...v).toFixed(1);
+  return lo === hi ? `${lo}×` : `${lo}× to ${hi}×`;
+};
+const byPrefix = (rows, prefixes) => rows.filter(([name]) => prefixes.some((p) => name.startsWith(p)));
+
+function lowLevelIntro() {
+  const work = byPrefix(lowLevel, ['scene:', 'geometry:']).filter(([name]) => !name.startsWith('scene: create + parent + destroy'));
+  const calls = byPrefix(lowLevel, ['Matrix4.', 'Vector3.', 'boundary:']);
+  const faster = lowLevel.filter((r) => speedOf(r) >= 1.05).length;
+  const parts = [`WAMR3D was faster in ${faster} of ${lowLevel.length} workloads.`];
+  if (work.length) parts.push(`Work over many objects or vertices in one call ran ${speedRange(work)} faster than three.js.`);
+  if (calls.length) parts.push(`Single small calls on the low-level classes were ${speedRange(calls, true)} slower: each one crosses the Wasm boundary, so batch them or use <code class="font-mono">wamr3d/math</code>.`);
+  return parts.join(' ');
+}
+
+function objectApiIntro() {
+  const scene = byPrefix(objectApi, ['scene:']), math = byPrefix(objectApi, ['math:']), picking = byPrefix(objectApi, ['picking:']);
+  const fasterScene = scene.filter((r) => speedOf(r) >= 1.05);
+  const parts = [];
+  if (fasterScene.length) parts.push(`Scene work ran ${speedRange(fasterScene)} faster in ${fasterScene.length} of ${scene.length} scene workloads.`);
+  if (math.length) parts.push(`Math values are plain JavaScript, as in three.js, and took ${speedRange(math.map(([n, t, w]) => [n, w, t]))} three.js's time.`);
+  const slowPicks = picking.filter((r) => speedOf(r) < 1 / 1.05);
+  if (slowPicks.length) parts.push(`Picking was ${speedRange(slowPicks, true)} slower.`);
+  parts.push('Each library runs in its own Node.js process.');
+  return parts.join(' ');
+}
+
 // bench/math.mjs: the same math as low-level Wasm classes and as `wamr3d/math` values.
 function mathMixSection() {
   if (!mathMix.length) return '';
@@ -124,15 +156,15 @@ export function benchmarks() {
     </section>
 
     <section class="mx-auto max-w-6xl px-6 py-24">
-      ${sectionHead({ label: 'Low-level API', title: 'Where WebAssembly pays', intro: `${matrixNote} The table also shows where individual calls cost more across the Wasm boundary.` })}
+      ${sectionHead({ label: 'Low-level API', title: 'Where WebAssembly pays', intro: `${lowLevelIntro()} ${matrixNote}` })}
       <div data-reveal>${speedTable(lowLevel, 'Low-level API benchmark: WAMR3D speed against three.js', { unranked: (name) => name.startsWith('scene: create + parent + destroy') })}</div>
       ${more('Details', `<p>Node.js, no GPU, 5 warm-up runs and 25 samples per workload (<code class="font-mono">bench/bench.mjs</code>).${startup ? ` Compiling and instantiating ${startup.wasmKiB} KiB of WebAssembly took ${startup.wamrInit} ms.` : ''}</p><p class="mt-2">The create + parent + destroy row is not an equal comparison: three.js leaves freeing to the garbage collector, outside the timed region. Read it as “object churn is cheap here”, not as a speed-up.</p>`)}
     </section>
 
     ${mathMixSection()}<section class="mx-auto max-w-6xl px-6 py-24">
-      ${sectionHead({ label: 'Object API', title: 'The three.js-style classes', intro: 'Scene work is faster; math values are plain JavaScript, as in three.js, and take about the same time. Each library runs in its own Node.js process.' })}
+      ${sectionHead({ label: 'Object API', title: 'The three.js-style classes', intro: objectApiIntro() })}
       <div data-reveal>${speedTable(objectApi, 'Object API benchmark: WAMR3D speed against three.js')}</div>
-      ${more('Details', '<p>The same application code run against <code class="font-mono">wamr3d/compat</code> and three.js in Node.js, median of 21 (<code class="font-mono">bench/compat.mjs</code>). Use the math classes for convenience rather than speed: each call crosses into WebAssembly.</p>')}
+      ${more('Details', '<p>The same application code run against <code class="font-mono">wamr3d/compat</code> and three.js in Node.js, median of 21 (<code class="font-mono">bench/compat.mjs</code>). The object API\'s vectors, matrices, quaternions and colours are JavaScript values, so their speed follows three.js\'s; the scene graph, world matrices and picking run in WebAssembly.</p>')}
     </section>
 
     <section class="mx-auto max-w-6xl px-6 py-24">
@@ -142,11 +174,14 @@ export function benchmarks() {
 node examples/browser/serve.mjs          # in another terminal
 
 node examples/showcase/check.mjs --measure --size=1280x720
-node examples/showcase/check.mjs --measure --counts=100000 --modes=instanced --size=1280x720
-node examples/compare/measure.mjs --gpu --size=1280x720
+node examples/showcase/check.mjs --measure --size=3840x2160
+node examples/showcase/check.mjs --measure --counts=100000 --modes=instanced --size=3840x2160
+node examples/compare/measure.mjs --gpu --size=3840x2160
 node bench/bench.mjs                     # needs npm install (the pinned three)
 node bench/compat.mjs
+node bench/math.mjs
 
+# or all of the above: pwsh bench/run-browser.ps1
 # logs replace the last run in bench/results/, then:
 node website/scripts/benchmark-data.mjs`, { title: 'terminal', language: 'sh' })}</div>
         <div class="space-y-4 text-slate-400" data-reveal>

@@ -172,8 +172,10 @@ function pipeline() {
 function speedBanner() {
   if (!frameRateLead) return '';
   const lead = frameRateLead.ratio.toFixed(1);
+  // Leads of 20× and more read as whole numbers, as in BENCHMARKS.md.
+  const times = (r) => (r >= 20 ? Math.round(r).toString() : r.toFixed(1));
   const chips = leads.map((x) => `<li class="rounded-xl bg-white/5 px-3 py-2 ring-1 ring-white/10" title="${x.detail}">
-              <span class="font-display text-xl font-semibold text-white">${x.ratio.toFixed(1)}<span class="text-brand-cyan">×</span></span>
+              <span class="font-display text-xl font-semibold text-white">${times(x.ratio)}<span class="text-brand-cyan">×</span> <span class="text-xs font-normal text-slate-300">faster</span></span>
               <span class="block text-[11px] leading-tight text-slate-300">${x.label}</span>
             </li>`).join('');
   return `<a href="#/benchmarks" class="group mt-7 block max-w-xl rounded-2xl border border-brand-cyan/30 bg-brand-cyan/[0.07] px-5 py-4 transition hover:border-brand-cyan/60 hover:bg-brand-cyan/10" aria-label="Renders up to ${lead} times faster than three.js: see the benchmarks">
@@ -184,7 +186,7 @@ function speedBanner() {
               <span class="mt-1 block text-xs leading-relaxed text-slate-300">${headlineDetail}. <span class="text-brand-cyan group-hover:text-white">Measured, see the benchmarks →</span></span>
             </span>
           </span>
-          ${chips ? `<ul class="mt-4 grid grid-cols-3 gap-2" aria-label="Other measured leads over three.js">${chips}</ul>` : ''}
+          ${chips ? `<ul class="mt-4 grid grid-cols-2 gap-2 ${leads.length > 3 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}" aria-label="Other measured leads over three.js">${chips}</ul>` : ''}
         </a>`;
 }
 

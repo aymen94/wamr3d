@@ -2,9 +2,9 @@
 
 ## Release
 
-- Version **`0.9.3`** (not yet published; the website installs `wamr3d@^0.9.2` from npm). 0.9.3: the 2026-10-21 performance work below (WebGPU DFG table as a uniform, lazy multisampled target, per-material draw submission, packed sort keys, `IdHashMap`) and `Renderer.dfgTable()`. 0.9.1: faster per-object transform setters, lazy Euler angles after quaternion writes, single-copy geometry uploads, and object-API `Euler.set` and matrix `copy`. 0.9.2: the `wamr3d/math` entry, JavaScript math values for use next to the low-level API. The npm package (`engine/bindings/js/package.json`) and the Rust bindings crate (`engine/bindings/Cargo.toml`); internal crates stay at `0.1.0`.
+- Version **`0.9.3`** 
 
-## Verification (2026-10-21, on the current tree)
+## Verification
 
 | Check | Result |
 |---|---|
@@ -24,11 +24,7 @@
 
 Re-run on 2026-10-22 after the version change to `0.9.3` (build of `dist/wamr3d`, 738.6 KiB of Wasm): `cargo test --workspace` 668 passed; the `wasm32-unknown-unknown` build; `test:api` 1537 values (5.7e-6); `parity/bindings/check.mjs` 44,179 values (6.1e-6); `test:gltf` / `test:loaders` / `test:controls` 13 / 14 / 9 passed; typings without errors; `npm run build --prefix website`. The browser checks above were not repeated (only the version changed).
 
-## Benchmarks (2026-10-21)
-
-[`bench/results/`](bench/results/), 0.9.3 tree: Node.js suites, showcase at 1280×720 and 3840×2160, 100,000 instanced and the comparison scene at 3840×2160 (i9-10900X, RTX 2070 SUPER, Chrome 156). 1920×1080 and 2560×1440 were not run. Results now live in one fixed folder that each run replaces (`bench/run-browser.ps1` clears it; git history keeps older runs); the dated folders `2026-10-19`, `2026-10-20-mixed` and `2026-10-21` are gone. Headline: 50,000 separate meshes at 3840×2160 on WebGPU, 16.7 fps against 2.1 fps for three.js WebGPU (8.0×); summary table in [BENCHMARKS.md](BENCHMARKS.md#last-run). The website data (`website/src/data/benchmarks.js`) was regenerated from this run; the generator now reads UTF-16 logs, repairs the code-page-437 "·", accepts the `JS math` showcase engines and skips sizes that were not run.
-
-## Performance work (2026-10-21)
+## Performance work
 
 Found by profiling (method in [PERFORMANCE.md](PERFORMANCE.md#how-to-measure)), each change measured before and after in the same session. Figures: [PERFORMANCE.md](PERFORMANCE.md#known-costs-and-results).
 
@@ -39,10 +35,6 @@ Found by profiling (method in [PERFORMANCE.md](PERFORMANCE.md#how-to-measure)), 
 - **World matrices (Rust).** Camera cells are boxed: the camera column spans every entity up to the last camera, and each world-matrix update looked every object up in it, reading a whole camera-sized cell per object.
 
 Added API: `Renderer.dfgTable()` (low-level, for hosts, like `Renderer.shaderSource()`); `wamr_core::IdHashMap` (Rust).
-
-### Needs decision
-
-- The low-level Wasm math classes (`Vector3`, `Matrix4`… from `wamr3d`) cost 1.5x to 9x three.js's time per operation, because each method is a call into WebAssembly (1.46x to 8.31x in `bench/results/math.txt`). `wamr3d/math` (JavaScript values) is at three.js's speed. Making the `wamr3d` exports JavaScript classes would change the low-level API (`raycast` and `applyMatrix4ToGeometry` take the Wasm classes, and they have `free()`); not done.
 
 ## Limitations
 
