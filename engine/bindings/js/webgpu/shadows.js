@@ -10,6 +10,8 @@ import { ALPHA_TEST_KEY, COLOR_SLOT, STATE_FLAGS_FLOAT, MATRIX_SLOT, vertexBuffe
 export function installShadows( ctx ) {
 
 	const { BONES_PER_ROW, DRAW_FIELDS, MATERIAL_FLOATS, MAX_SHADOWS, SHADOW_FORMAT, bindGeometry, boneLayout, device, distinct, emptyFloatView, emptyVsmView, environmentSampler, frameTexturesLayout, identity, instances, materialStride, objectBindingBytes, objectLayout, setGroups, shadowCameraLayout, shadowModule, shadowPipelineLayout, shadowPipelines, shadowSampler, stride } = ctx;
+	// group 1 offsets of a shadow draw, reused (see `drawRange` in ../webgpu.js)
+	const offsets = new Uint32Array( 2 );
 
 	function rebuildFrameTextures() {
 
@@ -248,7 +250,9 @@ export function installShadows( ctx ) {
 
 				const set = setGroups[ draws[ o + 1 ] ];
 				if ( set !== map ) pass.setBindGroup( 2, map = set );
-				pass.setBindGroup( 1, ctx.shadowObjectGroup, [ ( first + i ) * stride, material * materialStride ] );
+				offsets[ 0 ] = ( first + i ) * stride;
+				offsets[ 1 ] = material * materialStride;
+				pass.setBindGroup( 1, ctx.shadowObjectGroup, offsets, 0, 2 );
 				if ( entry.index ) pass.drawIndexed( vertices, copies, start );
 				else pass.draw( vertices, copies, start );
 				calls ++;

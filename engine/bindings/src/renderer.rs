@@ -137,7 +137,7 @@ impl Renderer {
         self.geometry_slots.clear();
         self.geometry_state.clear();
         self.shadow_geometry_slots.clear();
-        let mut records: std::collections::HashMap<GeometryHandle, u32> = std::collections::HashMap::new();
+        let mut records: wamr_core::IdHashMap<GeometryHandle, u32> = wamr_core::IdHashMap::default();
         let state = &mut self.geometry_state;
         let mut slot_of = |geometry: GeometryHandle| -> u32 {
             *records.entry(geometry).or_insert_with(|| {
@@ -156,7 +156,7 @@ impl Renderer {
         self.texture_sets.clear();
         self.draw_texture_sets.clear();
         self.shadow_texture_sets.clear();
-        let mut sets: std::collections::HashMap<[u32; wamr_renderer::TEXTURE_SLOTS], u32> = std::collections::HashMap::new();
+        let mut sets: wamr_core::IdHashMap<[u32; wamr_renderer::TEXTURE_SLOTS], u32> = wamr_core::IdHashMap::default();
         // Draws are ordered by state, so neighbours usually share a set: comparing with the
         // previous draw skips hashing the twelve ids for most of them.
         let texture_sets = &mut self.texture_sets;

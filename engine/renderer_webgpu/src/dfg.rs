@@ -45,25 +45,38 @@ fn half(bits: u16) -> f32 {
     sign * magnitude
 }
 
-/// WGSL: the table as a constant, and `dfg`, which reads it as a 16 x 16 texture with
-/// linear filtering and clamped edges would be read.
-pub fn dfg_source() -> String {
-    let entries: Vec<String> = TABLE.chunks_exact(2).map(|rg| format!("vec2<f32>({:?}, {:?})", half(rg[0]), half(rg[1]))).collect();
-    format!(
-        r#"const DFG_TABLE = array<vec2<f32>, 256>({});
+/// The table as the WGSL `dfg_table` uniform holds it: 512 floats, scale and bias of
+/// each entry in row order, two entries per `vec4`.
+pub fn dfg_table() -> Vec<f32> {
+    TABLE.iter().map(|&bits| half(bits)).collect()
+}
 
-fn dfg(n_v: f32, roughness: f32) -> vec2<f32> {{
+/// WGSL: `dfg`, which reads the table as a 16 x 16 texture with linear filtering and
+/// clamped edges would be read. The host fills `dfg_table` with [`dfg_table`].
+///
+/// The table is a uniform, not a `const` array: indexed at run time, a `const` array is
+/// rebuilt in every invocation by WGSL compilers (Dawn on D3D12 measured 30 fps instead
+/// of 60 at 3840x2160 for a dozen standard-material meshes), while a uniform array is
+/// read from constant memory.
+pub fn dfg_source() -> String {
+    r#"@group(0) @binding(1) var<uniform> dfg_table: array<vec4<f32>, 128>;
+
+fn dfg_entry(k: u32) -> vec2<f32> {
+    let pair = dfg_table[k >> 1u];
+    return select(pair.xy, pair.zw, (k & 1u) == 1u);
+}
+
+fn dfg(n_v: f32, roughness: f32) -> vec2<f32> {
     let t = clamp(vec2<f32>(roughness, n_v) * 16.0 - 0.5, vec2<f32>(0.0), vec2<f32>(15.0));
     let i = vec2<u32>(floor(t));
     let j = min(i + 1u, vec2<u32>(15u));
     let f = t - floor(t);
-    let low = mix(DFG_TABLE[i.y * 16u + i.x], DFG_TABLE[i.y * 16u + j.x], f.x);
-    let high = mix(DFG_TABLE[j.y * 16u + i.x], DFG_TABLE[j.y * 16u + j.x], f.x);
+    let low = mix(dfg_entry(i.y * 16u + i.x), dfg_entry(i.y * 16u + j.x), f.x);
+    let high = mix(dfg_entry(j.y * 16u + i.x), dfg_entry(j.y * 16u + j.x), f.x);
     return mix(low, high, f.y);
-}}
-"#,
-        entries.join(", ")
-    )
+}
+"#
+    .to_string()
 }
 
 /// GLSL ES 3.00 counterpart of [`dfg_source`].
@@ -95,6 +108,17 @@ mod tests {
         assert_eq!((half(0x3c00), half(0x0000), half(0x3800), half(0xc000)), (1.0, 0.0, 0.5, -2.0));
         assert!((half(0x0001) - 5.96e-8).abs() < 1e-9);
         let source = dfg_source();
-        assert!(source.contains("array<vec2<f32>, 256>(") && source.matches("vec2<f32>(").count() >= 256);
+        assert!(source.contains("var<uniform> dfg_table: array<vec4<f32>, 128>"));
+    }
+
+    #[test]
+    fn both_backends_read_the_same_table() {
+        let table = dfg_table();
+        assert_eq!(table.len(), 512);
+        let glsl = dfg_glsl();
+        assert!(glsl.matches("vec2(").count() >= 256);
+        for entry in table.chunks_exact(2) {
+            assert!(glsl.contains(&format!("vec2({:?}, {:?})", entry[0], entry[1])));
+        }
     }
 }

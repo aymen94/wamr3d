@@ -39,7 +39,15 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 	const TONE_MAPPING = Renderer.toneMappingIndex(), EXPOSURE = Renderer.toneMappingExposureIndex();
 	const MATERIAL_FLOATS = materialStride / 4;
 
-	const frameLayout = device.createBindGroupLayout( { entries: [ { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: {} } ] } );
+	const frameLayout = device.createBindGroupLayout( { entries: [
+		{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: {} },
+		{ binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: {} }
+	] } );
+	// The split-sum table of the specular lobe, read by standard and physical materials;
+	// it never changes.
+	const dfgData = new Float32Array( Renderer.dfgTable() );
+	const dfgTable = device.createBuffer( { size: dfgData.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
+	device.queue.writeBuffer( dfgTable, 0, dfgData );
 	const objectLayout = device.createBindGroupLayout( { entries: [
 		{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { hasDynamicOffset: true, minBindingSize: objectBindingBytes } },
 		{ binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { hasDynamicOffset: true, minBindingSize: materialStride } }
@@ -104,12 +112,22 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 
 	}
 
+	// The dynamic offsets of group 1, passed as a typed array: the form of `setBindGroup`
+	// that takes an array converts and allocates a sequence on every draw.
+	const offsets = new Uint32Array( 2 );
+
+	// Per material of the frame, the draw key of the pipeline last chosen for it and that
+	// pipeline. Draws are ordered by depth, so materials alternate from draw to draw;
+	// this keeps the feature key and pipeline lookup to once per material and key.
+	const materialKeys = [], materialPipelines = [];
+
 	// Records the draws `from` to `to` of the prepared frame into `pass`.
 	function drawRange( pass, world, draws, from, to, variant, frameTextures ) {
 
 		pass.setBindGroup( 0, ctx.frameGroup );
 		pass.setBindGroup( 3, frameTextures );
-		let state = - 1, blendState = 0, extraState = '', featureState = '', featureMaterial = - 1, features = '', reference = 0, constant = null, bound = null, map = null, triangles = 0, boundInstances = undefined;
+		materialKeys.length = materialPipelines.length = 0;
+		let current = null, reference = 0, constant = null, bound = null, map = null, triangles = 0, boundInstances = undefined;
 
 		for ( let i = from, o = from * DRAW_FIELDS; i < to; i ++, o += DRAW_FIELDS ) {
 
@@ -118,8 +136,8 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 
 			if ( custom > 0 && custom < 16 ) {
 
-				pass.setPipeline( effectPipeline( key | variant, custom ) );
-				state = - 1;
+				const effect = effectPipeline( key | variant, custom );
+				if ( effect !== current ) pass.setPipeline( current = effect );
 
 			} else {
 
@@ -127,9 +145,17 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 				if ( custom >= 16 ) warnOnce( 'ShaderMaterial and RawShaderMaterial (GLSL) draw only on WebGL 2; drawn unlit' );
 				const blocks = ctx.materials.view, at = material * MATERIAL_FLOATS;
 				const blending = ( key & 4 ) && ( key >> 11 & 7 ) === 5 ? blocks[ at + CUSTOM_BLENDING_FLOAT ] : 0;
-				const extra = materialState( blocks, at );
-				if ( material !== featureMaterial ) features = meshFeatures( blocks, at, ctx.lightFeatures ), featureMaterial = material;
-				if ( key !== state || blending !== blendState || extra !== extraState || features !== featureState ) pass.setPipeline( pipeline( ( state = key ) | variant, blendState = blending, extraState = extra, featureState = features ) );
+				let chosen = materialKeys[ material ] === key ? materialPipelines[ material ] : null;
+
+				if ( ! chosen ) {
+
+					chosen = pipeline( key | variant, blending, materialState( blocks, at ), meshFeatures( blocks, at, ctx.lightFeatures ) );
+					materialKeys[ material ] = key;
+					materialPipelines[ material ] = chosen;
+
+				}
+
+				if ( chosen !== current ) pass.setPipeline( current = chosen );
 				const stencilReference = blocks[ at + STENCIL_FLOAT + 1 ];
 				if ( stencilReference !== reference ) pass.setStencilReference( reference = stencilReference );
 
@@ -143,7 +169,9 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 
 			}
 			if ( groups[ i ] !== map ) pass.setBindGroup( 2, map = groups[ i ] );
-			pass.setBindGroup( 1, ctx.objectGroup, [ i * stride, material * materialStride ] );
+			offsets[ 0 ] = i * stride;
+			offsets[ 1 ] = material * materialStride;
+			pass.setBindGroup( 1, ctx.objectGroup, offsets, 0, 2 );
 
 			if ( key & QUAD_KEY ) {
 
@@ -260,7 +288,7 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 			if ( ! ctx.frameBuffer ) {
 
 				ctx.frameBuffer = device.createBuffer( { size: frameUniforms.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
-				ctx.frameGroup = device.createBindGroup( { layout: frameLayout, entries: [ { binding: 0, resource: { buffer: ctx.frameBuffer } } ] } );
+				ctx.frameGroup = device.createBindGroup( { layout: frameLayout, entries: [ { binding: 0, resource: { buffer: ctx.frameBuffer } }, { binding: 1, resource: { buffer: dfgTable } } ] } );
 
 			}
 
@@ -360,6 +388,7 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 			// Tone mapping applies only to what is drawn to the canvas, as in three.js.
 			const toneMapping = offscreen ? 0 : frameUniforms[ TONE_MAPPING ], hdr = toneMapping !== 0;
 			if ( hdr ) ensureHdrTargets();
+			else if ( ! offscreen ) ctx.ensureColorTarget();
 
 			if ( transmissive > 0 ) {
 
@@ -494,7 +523,7 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 			}
 
 			instanced.clear();
-			for ( const resource of [ white, identity, auxZeros, ctx.ones, ctx.zeros, ctx.objectBuffer, ctx.materialBuffer, ctx.frameBuffer, ctx.depthTexture, ctx.colorTexture, ctx.hdrTexture, ctx.hdrMultisample, ctx.outputSettings, ctx.shadowTexture, ctx.shadowCameras, ctx.shadowObjects, ctx.boneTexture, emptyFloat, emptyVsm, ctx.vsmTexture, ctx.vsmScratch, ctx.transmission?.texture, ctx.transmission?.depth, ctx.vsm?.settings, ctx.vsm?.placeholder ] ) resource?.destroy();
+			for ( const resource of [ white, identity, dfgTable, auxZeros, ctx.ones, ctx.zeros, ctx.objectBuffer, ctx.materialBuffer, ctx.frameBuffer, ctx.depthTexture, ctx.colorTexture, ctx.hdrTexture, ctx.hdrMultisample, ctx.outputSettings, ctx.shadowTexture, ctx.shadowCameras, ctx.shadowObjects, ctx.boneTexture, emptyFloat, emptyVsm, ctx.vsmTexture, ctx.vsmScratch, ctx.transmission?.texture, ctx.transmission?.depth, ctx.vsm?.settings, ctx.vsm?.placeholder ] ) resource?.destroy();
 			environmentPasses.dispose();
 			context.unconfigure();
 			// Destroying the device while frames are still queued on the GPU can block the page

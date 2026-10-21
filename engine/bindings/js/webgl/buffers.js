@@ -423,6 +423,10 @@ export function installBuffers( ctx ) {
 	const STENCIL_FUNCTIONS = [ gl.NEVER, gl.LESS, gl.EQUAL, gl.LEQUAL, gl.GREATER, gl.NOTEQUAL, gl.GEQUAL, gl.ALWAYS ];
 	const STENCIL_OPERATIONS = [ gl.ZERO, gl.KEEP, gl.REPLACE, gl.INCR, gl.DECR, gl.INCR_WRAP, gl.DECR_WRAP, gl.INVERT ];
 
+	// Whether polygon offset and the stencil test may be on. Only this file turns them on
+	// or off, so a material that uses neither (nearly all) costs no call to keep them off.
+	let offsetOn = true, stencilOn = true;
+
 	// The state of the material at float `at` of `blocks` that the key does not carry:
 	// polygon offset, stencil test and the constant colour of custom blending.
 	function applyMaterialState( key, blocks, at ) {
@@ -433,8 +437,14 @@ export function installBuffers( ctx ) {
 
 			gl.enable( gl.POLYGON_OFFSET_FILL );
 			gl.polygonOffset( factor, units );
+			offsetOn = true;
 
-		} else gl.disable( gl.POLYGON_OFFSET_FILL );
+		} else if ( offsetOn ) {
+
+			gl.disable( gl.POLYGON_OFFSET_FILL );
+			offsetOn = false;
+
+		}
 
 		const bits = blocks[ at + STENCIL_FLOAT ];
 
@@ -444,8 +454,14 @@ export function installBuffers( ctx ) {
 			gl.stencilFunc( STENCIL_FUNCTIONS[ bits >> 1 & 7 ], blocks[ at + STENCIL_FLOAT + 1 ], blocks[ at + STENCIL_FLOAT + 2 ] );
 			gl.stencilOp( STENCIL_OPERATIONS[ bits >> 4 & 7 ], STENCIL_OPERATIONS[ bits >> 7 & 7 ], STENCIL_OPERATIONS[ bits >> 10 & 7 ] );
 			gl.stencilMask( blocks[ at + STENCIL_FLOAT + 3 ] );
+			stencilOn = true;
 
-		} else gl.disable( gl.STENCIL_TEST );
+		} else if ( stencilOn ) {
+
+			gl.disable( gl.STENCIL_TEST );
+			stencilOn = false;
+
+		}
 
 		if ( key & 4 && ( key >> 11 & 7 ) === 5 ) gl.blendColor( blocks[ at + BLEND_COLOR_FLOAT ], blocks[ at + BLEND_COLOR_FLOAT + 1 ], blocks[ at + BLEND_COLOR_FLOAT + 2 ], blocks[ at + BLEND_COLOR_FLOAT + 3 ] );
 
@@ -457,6 +473,7 @@ export function installBuffers( ctx ) {
 
 		gl.disable( gl.STENCIL_TEST );
 		gl.disable( gl.POLYGON_OFFSET_FILL );
+		stencilOn = offsetOn = false;
 		gl.disable( gl.SAMPLE_ALPHA_TO_COVERAGE );
 		gl.colorMask( true, true, true, true );
 		gl.stencilMask( 0xff );

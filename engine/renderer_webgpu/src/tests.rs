@@ -471,3 +471,11 @@ fn skinned_meshes_are_culled_where_their_bones_put_them() {
     assert_eq!(frame.draws.iter().map(|d| d.object).collect::<Vec<_>>(), [boxes[0]]);
     assert_eq!(frame.skin_matrices.len(), 32, "both skins are posed, the culled one too");
 }
+
+#[test]
+fn equal_keys_keep_scene_order_and_negative_render_orders_come_first() {
+    let (mut world, root, camera, boxes) = scene(&[[1.0, 0.0, -5.0], [-1.0, 0.0, -5.0], [0.0, 1.0, -5.0], [0.0, 0.0, -9.0]]);
+    world.visibility_mut(boxes[3]).unwrap().render_order = -2.0;
+    let frame = prepare_frame(&mut world, root, camera, &Lighting::default()).unwrap();
+    assert_eq!(frame.draws.iter().map(|d| d.object).collect::<Vec<_>>(), [boxes[3], boxes[0], boxes[1], boxes[2]]);
+}

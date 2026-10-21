@@ -348,11 +348,22 @@ export function installTextures( ctx ) {
 		ctx.depthTexture?.destroy();
 		ctx.colorTexture?.destroy();
 		ctx.depthTexture = device.createTexture( { size: [ width, height ], format: DEPTH_FORMAT, sampleCount: samples, usage: GPUTextureUsage.RENDER_ATTACHMENT } );
-		ctx.colorTexture = samples > 1 ? device.createTexture( { size: [ width, height ], format, sampleCount: samples, usage: GPUTextureUsage.RENDER_ATTACHMENT } ) : null;
+		ctx.colorTexture = null;
 		ctx.depthView = ctx.depthTexture.createView();
-		ctx.colorView = ctx.colorTexture ? ctx.colorTexture.createView() : null;
+		ctx.colorView = null;
 		ctx.targetWidth = width;
 		ctx.targetHeight = height;
+
+	}
+
+	// The multisampled canvas-format target, made on the first frame drawn without tone
+	// mapping: tone-mapped frames draw into the linear target instead, and at 3840x2160
+	// with four samples this one alone is 127 MiB.
+	function ensureColorTarget() {
+
+		if ( samples === 1 || ctx.colorTexture ) return;
+		ctx.colorTexture = device.createTexture( { size: [ ctx.targetWidth, ctx.targetHeight ], format, sampleCount: samples, usage: GPUTextureUsage.RENDER_ATTACHMENT } );
+		ctx.colorView = ctx.colorTexture.createView();
 
 	}
 
@@ -368,6 +379,6 @@ export function installTextures( ctx ) {
 
 	}
 
-	Object.assign( ctx, { depthDrawn, background, backgroundPipeline, ensureHdrTargets, ensureTargets, ensureTransmission, environment, environmentPasses, environmentSampler, generateMipmaps, noEnvironmentView, renderTarget, renderTargets, setGroups, texture, textureSetGroup, textureSets, white } );
+	Object.assign( ctx, { depthDrawn, background, backgroundPipeline, ensureColorTarget, ensureHdrTargets, ensureTargets, ensureTransmission, environment, environmentPasses, environmentSampler, generateMipmaps, noEnvironmentView, renderTarget, renderTargets, setGroups, texture, textureSetGroup, textureSets, white } );
 
 }

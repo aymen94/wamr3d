@@ -10,6 +10,13 @@ impl Renderer {
         wamr_renderer::shader_source()
     }
 
+    /// The split-sum table the mesh pipeline reads at group 0, binding 1: 512 floats
+    /// (a uniform `array<vec4<f32>, 128>`), the same for every frame.
+    #[wasm_bindgen(js_name = dfgTable)]
+    pub fn dfg_table() -> Vec<f32> {
+        wamr_renderer::dfg_table()
+    }
+
     /// WGSL source of the passes that prefilter an environment map (three.js PMREM).
     #[wasm_bindgen(js_name = pmremShaderSource)]
     pub fn pmrem_shader_source() -> String {

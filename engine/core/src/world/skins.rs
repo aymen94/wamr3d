@@ -52,11 +52,11 @@ impl World {
     // ---- cameras
 
     pub fn camera(&self, entity: Entity) -> Option<&Camera> {
-        self.is_alive(entity).then(|| self.cameras.get(entity.index())).flatten()
+        self.is_alive(entity).then(|| self.cameras.get(entity.index()).map(Box::as_ref)).flatten()
     }
 
     pub fn camera_mut(&mut self, entity: Entity) -> Option<&mut Camera> {
-        self.is_alive(entity).then(|| self.cameras.get_mut(entity.index())).flatten()
+        self.is_alive(entity).then(|| self.cameras.get_mut(entity.index()).map(Box::as_mut)).flatten()
     }
 
     /// Makes the object a camera, or an ordinary object again with `None`.
@@ -65,7 +65,7 @@ impl World {
             return;
         }
         match camera {
-            Some(camera) => drop(self.cameras.set(entity.index(), camera)),
+            Some(camera) => drop(self.cameras.set(entity.index(), Box::new(camera))),
             None => drop(self.cameras.take(entity.index())),
         }
     }

@@ -1,7 +1,7 @@
 //! Building a frame: culling, ordering and packing the uniforms of every pass.
 
 use super::*;
-use std::collections::HashMap;
+use wamr_core::IdHashMap;
 use wamr_core::{MapSlot, MaterialHandle, MAP_COUNT};
 
 mod material;
@@ -47,7 +47,7 @@ struct Entry {
 /// Skinning matrices of the frame, computed once per skinned object.
 struct Skins {
     /// Per object, its first matrix plus one and its number of matrices.
-    offsets: HashMap<Entity, (u32, u32)>,
+    offsets: IdHashMap<Entity, (u32, u32)>,
 }
 
 impl Skins {
@@ -80,6 +80,49 @@ impl Skins {
             bounds.union(&posed);
         }
         (count > 0).then_some(bounds)
+    }
+}
+
+/// What a frame reads of a geometry, the same for every object that draws it.
+#[derive(Clone, Copy)]
+struct GeometryInfo {
+    has_colors: bool,
+    color_key: u32,
+    aux_key: u32,
+    range_start: u32,
+    range_end: u32,
+    /// In the geometry's space.
+    sphere: Sphere,
+}
+
+impl GeometryInfo {
+    /// `None` without positions. Computes and caches the bounding sphere if missing.
+    fn of(geometry: &mut wamr_core::BufferGeometry) -> Option<Self> {
+        let vertices = geometry.get_attribute("position")?.count() as u32;
+        let color = geometry.get_attribute("color");
+        let color_key = match color {
+            Some(color) if color.item_size == 4 && matches!(color.array, AttributeArray::Float32(_)) => FOUR_COMPONENT_COLOR_KEY,
+            _ => 0,
+        };
+        let has_colors = color.is_some();
+        let aux_key = if AUX_ATTRIBUTES.iter().any(|name| geometry.has_attribute(name)) { AUX_KEY } else { 0 };
+        let available = geometry.get_index().map_or(vertices, |index| index.count() as u32);
+        let range_start = geometry.draw_range.start.min(available);
+        let range_end = geometry.draw_range.start.saturating_add(geometry.draw_range.count).min(available);
+        if geometry.bounding_sphere.is_none() {
+            geometry.compute_bounding_sphere();
+        }
+        Some(Self { has_colors, color_key, aux_key, range_start, range_end, sphere: geometry.bounding_sphere.unwrap_or_default() })
+    }
+}
+
+/// `value`'s bits as an unsigned integer that orders as `f32::total_cmp` orders floats.
+fn total_order_bits(value: f32) -> u32 {
+    let bits = value.to_bits();
+    if bits & 0x8000_0000 != 0 {
+        !bits
+    } else {
+        bits | 0x8000_0000
     }
 }
 
@@ -122,8 +165,9 @@ pub fn prepare_frame(world: &mut World, root: Entity, camera: Entity, lighting: 
     let mut parts: Vec<(MaterialHandle, u32, u32)> = Vec::new();
     let mut materials = Materials::new();
     let mut environments = Environments { list: Vec::new(), scene: lighting.environment };
-    let mut skins = Skins { offsets: HashMap::new() };
+    let mut skins = Skins { offsets: IdHashMap::default() };
     let mut casters: Vec<Entity> = Vec::new();
+    let mut last_geometry: Option<(GeometryHandle, GeometryInfo)> = None;
 
     for &object in &visible {
         let Some(renderable) = world.renderable(object).copied() else {
@@ -138,30 +182,27 @@ pub fn prepare_frame(world: &mut World, root: Entity, camera: Entity, lighting: 
             casters.push(object);
         }
         let skinned = world.skin(object).is_some();
-        let Some(geometry) = world.geometry_mut(renderable.geometry) else {
-            continue;
-        };
-        let Some(vertices) = geometry.get_attribute("position").map(|a| a.count() as u32) else {
-            continue;
-        };
         if !visibility.layers.test(&camera_layers) {
             continue;
         }
 
-        let has_colors = geometry.has_attribute("color");
-        let color_key = match geometry.get_attribute("color") {
-            Some(color) if color.item_size == 4 && matches!(color.array, AttributeArray::Float32(_)) => FOUR_COMPONENT_COLOR_KEY,
-            _ => 0,
+        // Objects that share a geometry are usually neighbours in the scene graph; the
+        // attribute lookups by name are made once for a run of them.
+        let geometry_info = match last_geometry {
+            Some((handle, info)) if handle == renderable.geometry => info,
+            _ => {
+                let Some(geometry) = world.geometry_mut(renderable.geometry) else {
+                    continue;
+                };
+                let Some(info) = GeometryInfo::of(geometry) else {
+                    continue;
+                };
+                last_geometry = Some((renderable.geometry, info));
+                info
+            }
         };
-        let aux_key = if AUX_ATTRIBUTES.iter().any(|name| geometry.has_attribute(name)) { AUX_KEY } else { 0 };
-        let available = geometry.get_index().map_or(vertices, |index| index.count() as u32);
-        let range_start = geometry.draw_range.start.min(available);
-        let range_end = geometry.draw_range.start.saturating_add(geometry.draw_range.count).min(available);
-
-        if geometry.bounding_sphere.is_none() {
-            geometry.compute_bounding_sphere();
-        }
-        let mut sphere = geometry.bounding_sphere.unwrap_or_default();
+        let GeometryInfo { has_colors, color_key, aux_key, range_start, range_end, sphere } = geometry_info;
+        let mut sphere = sphere;
         let groups = if world.materials(object).is_empty() { Vec::new() } else { world.geometry(renderable.geometry).map_or_else(Vec::new, |g| g.groups.clone()) };
 
         // One part per material: the whole draw range, or one per geometry group when
@@ -248,15 +289,22 @@ pub fn prepare_frame(world: &mut World, root: Entity, camera: Entity, lighting: 
         }
     }
 
-    // Sorting indices moves 4 bytes per swap instead of a whole entry. A stable sort keeps
-    // scene-graph order for equal keys, so frames are deterministic.
-    let mut order: Vec<u32> = (0..entries.len() as u32).collect();
-    order.sort_by(|&a, &b| {
-        let (a, b) = (&entries[a as usize], &entries[b as usize]);
-        let by_depth = a.draw.depth.total_cmp(&b.draw.depth);
-        let by_depth = if a.category == 2 { by_depth.reverse() } else { by_depth };
-        a.category.cmp(&b.category).then(a.render_order.total_cmp(&b.render_order)).then(by_depth)
-    });
+    // Draws sort by category, render order, then depth (front to back, back to front for
+    // blended draws), and scene-graph order for equal keys, so frames are deterministic.
+    // The keys are packed into one integer per draw that ends with the entry's index:
+    // sorting them reads no entries and gives the order a stable sort by the same keys
+    // would.
+    let mut keys: Vec<u128> = entries
+        .iter()
+        .enumerate()
+        .map(|(index, e)| {
+            let depth = total_order_bits(e.draw.depth);
+            let depth = if e.category == 2 { !depth } else { depth };
+            u128::from(e.category) << 96 | u128::from(total_order_bits(e.render_order)) << 64 | u128::from(depth) << 32 | index as u128
+        })
+        .collect();
+    keys.sort_unstable();
+    let order = keys.iter().map(|&key| key as u32);
     frame.opaque_count = entries.iter().filter(|e| e.category == 0).count() as u32;
     frame.transmissive_count = entries.iter().filter(|e| e.category == 1).count() as u32;
 
@@ -407,8 +455,8 @@ pub fn prepare_frame(world: &mut World, root: Entity, camera: Entity, lighting: 
         frame.background = Some(background);
     }
 
-    frame.object_uniforms.reserve(order.len() * OBJECT_UNIFORM_FLOATS);
-    frame.draws.reserve(order.len());
+    frame.object_uniforms.reserve(keys.len() * OBJECT_UNIFORM_FLOATS);
+    frame.draws.reserve(keys.len());
     for index in order {
         let Entry { draw, matrix_world, vertex_colors, receive_shadow, sprite, line, skin, .. } = entries[index as usize];
         push_object(&mut frame.object_uniforms, &matrix_world, object_flags(vertex_colors, receive_shadow, sprite.is_some(), line), skin, sprite);
@@ -416,4 +464,19 @@ pub fn prepare_frame(world: &mut World, root: Entity, camera: Entity, lighting: 
     }
 
     Some(frame)
+}
+
+#[cfg(test)]
+mod order_tests {
+    use super::total_order_bits;
+
+    #[test]
+    fn packed_keys_order_as_total_cmp() {
+        let values = [f32::NEG_INFINITY, -1e30, -2.5, -1.0, -f32::MIN_POSITIVE, -0.0, 0.0, f32::MIN_POSITIVE, 1.0, 2.5, 1e30, f32::INFINITY, f32::NAN, -f32::NAN];
+        for a in values {
+            for b in values {
+                assert_eq!(total_order_bits(a).cmp(&total_order_bits(b)), a.total_cmp(&b), "{a} vs {b}");
+            }
+        }
+    }
 }

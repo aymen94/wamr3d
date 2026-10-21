@@ -177,13 +177,13 @@ pub fn object_flags(vertex_colors: bool, receive_shadow: bool, sprite: bool, lin
 
 /// The frame's materials, each packed once.
 pub(super) struct Materials {
-    index: HashMap<MaterialHandle, (u32, [u32; TEXTURE_SLOTS])>,
+    index: IdHashMap<MaterialHandle, (u32, [u32; TEXTURE_SLOTS])>,
     last: Option<(MaterialHandle, u32, [u32; TEXTURE_SLOTS])>,
 }
 
 impl Materials {
     pub(super) fn new() -> Self {
-        Self { index: HashMap::new(), last: None }
+        Self { index: IdHashMap::default(), last: None }
     }
 
     pub(super) fn get(&mut self, world: &World, handle: MaterialHandle, environments: &mut Environments, out: &mut Vec<f32>) -> (u32, [u32; TEXTURE_SLOTS]) {

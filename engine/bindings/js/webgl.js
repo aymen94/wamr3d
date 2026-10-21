@@ -110,8 +110,11 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 
 	}
 
-	// The feature key of each draw's mesh program.
-	const drawFeatures = [];
+	// The feature key of each draw's mesh program. Per material of the frame: its feature
+	// key, which of its programs were started (bit 0 meshes, bit 1 quads), and the program
+	// of each kind for the current pass. Draws are ordered by depth, so materials alternate
+	// from draw to draw; these keep the key and program lookups to once per material.
+	const drawFeatures = [], materialFeatures = [], materialStarted = [], materialPrograms = [];
 
 	// Starts the mesh programs of draws `from` to `to`, all before any is waited for.
 	// `data` is from `frameData`: building a program can grow the module's memory.
@@ -120,13 +123,26 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 		const started = [];
 		if ( drawFeatures.length < to ) drawFeatures.length = to;
 
-		for ( let i = from, o = from * DRAW_FIELDS, last = - 1, key = ''; i < to; i ++, o += DRAW_FIELDS ) {
+		materialFeatures.length = materialStarted.length = 0;
+
+		for ( let i = from, o = from * DRAW_FIELDS; i < to; i ++, o += DRAW_FIELDS ) {
 
 			const custom = draws[ o + 7 ];
 			if ( custom > 0 && ( custom < 16 || extras?.shaderMaterials?.get( custom ) ) ) continue;
-			if ( draws[ o + 6 ] !== last ) key = meshFeatures( data.materials, ( last = draws[ o + 6 ] ) * MATERIAL_FLOATS, ctx.lightFeatures );
+			const material = draws[ o + 6 ], quad = ( draws[ o ] & QUAD_KEY ) !== 0, kind = quad ? 2 : 1;
+			let key = materialFeatures[ material ];
+
+			if ( key === undefined ) {
+
+				key = materialFeatures[ material ] = meshFeatures( data.materials, material * MATERIAL_FLOATS, ctx.lightFeatures );
+				materialStarted[ material ] = 0;
+
+			}
+
 			drawFeatures[ i ] = key;
-			started.push( meshProgram( srgb, ( draws[ o ] & QUAD_KEY ) !== 0, key, true ) );
+			if ( materialStarted[ material ] & kind ) continue;
+			materialStarted[ material ] |= kind;
+			started.push( meshProgram( srgb, quad, key, true ) );
 
 		}
 
@@ -156,6 +172,7 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 
 		startPrograms( draws, from, to, srgb, data, extras );
 		const features = drawFeatures;
+		materialPrograms.length = 0;
 
 		for ( let i = from, o = from * DRAW_FIELDS; i < to; i ++, o += DRAW_FIELDS ) {
 
@@ -190,7 +207,7 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 
 			}
 
-			const shader = custom > 0 && custom < 16 ? effectProgram( custom, srgb ) : meshProgram( srgb, quad, features[ i ] );
+			const shader = custom > 0 && custom < 16 ? effectProgram( custom, srgb ) : ( materialPrograms[ draws[ o + 6 ] * 2 + ( quad ? 1 : 0 ) ] ??= meshProgram( srgb, quad, features[ i ] ) );
 
 			if ( shader !== current ) {
 
@@ -200,7 +217,9 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 
 			}
 
-			const blending = customBlending( key, data.materials, draws[ o + 6 ] );
+			// nothing below calls into the module before the next draw, so the view stays valid
+			const materialData = data.materials;
+			const blending = customBlending( key, materialData, draws[ o + 6 ] );
 			if ( key !== state || blending !== blendState ) {
 
 				applyState( state = key, blendState = blending );
@@ -209,7 +228,7 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 			}
 
 			// polygon offset, stencil and blend colour follow the material
-			if ( draws[ o + 6 ] !== appliedMaterial ) applyMaterialState( key, data.materials, ( appliedMaterial = draws[ o + 6 ] ) * MATERIAL_FLOATS );
+			if ( draws[ o + 6 ] !== appliedMaterial ) applyMaterialState( key, materialData, ( appliedMaterial = draws[ o + 6 ] ) * MATERIAL_FLOATS );
 
 			const maps = setTextures[ draws[ o + 1 ] ];
 
@@ -220,12 +239,12 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 
 			}
 
-			bindRange( 1, objectBuffer, i, OBJECT_STRIDE, data.objects );
+			bindRange( 1, objectBuffer, i, OBJECT_STRIDE, ranges ? null : data.objects );
 
 			if ( draws[ o + 6 ] !== material ) {
 
 				material = draws[ o + 6 ];
-				bindRange( 3, materialBuffer, material, MATERIAL_STRIDE, data.materials );
+				bindRange( 3, materialBuffer, material, MATERIAL_STRIDE, materialData );
 
 			}
 

@@ -104,7 +104,9 @@ pub struct World {
     visibilities: Column<Visibility>,
     names: Column<String>,
     renderables: Column<Renderable>,
-    cameras: Column<Camera>,
+    // Boxed: the column spans every entity up to the last camera, and world-matrix
+    // updates look each object up in it, so a cell is a pointer, not a whole camera.
+    cameras: Column<Box<Camera>>,
     material_lists: Column<Vec<MaterialHandle>>,
     skins: Column<Skin>,
 
@@ -199,7 +201,7 @@ impl World {
         if let Some(name) = self.names.get(index).cloned() {
             self.names.set(copy.index(), name);
         }
-        if let Some(camera) = self.cameras.get(index).copied() {
+        if let Some(camera) = self.cameras.get(index).map(|c| Box::new(**c)) {
             self.cameras.set(copy.index(), camera);
         }
         let renderable = self.renderables.get(index).copied();
