@@ -8,8 +8,44 @@ export const repoFile = (path) => `${REPO}/blob/main/${path}`;
 const escape = (text) => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 
 // The background's brand cube in miniature: a dark core inside a cyan frame and a violet frame.
+// Clicking it breaks it into 8 mini cubes that fly out and rebuild it (CSS: mini-cube rules).
 const cubeFaces = '<i></i>'.repeat(6);
-export const miniCube = `<span class="mini-cube" aria-hidden="true"><span class="mini-cube-spin"><span class="mini-cube-box is-frame">${cubeFaces}</span><span class="mini-cube-box is-edge">${cubeFaces}</span><span class="mini-cube-box is-core">${cubeFaces}</span></span></span>`;
+
+// 2×2×2 pieces: slot at ±5px on each axis, a scattered target that drops toward the bottom
+// (+y is down in CSS), and a different spin per piece.
+const cubePieces = Array.from({ length: 8 }, (_, i) => {
+  const x = i & 1 ? 1 : -1, y = i & 2 ? 1 : -1, z = i & 4 ? 1 : -1;
+  const vars = [
+    `--sx:${x * 5}px`, `--sy:${y * 5}px`, `--sz:${z * 5}px`,
+    `--tx:${x * 15}px`, `--ty:${y * 7 + 9}px`, `--tz:${z * 15}px`,
+    `--ax:${(i % 3) / 2}`, `--ay:${i % 2 ? 1 : 0.4}`, `--r:${(i % 2 ? 1 : -1) * (200 + i * 30)}deg`,
+  ].join(';');
+  return `<span class="mini-cube-box is-piece" style="${vars}">${cubeFaces}</span>`;
+}).join('');
+
+export const miniCube = `<span class="mini-cube" aria-hidden="true"><span class="mini-cube-spin"><span class="mini-cube-box is-frame">${cubeFaces}</span><span class="mini-cube-box is-edge">${cubeFaces}</span><span class="mini-cube-box is-core">${cubeFaces}</span>${cubePieces}</span></span>`;
+
+// Plays the break on every mini cube, including ones rendered later. Call once from main.js
+// (this is the only helper here that touches the DOM, and only when called).
+export function wireMiniCubes(root = document) {
+  // A click on the cube plays the animation instead of following the wordmark's home link
+  // (navigating re-renders the header and would cut it off); the text still links home.
+  root.addEventListener('click', (event) => {
+    if (event.target instanceof Element && event.target.closest('.mini-cube')) event.preventDefault();
+  });
+  root.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return;
+    const cube = event.target instanceof Element ? event.target.closest('.mini-cube') : null;
+    if (!cube || cube.classList.contains('is-breaking')) return;
+    cube.classList.add('is-breaking');
+    const done = (e) => {
+      if (e.animationName !== 'mini-cube-whole') return;
+      cube.classList.remove('is-breaking');
+      cube.removeEventListener('animationend', done);
+    };
+    cube.addEventListener('animationend', done);
+  }, { passive: true });
+}
 
 export function wordmark() {
   return `<a href="#/" class="group flex items-center gap-2.5 rounded-lg" aria-label="WAMR3D home">${miniCube}<span class="font-display text-lg font-bold tracking-tight text-white">WAMR<span class="text-gradient">3D</span></span></a>`;

@@ -177,7 +177,10 @@
 }
 
 /* Mini brand cube of the logo and the scroll hint, drawn with CSS 3D transforms. */
-.mini-cube { position: relative; width: 30px; height: 30px; perspective: 160px; }
+/* Goes in @layer components of styles.css, replacing the current mini-cube rules (the last block goes in @layer base). */
+/* Mini brand cube of the logo and the scroll hint, drawn with CSS 3D transforms.
+   Click it: the cube breaks into 8 mini cubes that fly out, fall, and fly back to rebuild it. */
+.mini-cube { position: relative; width: 30px; height: 30px; perspective: 160px; cursor: pointer; }
 .mini-cube-spin { position: absolute; inset: 0; transform-style: preserve-3d; animation: mini-cube-spin 10s linear infinite; }
 .group:hover .mini-cube-spin { animation-duration: 3s; }
 .mini-cube-box { position: absolute; left: 50%; top: 50%; width: var(--b); height: var(--b); margin: calc(var(--b) / -2) 0 0 calc(var(--b) / -2); transform-style: preserve-3d; }
@@ -194,6 +197,38 @@
 @keyframes mini-cube-spin {
   from { transform: rotateX(-24deg) rotateY(0deg) rotateZ(8deg); }
   to { transform: rotateX(-24deg) rotateY(360deg) rotateZ(8deg); }
+}
+
+/* Pieces: hidden until the cube breaks. Each one gets its slot (--sx/--sy/--sz), where it
+   flies to (--tx/--ty/--tz) and a spin (--ax/--ay, --r) from inline custom properties. */
+.mini-cube-box.is-piece {
+  --b: 9px; --fill: color-mix(in oklab, var(--color-ink-700) 85%, transparent);
+  visibility: hidden;
+  transform: translate3d(var(--sx), var(--sy), var(--sz));
+}
+.mini-cube-box.is-piece:nth-of-type(odd) { --edge: color-mix(in oklab, var(--color-brand-cyan) 90%, transparent); }
+.mini-cube-box.is-piece:nth-of-type(even) { --edge: color-mix(in oklab, var(--color-brand-violet) 80%, transparent); }
+.mini-cube.is-breaking .mini-cube-box:not(.is-piece) { animation: mini-cube-whole 1.6s ease-in-out both; }
+.mini-cube.is-breaking .mini-cube-box.is-piece { animation: mini-cube-piece 1.6s cubic-bezier(0.45, 0, 0.25, 1) both; }
+@keyframes mini-cube-whole {
+  0%   { transform: scale(1); opacity: 1; }
+  6%   { transform: scale(0.4); opacity: 0; }
+  88%  { transform: scale(0.4); opacity: 0; }
+  94%  { transform: scale(1.18); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes mini-cube-piece {
+  0%   { visibility: visible; transform: translate3d(var(--sx), var(--sy), var(--sz)) rotate3d(var(--ax), var(--ay), 0.3, 0deg); }
+  30%  { transform: translate3d(var(--tx), calc(var(--ty) - 6px), var(--tz)) rotate3d(var(--ax), var(--ay), 0.3, var(--r)); }
+  48%  { transform: translate3d(calc(var(--tx) * 1.1), calc(var(--ty) + 4px), calc(var(--tz) * 1.1)) rotate3d(var(--ax), var(--ay), 0.3, calc(var(--r) * 1.2)); }
+  58%  { transform: translate3d(calc(var(--tx) * 1.1), calc(var(--ty) + 4px), calc(var(--tz) * 1.1)) rotate3d(var(--ax), var(--ay), 0.3, calc(var(--r) * 1.2)); }
+  93%  { visibility: visible; transform: translate3d(var(--sx), var(--sy), var(--sz)) rotate3d(var(--ax), var(--ay), 0.3, 0deg); }
+  100% { visibility: hidden; transform: translate3d(var(--sx), var(--sy), var(--sz)); }
+}
+@layer base {
+  @media (prefers-reduced-motion: reduce) {
+    .mini-cube.is-breaking .mini-cube-box { animation-duration: 1.6s !important; }
+  }
 }
 
 /* Scroll reveal: content is visible without JavaScript; the script opts elements in. */

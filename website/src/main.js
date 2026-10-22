@@ -1,7 +1,8 @@
 import './styles.css';
 import { routes } from './pages/index.js';
 import { chartBody, counts } from './components/charts.js';
-import { icon } from './components/ui.js';
+import { icon, wireMiniCubes } from './components/ui.js';
+wireMiniCubes();
 
 const app = document.querySelector('#app');
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
