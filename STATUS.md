@@ -2,13 +2,13 @@
 
 ## Release
 
-- Version **`0.9.3`** 
+- Version **`0.9.4`**
 
 ## Verification
 
 | Check | Result |
 |---|---|
-| `cargo test --workspace` | 668 passed |
+| `cargo test --workspace` | 669 passed; 1 ignored manual benchmark |
 | `cargo build --workspace --target wasm32-unknown-unknown` | builds |
 | `npm run test:api` (object API against stored three.js values) | 1537 values, largest scaled error 5.7e-6 (tolerance 1e-5) |
 | `node parity/bindings/check.mjs` (low-level API against three.js live) | 44,179 values, largest scaled error 6.1e-6 |
@@ -19,6 +19,8 @@
 | `examples/webgpu/smoke.mjs`, `examples/browser/smoke.mjs`, `examples/showcase/check.mjs` | all pass, none failed |
 | `examples/ports/check.mjs --three` and `--webgl` | all eight ports draw on WAMR3D, on three.js and on WebGL 2 |
 | `npm run build --prefix website` | builds (the site's own pages use the published npm package) |
+
+Release 0.9.4 preparation (2026-10-23): `node engine/bindings/build.mjs` completed and generated a 764.6 KiB Wasm module. `npm pack --dry-run` from `dist/wamr3d` reports `wamr3d@0.9.4`, 178 files, and a 592.5 kB package archive. Not published. The website dependency remains on published `wamr3d@^0.9.3`; update it after the 0.9.4 package is published, as described in CONTRIBUTING.md.
 
 `engine/math` did not change, so its `wasm32-wasip1` runs were not repeated (last: 501 / 502 passed, 6 ignored, 2026-10-19).
 
@@ -33,6 +35,21 @@ Found by profiling (method in [PERFORMANCE.md](PERFORMANCE.md#how-to-measure)), 
 - **Draw submission, both hosts.** Draws are ordered by depth, so materials alternate from draw to draw; feature keys (strings), program and pipeline lookups are now made once per material and pass instead of once per draw. WebGPU passes dynamic offsets as a reused `Uint32Array`; WebGL 2 no longer re-disables polygon offset and the stencil test for every material, and reads the material view once per draw.
 - **Frame preparation (Rust).** Draws sort on packed `u128` keys (category, render order, depth, index) with an unstable sort, which gives the order of the previous stable sort without reading entries; per-geometry attribute lookups are made once for a run of objects sharing a geometry; maps keyed by handles use a multiply-rotate hasher (`wamr_core::IdHashMap`) instead of SipHash.
 - **World matrices (Rust).** Camera cells are boxed: the camera column spans every entity up to the last camera, and each world-matrix update looked every object up in it, reading a whole camera-sized cell per object.
+
+### External ideas reviewed (2026-10-23)
+
+Reviewed the three snippets and six techniques in [iniGlowee/threejs-game-optimization](https://github.com/iniGlowee/threejs-game-optimization). These are candidates, not measured WAMR3D results:
+
+- **BVH raycasting and cached candidate sets:** added a cached triangle BVH for mesh geometry with at least 16 triangles. Nodes split on the largest centroid axis; geometry attribute/index versions invalidate the cache, and replacing geometry data clears it. Smaller geometry keeps the linear path. In an optimized Rust test benchmark, 200 rays through a 32,768-triangle grid took 0.163–0.215 ms with a warm BVH versus 230–236 ms for the linear scan (about 1,070–1,450x faster for this sparse-hit workload). Building the BVH plus the first ray took 28–30 ms, so the measured break-even is roughly 25 rays. The CPU model was unavailable in the sandbox. Candidate-set caching remains application-specific because visibility and scene membership are app-specific.
+- **Freeze static matrices:** already supported through `matrixAutoUpdate = false`, and the Rust world-matrix update skips clean subtrees. A convenience helper could reduce object-API update work for static loaded scenes, but must exclude animated/skinned content and preserve parent/world-transform semantics. The snippet is a possible reference, not a need to duplicate the existing behavior.
+- **KTX2/Basis texture compression:** the loader already supports `KHR_texture_basisu` through `setKTX2Loader`; the repository also supports meshopt compression. The content-hash encode cache is an asset-build workflow idea, not runtime engine work.
+- **Pixel-ratio cap:** the renderer exposes `setPixelRatio`; an automatic cap would alter rendering quality and should remain an application quality choice unless a compatible opt-in/default policy is decided.
+- **Strip `KHR_materials_specular`:** not safe as a general loader optimization because it changes material appearance. It may be useful as an opt-in asset preprocessing tool for projects that verify the extension is unnecessary.
+- **Near-plane dither fade:** an app-specific occlusion effect that avoids transparency sorting, but requires custom shader injection and changes pixels. Not a general renderer optimization to apply automatically.
+
+The BVH is implemented as described above; the other ideas remain review notes, with no performance claim implied.
+
+The BVH implementation was verified with `cargo test --workspace` and `cargo build --workspace --target wasm32-unknown-unknown`; both passed. `cargo fmt --all` could not run because `rustfmt` is not installed for the active toolchain.
 
 Added API: `Renderer.dfgTable()` (low-level, for hosts, like `Renderer.shaderSource()`); `wamr_core::IdHashMap` (Rust).
 

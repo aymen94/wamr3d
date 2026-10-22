@@ -1,6 +1,7 @@
 use super::*;
 use crate::{box_geometry, plane_geometry};
 use wamr_core::{Camera, Material, Renderable};
+use std::time::Instant;
 
 fn scene(side: Side) -> (World, Entity, Entity) {
     let mut world = World::new();
@@ -30,6 +31,91 @@ fn front_faces_are_hit_once_and_reported_in_world_space() {
     assert_eq!(hit.normal, Some(Vector3::new(0.0, 0.0, 1.0)));
     assert!(hit.uv.is_some());
     assert!((hit.barycoord.x + hit.barycoord.y + hit.barycoord.z - 1.0).abs() < 1e-6);
+}
+
+#[test]
+fn bvh_keeps_triangle_indices_for_sparse_large_geometry() {
+    let mut world = World::new();
+    let mut geometry = BufferGeometry::new();
+    let mut positions = Vec::new();
+    for i in 0..64 {
+        let x = if i == 37 { 0.0 } else { i as f32 + 4.0 };
+        positions.extend_from_slice(&[x - 0.4, -0.4, -10.0, x + 0.4, -0.4, -10.0, x, 0.4, -10.0]);
+    }
+    geometry.set_attribute("position", wamr_core::BufferAttribute::new(wamr_core::AttributeArray::Float32(positions), 3, false));
+    let geometry = world.create_geometry(geometry);
+    let material = world.create_material(Material::default());
+    let mesh = world.create_object();
+    world.set_renderable(mesh, Some(Renderable::mesh(geometry, material)));
+    world.update_matrix_world(mesh, false);
+    let ray = Raycaster::new(Vector3::default(), Vector3::new(0.0, 0.0, -1.0), 0.0, f32::INFINITY);
+    let hits = intersect_object(&world, &ray, mesh, false);
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].face_index, 37);
+
+    let geometry = world.geometry_mut(geometry).unwrap();
+    let position = geometry.get_attribute_mut("position").unwrap();
+    for vertex in 0..position.count() {
+        position.set_x(vertex, position.get_x(vertex) + 100.0);
+    }
+    position.needs_update();
+    geometry.clear_raycast_cache();
+    assert!(intersect_object(&world, &ray, mesh, false).is_empty());
+}
+
+#[test]
+#[ignore = "manual raycast performance comparison"]
+fn benchmark_bvh_against_linear_triangle_scan() {
+    let mut world = World::new();
+    let mut geometry = BufferGeometry::new();
+    let side = 128usize;
+    let mut positions = Vec::with_capacity(side * side * 18);
+    for y in 0..side {
+        for x in 0..side {
+            let x0 = x as f32 - side as f32 / 2.0;
+            let y0 = y as f32 - side as f32 / 2.0;
+            let x1 = x0 + 1.0;
+            let y1 = y0 + 1.0;
+            positions.extend_from_slice(&[
+                x0, y0, -10.0, x1, y0, -10.0, x1, y1, -10.0,
+                x0, y0, -10.0, x1, y1, -10.0, x0, y1, -10.0,
+            ]);
+        }
+    }
+    geometry.set_attribute("position", wamr_core::BufferAttribute::new(wamr_core::AttributeArray::Float32(positions), 3, false));
+    let geometry_handle = world.create_geometry(geometry);
+    let material = world.create_material(Material::default());
+    let mesh = world.create_object();
+    world.set_renderable(mesh, Some(Renderable::mesh(geometry_handle, material)));
+    world.update_matrix_world(mesh, false);
+    let ray = Raycaster::new(Vector3::new(0.123, 0.234, 0.0), Vector3::new(0.0, 0.0, -1.0), 0.0, f32::INFINITY);
+    let geometry = world.geometry(geometry_handle).unwrap();
+    let sphere = local_bounding_sphere(geometry);
+    let matrix = world.transform(mesh).unwrap().matrix_world;
+    let mut hits = Vec::new();
+    let build_start = Instant::now();
+    raycast_triangles(mesh, geometry, Side::Front, &sphere, &matrix, &ray, &mut hits, true);
+    let build_and_first = build_start.elapsed();
+    let expected = hits.clone();
+    let mut accelerated = Vec::new();
+    let mut linear = Vec::new();
+    raycast_triangles(mesh, geometry, Side::Front, &sphere, &matrix, &ray, &mut linear, false);
+    assert_eq!(expected, linear);
+    linear.clear();
+    for _ in 0..10 {
+        raycast_triangles(mesh, geometry, Side::Front, &sphere, &matrix, &ray, &mut accelerated, true);
+        raycast_triangles(mesh, geometry, Side::Front, &sphere, &matrix, &ray, &mut linear, false);
+        accelerated.clear();
+        linear.clear();
+    }
+    let runs = 200usize;
+    let start = Instant::now();
+    for _ in 0..runs { raycast_triangles(mesh, geometry, Side::Front, &sphere, &matrix, &ray, &mut accelerated, true); accelerated.clear(); }
+    let bvh_time = start.elapsed();
+    let start = Instant::now();
+    for _ in 0..runs { raycast_triangles(mesh, geometry, Side::Front, &sphere, &matrix, &ray, &mut linear, false); linear.clear(); }
+    let linear_time = start.elapsed();
+    println!("triangles={} rays={} BVH_build_plus_first={build_and_first:?} BVH_warm={bvh_time:?} linear={linear_time:?}", side * side * 2, runs);
 }
 
 #[test]

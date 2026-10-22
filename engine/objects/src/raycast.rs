@@ -123,11 +123,11 @@ fn raycast_mesh(world: &World, object: Entity, raycaster: &Raycaster, intersects
     if let Some(mut posed) = skinned(world, object, geometry) {
         posed.compute_bounding_sphere();
         let sphere = posed.bounding_sphere.unwrap_or_default();
-        raycast_triangles(object, &posed, material.side, &sphere, &transform.matrix_world, raycaster, intersects);
+        raycast_triangles(object, &posed, material.side, &sphere, &transform.matrix_world, raycaster, intersects, true);
         return;
     }
     let sphere = local_bounding_sphere(geometry);
-    raycast_triangles(object, geometry, material.side, &sphere, &transform.matrix_world, raycaster, intersects);
+    raycast_triangles(object, geometry, material.side, &sphere, &transform.matrix_world, raycaster, intersects, true);
 }
 
 /// A copy of a skinned mesh's geometry with its positions in the current pose, as
@@ -176,6 +176,7 @@ fn raycast_triangles(
     matrix_world: &Matrix4,
     raycaster: &Raycaster,
     intersects: &mut Vec<Intersection>,
+    accelerated: bool,
 ) {
     let matrix_world = *matrix_world;
 
@@ -220,6 +221,23 @@ fn raycast_triangles(
         }
     };
 
+    if accelerated && start % 3 == 0 {
+        if let Some(candidates) = geometry.raycast_bvh_candidates(&local_ray) {
+            for (triangle, vertices) in candidates {
+                let i = triangle * 3;
+                if i >= start && i < range_end {
+                    test(i, vertices);
+                }
+            }
+        } else {
+            linear_raycast_triangles(geometry, start, range_end, &mut test);
+        }
+    } else {
+        linear_raycast_triangles(geometry, start, range_end, &mut test);
+    }
+}
+
+fn linear_raycast_triangles(geometry: &BufferGeometry, start: usize, range_end: usize, test: &mut impl FnMut(usize, [usize; 3])) {
     match geometry.get_index() {
         Some(index) => {
             let end = index.count().min(range_end);
@@ -431,7 +449,7 @@ pub fn intersect_instances(world: &World, raycaster: &Raycaster, object: Entity,
     for (id, elements) in matrices.chunks_exact(16).enumerate() {
         instance.elements.copy_from_slice(elements);
         matrix_world.multiply_matrices(&transform.matrix_world, &instance);
-        raycast_triangles(object, geometry, material.side, &sphere, &matrix_world, raycaster, &mut found);
+        raycast_triangles(object, geometry, material.side, &sphere, &matrix_world, raycaster, &mut found, true);
         intersects.extend(found.drain(..).map(|hit| Intersection { instance_id: Some(id as u32), ..hit }));
     }
     sort(&mut intersects);

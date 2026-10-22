@@ -4,6 +4,8 @@ use std::cell::Cell;
 use wamr_math::{Box3, Matrix3, Matrix4, Quaternion, Sphere, Vector3};
 
 mod bounds;
+mod bvh;
+pub(crate) use bvh::TriangleBvh;
 
 pub type GeometryHandle = Handle<BufferGeometry>;
 
@@ -44,6 +46,7 @@ pub struct BufferGeometry {
     pub bounding_sphere: Option<Sphere>,
     // Raycasting needs a bound even when callers have not requested the public one.
     raycast_sphere: Cell<Option<Sphere>>,
+    pub(crate) raycast_bvh: std::cell::RefCell<Option<(u64, TriangleBvh)>>,
     pub draw_range: DrawRange,
     /// `Some(n)` makes this an instanced geometry drawn `n` times; `Some(u32::MAX)`
     /// means "as many as the instanced attributes allow" (`Infinity` in three.js).
@@ -83,6 +86,7 @@ impl BufferGeometry {
 
     pub fn set_index(&mut self, index: Option<BufferAttribute>) -> &mut Self {
         self.index = index;
+        self.raycast_bvh.get_mut().take();
         self
     }
 
@@ -116,11 +120,13 @@ impl BufferGeometry {
             Some(slot) => slot.1 = attribute,
             None => self.attributes.push((name.to_string(), attribute)),
         }
+        self.raycast_bvh.get_mut().take();
         self
     }
 
     pub fn delete_attribute(&mut self, name: &str) -> &mut Self {
         self.attributes.retain(|(n, _)| n != name);
+        self.raycast_bvh.get_mut().take();
         self
     }
 

@@ -55,6 +55,7 @@ impl BufferGeometry {
     /// Forgets the cached raycasting bound, after positions were changed in place.
     pub fn clear_raycast_cache(&mut self) {
         self.raycast_sphere.set(None);
+        self.raycast_bvh.get_mut().take();
     }
 
     /// A cached local bound for raycasting when the public bounding sphere is unset.
