@@ -12,6 +12,16 @@ const sections = [
       { href: './examples/browser/', tag: 'Low-level API', title: 'Browser demo', body: 'The handle-based API driving a scene in the browser, with an optional transform check against three.js.', source: 'examples/browser/main.js', art: 'from-brand-violet/40 via-brand-cyan/20 to-transparent' },
       { href: './parity/visual/index.html', tag: '37 visual cases', title: 'Visual parity', body: 'From cubes, lights and textures to points, sprites, shadows, tone mapping and render targets, compared pixel by pixel with stored three.js images.', source: 'parity/visual/cases.js', art: 'from-brand-cyan/40 via-brand-violet/20 to-transparent' }
     ]
+  },
+  {
+    id: 'projects',
+    label: 'Built with WAMR3D',
+    title: 'Projects using the engine',
+    intro: 'Applications that render with WAMR3D, on WebGPU or its WebGL 2 fallback.',
+    items: [
+      { href: 'https://aymen.xyz/cellverse/', tag: 'Interactive 3D education', title: 'CellVerse', body: 'Explore life at the molecular level: eukaryotic cell biology, molecular structures and chemical elements in interactive 3D.', sourceUrl: 'https://github.com/aymen94/cellverse', art: 'from-brand-violet/40 via-brand-blue/30 to-transparent' },
+      { href: 'https://aymen.xyz/skyhunter/', tag: 'Flight and combat', title: 'SKYHUNTER', body: 'A drone flight and combat simulator in the browser, with real-time 3D rendered by WAMR3D.', sourceUrl: 'https://github.com/aymen94/skyhunter', art: 'from-brand-cyan/40 via-brand-blue/30 to-transparent' }
+    ]
   }
 ];
 
@@ -24,7 +34,7 @@ function card(demo, i) {
       <p class="mt-2 flex-1 text-sm leading-relaxed text-slate-400">${demo.body}</p>
       <div class="pointer-events-none relative z-10 mt-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-sm">
         <span class="inline-flex items-center gap-1.5 font-semibold text-brand-cyan">Open demo ${icon('arrow')}</span>
-        <span class="flex items-center gap-4"><a href="${repoFile(demo.source)}" target="_blank" rel="noreferrer" class="pointer-events-auto inline-flex items-center gap-1 text-slate-400 transition hover:text-white">Source ${icon('external')}</a></span>
+        <span class="flex items-center gap-4"><a href="${demo.sourceUrl ?? repoFile(demo.source)}" target="_blank" rel="noreferrer" class="pointer-events-auto inline-flex items-center gap-1 text-slate-400 transition hover:text-white">Source ${icon('external')}</a></span>
       </div>
     </div>
   </article>`;
