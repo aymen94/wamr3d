@@ -20,12 +20,6 @@
 | `examples/ports/check.mjs --three` and `--webgl` | all eight ports draw on WAMR3D, on three.js and on WebGL 2 |
 | `npm run build --prefix website` | builds (the site's own pages use the published npm package) |
 
-Release 0.9.4 preparation (2026-10-23): `node engine/bindings/build.mjs` completed and generated a 764.6 KiB Wasm module. `npm pack --dry-run` from `dist/wamr3d` reports `wamr3d@0.9.4`, 178 files, and a 592.5 kB package archive. Not published. The website dependency remains on published `wamr3d@^0.9.3`; update it after the 0.9.4 package is published, as described in CONTRIBUTING.md.
-
-`engine/math` did not change, so its `wasm32-wasip1` runs were not repeated (last: 501 / 502 passed, 6 ignored, 2026-10-19).
-
-Re-run on 2026-10-22 after the version change to `0.9.3` (build of `dist/wamr3d`, 738.6 KiB of Wasm): `cargo test --workspace` 668 passed; the `wasm32-unknown-unknown` build; `test:api` 1537 values (5.7e-6); `parity/bindings/check.mjs` 44,179 values (6.1e-6); `test:gltf` / `test:loaders` / `test:controls` 13 / 14 / 9 passed; typings without errors; `npm run build --prefix website`. The browser checks above were not repeated (only the version changed).
-
 ## Performance work
 
 Found by profiling (method in [PERFORMANCE.md](PERFORMANCE.md#how-to-measure)), each change measured before and after in the same session. Figures: [PERFORMANCE.md](PERFORMANCE.md#known-costs-and-results).
