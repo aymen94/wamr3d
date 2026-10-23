@@ -93,12 +93,6 @@ function hero() {
         </ul>
       </div>
     </div>
-    <a href="#migration-preview" class="group absolute bottom-8 left-1/2 hidden -translate-x-1/2 flex-col items-center gap-2 text-slate-400 transition hover:text-white sm:flex" aria-label="Scroll to content">
-      ${miniCube}
-      <span class="relative h-10 w-px bg-gradient-to-b from-transparent via-slate-500 to-transparent">
-        <span class="absolute left-1/2 top-0 size-1.5 animate-scroll-dot rounded-full bg-brand-cyan"></span>
-      </span>
-    </a>
   </section>`;
 }
 
