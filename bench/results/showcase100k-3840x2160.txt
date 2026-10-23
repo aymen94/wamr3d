@@ -2,12 +2,12 @@ Chrome/156.0.8078.48, Intel(R) Core(TM) i9-10900X CPU @ 3.70GHz; window 3840x216
 update = animation, transforms and world matrices on the CPU; submit = the renderer on the CPU. GPU time is not measured; it only shows in fps (display limit 60).
 
 bodies   drawn as    renderer                           fps   frame ms   update ms   submit ms   draw calls   build ms
-100000   instanced   WAMR3D ┬╖ batched API              39.5       33.2       20.80        3.90            5        339
-100000   instanced   WAMR3D ┬╖ JS math + WebGPU         25.0       33.4       35.60        3.90            5        142
-100000   instanced   WAMR3D ┬╖ object API               17.4       50.1       42.90       14.20            5        439
-100000   instanced   WAMR3D ┬╖ batched API ┬╖ WebGL      39.1       33.2       20.80        2.70            5        111
-100000   instanced   WAMR3D ┬╖ JS math + WebGL          26.2       33.4       35.20        2.60            5         95
-100000   instanced   WAMR3D ┬╖ object API ┬╖ WebGL       13.1       83.3       62.10       13.00            5        324
-100000   instanced   three.js ┬╖ WebGPU                  9.2      116.6       88.00       20.20            6        548
-100000   instanced   three.js ┬╖ WebGL                  12.0       83.4       71.40       11.10            5        369
+100000   instanced   WAMR3D ┬╖ batched API              40.7       16.8       20.20        3.90            5        335
+100000   instanced   WAMR3D ┬╖ JS math + WebGPU         25.4       33.4       35.10        3.80            5        146
+100000   instanced   WAMR3D ┬╖ object API               18.4       50.1       40.10       13.70            5        451
+100000   instanced   WAMR3D ┬╖ batched API ┬╖ WebGL      41.3       16.7       21.20        2.50            5        111
+100000   instanced   WAMR3D ┬╖ JS math + WebGL          25.7       33.4       35.60        2.50            5        133
+100000   instanced   WAMR3D ┬╖ object API ┬╖ WebGL       13.4       66.8       59.60       12.70            5        325
+100000   instanced   three.js ┬╖ WebGPU                 12.2       83.4       64.20       17.20            6        507
+100000   instanced   three.js ┬╖ WebGL                  10.4      100.0       83.20       12.50            5        505
 canvas 3840x2160, device pixel ratio 1

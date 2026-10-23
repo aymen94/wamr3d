@@ -6,7 +6,7 @@
 
 **Unlock your imagination without limits.** WAMR3D is a high-performance 3D engine that runs as native WebAssembly in the browser: a Rust core, its own WebGPU renderer and the three.js API you already know.
 
-**Renders up to 8× faster than three.js.** *(50,000 separate animated meshes at 3840×2160 on WebGPU: 16.7 fps against 2.1 fps for three.js's WebGPU renderer, in the 2026-10-21 showcase run; draw submission up to 14.5× faster. [Benchmarks](BENCHMARKS.md).)*
+**Renders up to 8× faster than three.js.** *(50,000 separate animated meshes at 3840×2160 on WebGPU: 16.7 fps against 2.1 fps for three.js's WebGPU renderer, in the 2026-10-23 showcase run; comparison-scene draw submission was 16.9× faster. [Benchmarks](BENCHMARKS.md).)*
 
 WAMR3D provides a WebAssembly scene graph, transforms, cameras, geometry processing, culling and draw ordering, plus a separate WebGPU renderer. Drive it from JavaScript through classes that follow three.js conventions or through batched calls for large scenes. The object API keeps user-facing transforms in JavaScript and synchronizes them with the engine in batches. Behaviour is checked against three.js value by value and pixel by pixel.
 
@@ -14,14 +14,14 @@ It has no runtime dependencies and draws with its own WebGPU renderer, switching
 
 ## Why try it
 
-- **Faster batched scene updates.** Setting 10,000 transforms and updating their world matrices in one batched call took 0.69 ms in WAMR3D against 2.71 ms in three.js in the 2026-10-21 Node.js benchmark (3.9× faster); one call per object and property took 0.98 ms. Creating, parenting and destroying 10,000 objects took 1.6 ms against 36.7 ms. Through the object API, setting the rotation and position of 10,000 meshes and updating their world matrices took 2.49 ms against 3.50 ms.
+- **Faster batched scene updates.** Setting 10,000 transforms and updating their world matrices in one batched call took 0.685 ms in WAMR3D against 2.530 ms in three.js in the 2026-10-23 Node.js benchmark (3.7× faster); one call per object and property took 0.972 ms. Creating, parenting and destroying 10,000 objects took 1.578 ms against 38.367 ms. Through the object API, setting rotation and position of 10,000 meshes and updating their world matrices took 2.494 ms against 3.498 ms.
 - **Same results as three.js.** Over 7,600 reference cases generated from the three.js source are replayed against the Rust code. Individual operations agree to about one part in a million.
 - **Explicit low-level ownership.** The handle-based API stores objects in WebAssembly memory and uses explicit destruction; stale handles cannot refer to a different object. The three.js-style object API keeps transforms in JavaScript and releases engine objects when their JavaScript objects are collected.
 - **Zero-copy low-level geometry access.** Read and write geometry attributes through typed-array views straight over engine memory. The compatibility API exposes copies for mutable attribute arrays.
-- **Its own WebGPU and WebGL 2 renderers.** In the 2026-10-21 showcase run, WAMR3D drew 10,000 separate animated meshes at 60 fps on WebGPU at both 1280×720 and 3840×2160 (8.7 ms CPU draw submission) and at 45 fps on its WebGL 2 renderer; three.js ran at 12 fps on WebGPU (76 to 78 ms) and 42 to 43 fps on WebGL. With 50,000 separate meshes at 3840×2160, WAMR3D WebGPU ran at 16.7 fps against 2.1 fps (three.js WebGPU) and 6.8 fps (three.js WebGL). With 100,000 instanced bodies at 3840×2160, WAMR3D ran at 39.5 fps on WebGPU and 39.1 fps on WebGL 2 with 20.8 ms of CPU scene update, against 9.2 fps (88.0 ms) for three.js WebGPU and 12.0 fps (71.4 ms) for three.js WebGL. In the comparison scene at 3840×2160, the first frame of 10,000 objects took 140 ms against 643 ms for three.js WebGPU. Where WAMR3D is not faster: at 2,000 bodies every engine reaches the 60 fps display limit, and with 50,000 instanced bodies the object API ran at 20 to 21 fps, like three.js. Single runs of 0.9.3 on one machine (i9-10900X, RTX 2070 SUPER, Chrome 156) in [`bench/results/`](bench/results/).
+- **Its own WebGPU and WebGL 2 renderers.** In the 2026-10-23 showcase run, WAMR3D drew 10,000 separate animated meshes at 60 fps on WebGPU at 1280×720 and 3840×2160 (8.7 ms CPU draw submission at 3840×2160) and at 45.8 fps on its WebGL 2 renderer; three.js ran at 12.4 fps on WebGPU (75.7 ms submit) and 43.8 fps on WebGL. With 50,000 separate meshes at 3840×2160, WAMR3D WebGPU ran at 16.7 fps against 2.1 fps (three.js WebGPU) and 6.7 fps (three.js WebGL). With 100,000 instanced bodies at 3840×2160, WAMR3D ran at 40.7 fps on WebGPU and 41.3 fps on WebGL 2, with 20.2 ms CPU scene update; three.js ran at 12.2 fps (64.2 ms) on WebGPU and 10.4 fps (83.2 ms) on WebGL. In the comparison scene at 3840×2160, first frame of 10,004 objects took 152 ms against 678 ms for three.js WebGPU. At 2,000 bodies every engine reaches the 60 fps display limit. With 50,000 instanced bodies, WAMR3D's object API ran at 20.9 fps on WebGPU and 17.6 fps on WebGL 2, against 19.7 fps and 20.8 fps for three.js. These are single runs of 0.9.4 on one machine (i9-10900X, RTX 2070 SUPER, Chrome 156.0.8078.48) in [`bench/results/`](bench/results/).
 - **Small and free.** The SIMD WebAssembly module is about 739 KiB, shaders for both backends included. Nothing to pay, nothing else to install at run time.
 
-What it is not: a complete replacement for three.js. In the object API, vectors, quaternions, matrices, boxes, spheres and colours are plain JavaScript values, as in three.js, and take about the same time (0.88× to 1.09× of three.js's in the math workloads of `bench/compat.mjs` on 2026-10-21); the scene graph, culling and draw preparation run in WebAssembly. The low-level engine classes (`wamr3d`) cross into WebAssembly on every call, so single small calls there are *slower* than plain JavaScript: batch them, and do per-value math with the JavaScript values of `wamr3d/math` (see [Mixing JavaScript and WebAssembly](#mixing-javascript-and-webassembly)).
+What it is not: a complete replacement for three.js. In the object API, vectors, quaternions, matrices, boxes, spheres and colours are plain JavaScript values, as in three.js, and take about the same time (0.88× to 1.09× of three.js's in the math workloads of `bench/compat.mjs` on 2026-10-23); the scene graph, culling and draw preparation run in WebAssembly. The low-level engine classes (`wamr3d`) cross into WebAssembly on every call, so single small calls there are *slower* than plain JavaScript: batch them, and do per-value math with the JavaScript values of `wamr3d/math` (see [Mixing JavaScript and WebAssembly](#mixing-javascript-and-webassembly)).
 
 ## Install
 
@@ -169,7 +169,7 @@ for ( let i = 0, o = 0; i < handles.length; i ++, o += 10 ) {
 world.setTransforms( handles, transforms );
 ```
 
-In `bench/math.mjs` (2026-10-21, Node.js), this pattern updated 10,000 objects (per-object math, transforms, world matrices) in 0.91 ms, against 2.25 ms for three.js and 1.97 ms with every vector in the low-level Wasm classes. Single operations on `wamr3d/math` values took 0.80× to 1.09× of three.js's time, against 1.46× to 8.31× on the Wasm classes ([`math.txt`](bench/results/math.txt)).
+In `bench/math.mjs` (2026-10-23, Node.js), this pattern updated 10,000 objects (per-object math, transforms, world matrices) in 0.914 ms, against 2.156 ms for three.js and 1.928 ms with every vector in the low-level Wasm classes. Single operations on `wamr3d/math` values took 0.96× to 1.09× of three.js's time, against 1.48× to 7.69× on the Wasm classes ([`math.txt`](bench/results/math.txt)).
 
 ## See it run
 
@@ -254,7 +254,7 @@ The full typed API is in `dist/wamr3d/wamr3d_wasm.d.ts` after a build. A Node.js
 |---|---|
 | Materials | No node (TSL) materials (out of scope). `ShaderMaterial` draws on WebGL 2 only, with lights and fog but no shadows. |
 | Post-processing | The built-in passes draw on both backends; a `ShaderPass` with other GLSL needs WebGL 2. No TSL. |
-| Renderer | Area-light highlights are approximated (no LTC tables); skinned meshes are not frustum-culled; `LineMaterial.dashOffset` has no effect. |
+| Renderer | Area-light specular highlights are approximated (no LTC tables); skinned meshes are culled using posed bounds; `LineMaterial.dashOffset` has no effect. |
 | Browsers | Draws with WebGPU, or WebGL 2 where WebGPU is missing ([Choosing the backend](#choosing-the-backend)). Tested in Chromium-based browsers only. |
 
 [STATUS.md](STATUS.md) has the full list of limitations and the results of the last verification;

@@ -140,7 +140,7 @@ export function benchmarks() {
     ['Failed configurations', failures.length ? failures.join('; ') : 'None: every configuration produced results.'],
     ...(meta.skipped?.length ? [['Not run in this run', meta.skipped.map((f) => `<code class="font-mono">${f}</code>`).join(', ')]] : [])
   ];
-  return shell(`${pageIntro({ label: 'Benchmarks', title: 'Measured, <span class="text-gradient">with context.</span>', intro: `One machine, one run of the WAMR3D 0.9.3 engine at ${resolutions.map(resLabel).join(' and ')}: browser suites on ${meta.recorded?.browser?.join(', ') ?? meta.date}, Node.js suites on ${meta.recorded?.node?.join(', ') ?? meta.date}. The raw logs are in <code class="font-mono">${meta.dir}/</code>. <strong class="text-white">Longer bars are better.</strong>` })}
+  return shell(`${pageIntro({ label: 'Benchmarks', title: 'Measured, <span class="text-gradient">with context.</span>', intro: `One machine, one run of WAMR3D 0.9.4 at ${resolutions.map(resLabel).join(' and ')}: browser suites on ${meta.recorded?.browser?.join(', ') ?? meta.date}, Node.js suites on ${meta.recorded?.node?.join(', ') ?? meta.date}. The raw logs are in <code class="font-mono">${meta.dir}/</code>. <strong class="text-white">Longer bars are better.</strong>` })}
   <div class="relative bg-gradient-to-b from-transparent via-ink-950/85 to-ink-950">
     <section class="mx-auto max-w-6xl px-6 pb-24">
       ${more('Test setup', `<div class="glass grid gap-5 rounded-3xl p-6 sm:grid-cols-2 lg:grid-cols-3">${setup.map(([k, v]) => `<div><p class="font-mono text-[11px] uppercase tracking-wider text-slate-400">${k}</p><p class="mt-1 text-slate-200">${v}</p></div>`).join('')}</div>`, '-mt-8 mb-14')}

@@ -24,11 +24,9 @@ New-Item -ItemType Directory -Force $out | Out-Null
 $log = Join-Path $out 'run-log.txt'
 
 $runs = @()
-if ( $Node ) {
-	$runs += , @( 'bench.txt', @( 'bench/bench.mjs' ) )
-	$runs += , @( 'compat.txt', @( 'bench/compat.mjs' ) )
-	$runs += , @( 'math.txt', @( 'bench/math.mjs' ) )
-}
+$runs += , @( 'bench.txt', @( 'bench/bench.mjs' ) )
+$runs += , @( 'compat.txt', @( 'bench/compat.mjs' ) )
+$runs += , @( 'math.txt', @( 'bench/math.mjs' ) )
 $runs += , @( 'showcase-1280x720.txt', @( 'examples/showcase/check.mjs', '--measure', '--size=1280x720' ) )
 $runs += , @( 'showcase-3840x2160.txt', @( 'examples/showcase/check.mjs', '--measure', '--size=3840x2160' ) )
 $runs += , @( 'showcase100k-3840x2160.txt', @( 'examples/showcase/check.mjs', '--measure', '--counts=100000', '--modes=instanced', '--size=3840x2160' ) )

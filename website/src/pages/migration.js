@@ -13,7 +13,7 @@ const differences = [
   ['<code>WebGLRenderer</code>', 'Works: the same renderer drawing with WebGL 2. <code>WebGPURenderer</code> picks WebGPU or WebGL 2 by itself'],
   ['<code>WebGPURenderer</code> falls back to WebGL 2', 'The same here, with WAMR3D\'s own WebGL 2 renderer; <code>backend: \'webgpu\'</code> or <code>\'webgl\'</code> (or <code>forceWebGL</code>) pins one. <a class="text-brand-cyan hover:text-white" href="#/docs#no-webgpu">Backends</a>'],
   ['Built-in materials', 'Basic, Lambert, Phong, toon, normal, standard and physical (clearcoat, sheen, iridescence, anisotropy, transmission), with 24 kinds of map; matcap, depth, distance, shadow and dashed-line materials; per-material stencil, depth function and polygon offset; clipping planes'],
-  ['<code>ShaderMaterial</code>', 'GLSL draws on WebGL 2; on WebGPU it draws unlit, as three.js\'s WebGPURenderer takes no GLSL, with <code>lights</code> and <code>fog</code> but no shadows'],
+  ['<code>ShaderMaterial</code>', 'GLSL draws on WebGL 2; on WebGPU it draws unlit, as three.js\'s WebGPURenderer takes no GLSL. On WebGL 2 it receives lights and fog only when enabled, and receives no shadows'],
   ['Node materials (TSL)', 'Not ported: use the built-in materials'],
   ['Any number of lights', 'Up to 16 directional, point, spot and rectangular area lights, plus ambient and hemisphere lights and light probes'],
   ['Shadows from any light', 'Directional, spot and point lights; basic, PCF and VSM filtering (<code>PCFSoftShadowMap</code> draws as PCF, as in three.js\'s <code>WebGPURenderer</code>)'],
@@ -26,7 +26,9 @@ const differences = [
 const missing = [
   ['Node-based rendering', 'TSL node materials and node post-processing are out of scope: WAMR3D draws with its own WGSL and GLSL shaders.'],
   ['GLSL on WebGPU', '<code>ShaderMaterial</code> needs the WebGL 2 backend, and gets no shadow maps there.'],
-  ['Small gaps', '<code>LineMaterial.dashOffset</code>, <code>wireframeLinewidth</code> above 1, <code>CustomToneMapping</code> and offset or rotation of background textures have no effect and warn once.'],
+  ['Renderer and material gaps', '<code>LineMaterial.dashOffset</code>, <code>wireframeLinewidth</code> above 1 and <code>CustomToneMapping</code> have no effect. <code>DataTexture</code> supports RGBA format only. Background texture offset, repeat and rotation have no effect.'],
+  ['Rendering approximations', '<code>UnrealBloomPass</code> uses five blur kernels (sizes 3, 5, 7, 9 and 11) with white tints. Rectangular area-light diffuse is supported, but its specular highlights are approximated without LTC tables.'],
+  ['WebGL 2 without <code>EXT_color_buffer_float</code>', 'Blending is done in sRGB; tone mapping, float render targets and environment maps are unavailable, and VSM shadows fall back to PCF.'],
   ['Browsers', 'Tested in Chromium-based browsers; Firefox and Safari have not been tried yet.']
 ];
 
@@ -37,9 +39,23 @@ const steps = [
   ['Batch the hot paths', 'When a scene grows to thousands of moving objects, move the per-frame updates to the batched low-level API and measure.']
 ];
 
-const choices = [
-  ['Familiar object API', '<code>wamr3d/compat</code>', 'Best for existing three.js projects and typical scenes. Keep familiar classes, properties and scene-building patterns while WAMR3D batches object updates into the engine once per frame.', "import * as WAMR3D from 'wamr3d/compat';"],
-  ['Batched low-level API', '<code>wamr3d</code> + <code>wamr3d/math</code>', 'Best when many objects change every frame or you need direct control. Generational handles and batched calls reduce JavaScript overhead; expect a more explicit, less three.js-like API. Do per-value math with the JavaScript values of <code>wamr3d/math</code> and send the results in one batched call.', `import { init, World } from 'wamr3d';
+const lowLevelSample = `import { init, World } from 'wamr3d';
+
+await init();
+const world = new World();
+const handles = world.createObjects( 10001 );
+const root = handles[ 0 ], objects = handles.subarray( 1 );
+world.addMany( new BigUint64Array( objects.length ).fill( root ), objects );
+const transforms = new Float32Array( handles.length * 10 );
+for ( let i = 0; i < handles.length; i ++ ) {
+  const o = i * 10;
+  transforms[ o + 6 ] = 1;
+  transforms[ o + 7 ] = transforms[ o + 8 ] = transforms[ o + 9 ] = 1;
+}
+world.setTransforms( handles, transforms );
+world.updateMatrixWorld( root, false );`;
+
+const mixedSample = `import { init, World } from 'wamr3d';
 import { Vector3, Quaternion } from 'wamr3d/math';
 
 await init();
@@ -47,14 +63,12 @@ const world = new World();
 const handles = world.createObjects( 10001 );
 const root = handles[ 0 ], objects = handles.subarray( 1 );
 world.addMany( new BigUint64Array( objects.length ).fill( root ), objects );
-
 const transforms = new Float32Array( handles.length * 10 );
-transforms[ 6 ] = 1;
-transforms[ 7 ] = transforms[ 8 ] = transforms[ 9 ] = 1;
 const position = new Vector3(), rotation = new Quaternion();
 const up = new Vector3( 0, 1, 0 );
 
-for ( let i = 0, o = 10; i < objects.length; i ++, o += 10 ) {
+for ( let i = 1; i < handles.length; i ++ ) {
+  const o = i * 10;
   position.set( i * 0.01, 0, 0 );
   rotation.setFromAxisAngle( up, i * 1e-4 );
   transforms[ o ] = position.x; transforms[ o + 1 ] = position.y; transforms[ o + 2 ] = position.z;
@@ -62,10 +76,14 @@ for ( let i = 0, o = 10; i < objects.length; i ++, o += 10 ) {
   transforms[ o + 5 ] = rotation.z; transforms[ o + 6 ] = rotation.w;
   transforms[ o + 7 ] = transforms[ o + 8 ] = transforms[ o + 9 ] = 1;
 }
-
 world.setTransforms( handles, transforms );
-world.updateMatrixWorld( root, false );`],
-  ['WebGPU or WebGL 2', '<code>WebGPURenderer</code>', 'Choose automatic selection for the broadest reach: WebGPU when available, WebGL 2 otherwise. Pin WebGPU for a WebGPU-only product, or WebGL 2 to target a known backend.', "new WAMR3D.WebGPURenderer({ backend: 'auto' });"]
+world.updateMatrixWorld( root, false );`;
+
+const choices = [
+  [1, 'Familiar object API', '<code>wamr3d/compat</code>', 'Best for existing three.js projects and typical scenes. Keep familiar classes, properties and scene-building patterns while WAMR3D batches object updates into the engine once per frame.', "import * as WAMR3D from 'wamr3d/compat';"],
+  [4, 'WebGPU or WebGL 2', '<code>WebGPURenderer</code>', 'Choose automatic selection for the broadest reach: WebGPU when available, then WebGL 2, then software WebGPU. Pin WebGPU for a WebGPU-only product, or WebGL 2 to target a known backend.', "new WAMR3D.WebGPURenderer({ backend: 'auto' });"],
+  [2, 'Batched low-level API', '<code>wamr3d</code>', 'Best when many objects change every frame or you need direct control. Use generational handles and typed arrays; the Rust engine owns scene data and computes world matrices. Low-level WebAssembly math classes are available from this entry point.', lowLevelSample],
+  [3, 'JavaScript math + batched scene', '<code>wamr3d</code> + <code>wamr3d/math</code>', 'Use JavaScript math values for per-object calculations, then send transforms to the WebAssembly scene in one call. The math module needs no initialization; the engine still handles world matrices, culling and draw preparation. This mixed path was measured in the latest benchmark run.', mixedSample]
 ];
 
 export function migration() {
@@ -74,11 +92,11 @@ export function migration() {
   <div class="relative bg-gradient-to-b from-transparent via-ink-950/85 to-ink-950">
     <section class="mx-auto grid max-w-6xl grid-cols-1 items-start gap-12 px-6 pb-24 lg:grid-cols-2">
       <ol class="space-y-4">${steps.map(([title, body], i) => `<li class="glass flex gap-5 rounded-3xl p-6" data-reveal style="--reveal-delay:${i * 70}ms"><span class="font-display text-3xl font-semibold text-gradient">0${i + 1}</span><div><h2 class="font-semibold text-white">${title}</h2><p class="mt-1.5 text-sm leading-relaxed text-slate-400">${code(body)}</p></div></li>`).join('')}</ol>
-      <div class="space-y-5 lg:sticky lg:top-28" data-reveal>${codeBlock(diff, { title: 'app.js', diff: true })}<div class="glass rounded-2xl p-5"><p class="text-xs font-semibold uppercase tracking-wider text-brand-cyan">Keep your scene code</p><p class="mt-2 text-sm leading-relaxed text-slate-300">These familiar calls continue to work for supported classes:</p><ul class="mt-3 grid gap-2 sm:grid-cols-2">${['scene.add( mesh )', 'mesh.position.set( 1, 2, 3 )', 'mesh.rotation.y += 0.01', 'camera.lookAt( 0, 0, 0 )', 'raycaster.intersectObjects( scene.children )', 'chained math expressions'].map((item) => `<li class="rounded-lg border border-white/5 bg-black/20 px-3 py-2 font-mono text-xs text-slate-300">${item}</li>`).join('')}</ul></div><a href="#/migration#migration-choices" class="group flex items-center justify-between rounded-2xl border border-brand-cyan/20 bg-brand-cyan/5 px-5 py-4 text-sm text-slate-300 transition hover:border-brand-cyan/50 hover:text-white"><span><span class="block font-semibold text-white">Choose the setup that fits your project</span><span class="mt-1 block text-xs text-slate-400">Scroll down to compare the object API, batched API and rendering backends.</span></span><span aria-hidden="true" class="text-lg text-brand-cyan transition group-hover:translate-y-1">↓</span></a></div>
+      <div class="space-y-5 lg:sticky lg:top-28" data-reveal>${codeBlock(diff, { title: 'app.js', diff: true })}<div class="glass rounded-2xl p-5"><p class="text-xs font-semibold uppercase tracking-wider text-brand-cyan">Keep your scene code</p><p class="mt-2 text-sm leading-relaxed text-slate-300">These familiar calls continue to work for supported classes:</p><ul class="mt-3 grid gap-2 sm:grid-cols-2">${['scene.add( mesh )', 'mesh.position.set( 1, 2, 3 )', 'mesh.rotation.y += 0.01', 'camera.lookAt( 0, 0, 0 )', 'raycaster.intersectObjects( scene.children )', 'chained math expressions'].map((item) => `<li class="rounded-lg border border-white/5 bg-black/20 px-3 py-2 font-mono text-xs text-slate-300">${item}</li>`).join('')}</ul></div><a href="#/migration#migration-choices" class="group flex items-center justify-between rounded-2xl border border-brand-cyan/20 bg-brand-cyan/5 px-5 py-4 text-sm text-slate-300 transition hover:border-brand-cyan/50 hover:text-white"><span><span class="block font-semibold text-white">Choose the setup that fits your project</span><span class="mt-1 block text-xs text-slate-400">Compare the object API, low-level API, mixed math path and rendering backends.</span></span><span aria-hidden="true" class="text-lg text-brand-cyan transition group-hover:translate-y-1">↓</span></a></div>
     </section>
     <section id="migration-choices" class="mx-auto max-w-6xl scroll-mt-24 px-6 pb-16">
-      ${sectionHead({ label: 'Choose your setup', title: 'One engine, two ways to build', intro: 'Start with the API and rendering backend that fit your project. You can move from the familiar route to batched calls later, without changing the engine.' })}
-      <div class="grid grid-cols-1 gap-4 md:grid-cols-3">${choices.map(([title, api, body, sample], i) => `<article class="glass min-w-0 rounded-3xl p-6" data-reveal style="--reveal-delay:${i * 70}ms"><p class="font-mono text-[11px] uppercase tracking-wider text-brand-cyan">Option 0${i + 1}</p><h2 class="mt-3 font-display text-xl font-semibold text-white">${title}</h2><p class="mt-1 font-mono text-xs text-slate-400">${code(api)}</p><p class="mt-4 text-sm leading-relaxed text-slate-400">${code(body)}</p>${codeBlock(sample, { title: 'app.js', className: 'mt-5' })}</article>`).join('')}</div>
+      ${sectionHead({ label: 'Choose your setup', title: 'Pick an API and rendering backend', intro: 'Choose the object API for familiar scene code, the low-level API for direct batched control, or mix JavaScript math values with the WebAssembly scene. Select a renderer independently.' })}
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-2">${choices.map(([number, title, api, body, sample], i) => `<article class="glass min-w-0 rounded-3xl p-6" data-reveal style="--reveal-delay:${i * 70}ms"><p class="font-mono text-[11px] uppercase tracking-wider text-brand-cyan">Option 0${number}</p><h2 class="mt-3 font-display text-xl font-semibold text-white">${title}</h2><p class="mt-1 font-mono text-xs text-slate-400">${code(api)}</p><p class="mt-4 text-sm leading-relaxed text-slate-400">${code(body)}</p>${codeBlock(sample, { title: 'app.js', className: 'mt-5' })}</article>`).join('')}</div>
     </section>
     <section class="mx-auto max-w-6xl px-6 py-24">
       ${sectionHead({ label: 'Differences', title: 'What to watch for' })}
