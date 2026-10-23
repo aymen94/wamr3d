@@ -10,26 +10,21 @@ const sections = [
       { href: './examples/showcase/', tag: 'Up to 100,000 bodies', title: 'Showcase', body: 'A four-level scene graph of spinning belts. Change the body count, instancing, shading, lights and fog, switch between WAMR3D and three.js, and compare live timings.', source: 'examples/showcase/main.js', art: 'from-brand-cyan/40 via-brand-blue/30 to-transparent' },
       { href: './examples/compare/', tag: 'Side by side', title: 'Engine comparison', body: 'The same scene on WAMR3D and three.js (WebGPU and WebGL) with timing overlays, including the three.js-only baseline. Run one engine at a time for measurement.', source: 'examples/compare/run.js', art: 'from-brand-blue/50 via-brand-violet/30 to-transparent' },
       { href: './examples/browser/', tag: 'Low-level API', title: 'Browser demo', body: 'The handle-based API driving a scene in the browser, with an optional transform check against three.js.', source: 'examples/browser/main.js', art: 'from-brand-violet/40 via-brand-cyan/20 to-transparent' },
-      { href: './parity/visual/index.html', tag: '35 visual cases', title: 'Visual parity', body: 'From cubes, lights and textures to points, sprites, shadows, tone mapping and render targets, compared pixel by pixel with stored three.js images.', source: 'parity/visual/cases.js', art: 'from-brand-cyan/40 via-brand-violet/20 to-transparent' }
+      { href: './parity/visual/index.html', tag: '37 visual cases', title: 'Visual parity', body: 'From cubes, lights and textures to points, sprites, shadows, tone mapping and render targets, compared pixel by pixel with stored three.js images.', source: 'parity/visual/cases.js', art: 'from-brand-cyan/40 via-brand-violet/20 to-transparent' }
     ]
   }
 ];
 
 function card(demo, i) {
-  const art = demo.image
-    ? `<img src="${demo.image}" alt="" loading="lazy" width="640" height="360" class="absolute inset-0 size-full object-cover transition duration-700 group-hover:scale-105"><div class="absolute inset-0 bg-gradient-to-t from-ink-950/85 via-ink-950/10 to-transparent"></div>`
-    : `<div class="absolute inset-0 bg-gradient-to-br ${demo.art}"></div>`;
-  const credit = demo.credit ? `<p class="mt-3 text-xs text-slate-400">Original by <a href="${demo.original}" target="_blank" rel="noreferrer" class="pointer-events-auto relative z-10 text-slate-300 underline-offset-4 hover:text-white hover:underline">${demo.credit}</a></p>` : '';
-  const compare = demo.compare ? `<a href="${demo.compare}" target="_blank" rel="noreferrer" class="pointer-events-auto inline-flex items-center gap-1 text-slate-400 transition hover:text-white">On three.js ${icon('arrow')}</a>` : '';
+  const art = `<div class="absolute inset-0 bg-gradient-to-br ${demo.art}"></div>`;
   return `<article class="glass gradient-border group relative flex flex-col overflow-hidden rounded-3xl transition duration-500 hover:-translate-y-1" data-reveal style="--reveal-delay:${(i % 3) * 70}ms">
     <div class="grid-backdrop relative aspect-[16/9] overflow-hidden">${art}<span class="absolute bottom-4 left-5 font-mono text-[11px] uppercase tracking-[0.2em] text-white/90">${demo.tag}</span></div>
     <div class="flex flex-1 flex-col p-6">
       <h3 class="font-display text-xl font-semibold text-white"><a href="${demo.href}" target="_blank" rel="noreferrer" class="after:absolute after:inset-0">${demo.title}</a></h3>
       <p class="mt-2 flex-1 text-sm leading-relaxed text-slate-400">${demo.body}</p>
-      ${credit}
       <div class="pointer-events-none relative z-10 mt-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-sm">
         <span class="inline-flex items-center gap-1.5 font-semibold text-brand-cyan">Open demo ${icon('arrow')}</span>
-        <span class="flex items-center gap-4">${compare}<a href="${repoFile(demo.source)}" target="_blank" rel="noreferrer" class="pointer-events-auto inline-flex items-center gap-1 text-slate-400 transition hover:text-white">Source ${icon('external')}</a></span>
+        <span class="flex items-center gap-4"><a href="${repoFile(demo.source)}" target="_blank" rel="noreferrer" class="pointer-events-auto inline-flex items-center gap-1 text-slate-400 transition hover:text-white">Source ${icon('external')}</a></span>
       </div>
     </div>
   </article>`;

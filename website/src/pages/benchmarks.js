@@ -181,7 +181,7 @@ node bench/bench.mjs                     # needs npm install (the pinned three)
 node bench/compat.mjs
 node bench/math.mjs
 
-# or all of the above: pwsh bench/run-browser.ps1
+# or all of the above: pwsh bench/run-browser.ps1 -Node
 # logs replace the last run in bench/results/, then:
 node website/scripts/benchmark-data.mjs`, { title: 'terminal', language: 'sh' })}</div>
         <div class="space-y-4 text-slate-400" data-reveal>

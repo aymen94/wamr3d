@@ -22,7 +22,7 @@ const ports = option( 'only', '' ) ? option( 'only', '' ).split( ',' ) : all;
 const engines = [ 'wamr3d', ...( process.argv.includes( '--webgl' ) ? [ 'wamr3d-webgl' ] : [] ), ...( process.argv.includes( '--three' ) ? [ 'three' ] : [] ) ];
 const shots = option( 'shots', '' );
 if ( shots ) fs.mkdirSync( shots, { recursive: true } );
-// --thumbs=website/images/examples writes the 640×360 card images of the website.
+// --thumbs=folder writes a 640×360 JPEG thumbnail of each port.
 const thumbs = option( 'thumbs', '' );
 if ( thumbs ) fs.mkdirSync( thumbs, { recursive: true } );
 

@@ -229,7 +229,7 @@ function liveDemo() {
       <div class="grid grid-cols-1 gap-5 md:grid-cols-3">
         ${others.map(([href, title, body], i) => `<a href="${href}" target="_blank" rel="noreferrer" class="glass group flex flex-col justify-between rounded-3xl p-6 transition hover:-translate-y-0.5 hover:bg-white/[0.07]" data-reveal style="--reveal-delay:${i * 80}ms"><div><h3 class="flex items-center justify-between font-display text-lg font-semibold text-white">${title}<span class="text-slate-400 transition group-hover:text-brand-cyan">${icon('external')}</span></h3><p class="mt-2 text-sm leading-relaxed text-slate-400">${body}</p></div></a>`).join('')}
       </div>
-      <p class="mt-5 text-sm text-slate-400">The demos need a browser with WebGPU, such as current Chrome or Edge.</p>
+      <p class="mt-5 text-sm text-slate-400">The demos need a browser with WebGPU or WebGL 2; the three.js WebGPU comparisons need WebGPU.</p>
     </div>
   </section>`;
 }
@@ -242,7 +242,7 @@ function install() {
         <div class="space-y-6" data-reveal>
           ${installChip()}
           <dl class="space-y-4 text-sm">
-            <div><dt class="font-semibold text-white">Rendering</dt><dd class="mt-1 text-slate-400">A browser with WebGPU (current Chrome or Edge). Pages must be served over HTTP, not opened from <code class="font-mono">file://</code>.</dd></div>
+            <div><dt class="font-semibold text-white">Rendering</dt><dd class="mt-1 text-slate-400">A browser with WebGPU, or WebGL 2 where WebGPU is missing. Pages must be served over HTTP, not opened from <code class="font-mono">file://</code>.</dd></div>
             <div><dt class="font-semibold text-white">Without a renderer</dt><dd class="mt-1 text-slate-400">Node.js 18 or newer runs the math and the scene graph.</dd></div>
             <div><dt class="font-semibold text-white">Resolving the package</dt><dd class="mt-1 text-slate-400">Use a bundler or an import map for the <code class="font-mono">wamr3d</code> name.</dd></div>
             <div><dt class="font-semibold text-white">TypeScript</dt><dd class="mt-1 text-slate-400">Typings are included. Set <code class="font-mono">"lib": [ "esnext", "dom" ]</code>.</dd></div>
@@ -261,7 +261,7 @@ function closing() {
       <div class="pointer-events-none absolute inset-x-0 -top-32 mx-auto h-64 max-w-xl rounded-full bg-gradient-to-r from-brand-violet/40 via-brand-blue/40 to-brand-cyan/40 blur-3xl"></div>
       ${eyebrow('Open source · MIT')}
       <h2 class="relative font-display text-3xl font-semibold tracking-tight text-white sm:text-5xl">Bring your scene.<br><span class="text-gradient">Measure it yourself.</span></h2>
-      <p class="relative mx-auto mt-5 max-w-xl text-lg text-slate-400">Run your three.js scene on WAMR3D's WebGPU renderer, compare the numbers, then batch the hot paths as your scene grows.</p>
+      <p class="relative mx-auto mt-5 max-w-xl text-lg text-slate-400">Run your three.js scene on WAMR3D's WebGPU or WebGL 2 renderer, compare the numbers, then batch the hot paths as your scene grows.</p>
       <div class="relative mt-9 flex flex-wrap justify-center gap-3">${button('#install', 'Get started')}${button('https://github.com/aymen94/wamr3d', 'Star on GitHub', 'secondary', true)}</div>
     </div>
   </section>`;

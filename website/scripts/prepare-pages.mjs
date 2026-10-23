@@ -27,9 +27,8 @@ try {
 }
 
 await copyWebsiteAsset('images/favicon.ico', 'images/favicon.ico');
-await fs.cp(path.join(websiteRoot, 'images', 'examples'), path.join(outputRoot, 'images', 'examples'), { recursive: true });
-// Site icons live in website/images/ (older checkouts keep them at the repository root);
-// the pages expect them at the site root.
+// Site icons live in website/images/, except logo.png and site.webmanifest at the repository
+// root; the pages expect them all at the site root.
 for (const asset of ['favicon.ico', 'favicon-16x16.png', 'favicon-32x32.png', 'apple-touch-icon.png', 'android-chrome-192x192.png', 'android-chrome-512x512.png', 'logo.png', 'site.webmanifest']) {
   const moved = path.join('images', asset);
   try {
@@ -47,4 +46,4 @@ await fs.writeFile(path.join(outputRoot, '.nojekyll'), '');
 const site = 'https://aymen94.github.io/wamr3d/';
 await fs.writeFile(path.join(outputRoot, 'robots.txt'), `User-agent: *\nAllow: /\nSitemap: ${site}sitemap.xml\n`);
 await fs.writeFile(path.join(outputRoot, 'sitemap.xml'), `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${site}</loc></url></urlset>\n`);
-console.log('Prepared Pages output: docs, ported games and scenes, showcase, comparison, and visual parity fixtures.');
+console.log('Prepared Pages output: docs, examples, showcase, comparison, and visual parity fixtures.');
