@@ -20,7 +20,8 @@ const sections = [
     intro: 'Applications that render with WAMR3D, on WebGPU or its WebGL 2 fallback.',
     items: [
       { href: 'https://aymen.xyz/cellverse/', tag: 'Interactive 3D education', title: 'CellVerse', body: 'Explore life at the molecular level: eukaryotic cell biology, molecular structures and chemical elements in interactive 3D.', sourceUrl: 'https://github.com/aymen94/cellverse', art: 'from-brand-violet/40 via-brand-blue/30 to-transparent' },
-      { href: 'https://aymen.xyz/skyhunter/', tag: 'Flight and combat', title: 'SKYHUNTER', body: 'A drone flight and combat simulator in the browser, with real-time 3D rendered by WAMR3D.', sourceUrl: 'https://github.com/aymen94/skyhunter', art: 'from-brand-cyan/40 via-brand-blue/30 to-transparent' }
+      { href: 'https://aymen.xyz/skyhunter/', tag: 'Flight and combat', title: 'SKYHUNTER', body: 'A drone flight and combat simulator in the browser, with real-time 3D rendered by WAMR3D.', sourceUrl: 'https://github.com/aymen94/skyhunter', art: 'from-brand-cyan/40 via-brand-blue/30 to-transparent' },
+      { href: 'https://aymen.xyz/pocketgames/', tag: '100 browser games', title: 'PocketGames', body: 'Free browser games with no downloads or account: arcade, puzzle, sports, racing and more, with the 3D games rendered through the wamr3d/compat API.', sourceUrl: 'https://github.com/aymen94/pocketgames', art: 'from-brand-blue/40 via-brand-violet/30 to-transparent' }
     ]
   }
 ];
