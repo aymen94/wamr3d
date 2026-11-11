@@ -1,0 +1,19 @@
+﻿21:52:43  results go to C:\Users\Ay\Documents\projects\WAMRNative\bench\results
+21:52:43  building dist/wamr3d
+21:53:02  starting the server
+21:53:02  running node bench/bench.mjs
+21:53:07  finished in 0.1 min, exit code 0, wrote C:\Users\Ay\Documents\projects\WAMRNative\bench\results\bench.txt
+21:53:07  running node bench/compat.mjs
+21:53:13  finished in 0.1 min, exit code 0, wrote C:\Users\Ay\Documents\projects\WAMRNative\bench\results\compat.txt
+21:53:14  running node bench/math.mjs
+21:53:16  finished in 0.0 min, exit code 0, wrote C:\Users\Ay\Documents\projects\WAMRNative\bench\results\math.txt
+21:53:16  running node examples/showcase/check.mjs --measure --size=1280x720
+21:58:05  finished in 4.8 min, exit code 0, wrote C:\Users\Ay\Documents\projects\WAMRNative\bench\results\showcase-1280x720.txt
+21:58:05  running node examples/showcase/check.mjs --measure --size=3840x2160
+22:02:55  finished in 4.8 min, exit code 0, wrote C:\Users\Ay\Documents\projects\WAMRNative\bench\results\showcase-3840x2160.txt
+22:02:55  running node examples/showcase/check.mjs --measure --counts=100000 --modes=instanced --size=3840x2160
+22:03:48  finished in 0.9 min, exit code 0, wrote C:\Users\Ay\Documents\projects\WAMRNative\bench\results\showcase100k-3840x2160.txt
+22:03:48  running node examples/compare/measure.mjs --gpu --size=3840x2160
+22:09:31  finished in 5.7 min, exit code 0, wrote C:\Users\Ay\Documents\projects\WAMRNative\bench\results\compare-3840x2160.txt
+22:09:31  all runs done
+22:09:31  stopped the server

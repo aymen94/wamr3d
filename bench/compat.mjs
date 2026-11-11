@@ -250,7 +250,100 @@ const workloads = [
 
 	} ],
 
+	[ 'animation: 16 skinned characters, 24 bones, two blended clips', 16, ( L ) => {
+
+		const { scene, mixers, skeletons } = characters( L, 16 );
+		return () => {
+
+			for ( const mixer of mixers ) mixer.update( 1 / 60 );
+			scene.updateMatrixWorld();
+			// renderers fill the bone matrices of every skinned mesh they draw
+			for ( const skeleton of skeletons ) skeleton.update();
+			sink += skeletons[ 0 ].boneMatrices[ 12 ];
+
+		};
+
+	} ],
+
+	[ 'animation: 200 skinned characters, 24 bones, two blended clips', 200, ( L ) => {
+
+		const { scene, mixers, skeletons } = characters( L, 200 );
+		return () => {
+
+			for ( const mixer of mixers ) mixer.update( 1 / 60 );
+			scene.updateMatrixWorld();
+			for ( const skeleton of skeletons ) skeleton.update();
+			sink += skeletons[ 0 ].boneMatrices[ 12 ];
+
+		};
+
+	} ],
+
 ];
+
+// `count` skinned characters of 24 bones (a spine and two limbs of eight), each with its
+// own mixer playing two of three clips at once, cross-faded by weight.
+function characters( L, count ) {
+
+	const scene = new L.Scene(), material = new L.MeshStandardMaterial();
+	const mixers = [], skeletons = [];
+	const times = Array.from( { length: 31 }, ( _, k ) => k / 30 );
+
+	for ( let c = 0; c < count; c ++ ) {
+
+		const bones = [];
+
+		for ( let b = 0; b < 24; b ++ ) {
+
+			const bone = new L.Bone();
+			bone.name = `bone${b}`;
+			bone.position.set( b % 8 === 0 ? ( b / 8 - 1 ) * 0.3 : 0, b % 8 === 0 ? 0 : 0.25, 0 );
+			if ( b % 8 !== 0 ) bones[ b - 1 ].add( bone );
+			else if ( b > 0 ) bones[ 0 ].add( bone );
+			bones.push( bone );
+
+		}
+
+		const geometry = new L.CylinderGeometry( 0.2, 0.2, 2, 8, 23 );
+		const vertices = geometry.getAttribute( 'position' ).count, indices = [], weights = [];
+
+		for ( let v = 0; v < vertices; v ++ ) {
+
+			const row = Math.min( 23, Math.floor( ( geometry.getAttribute( 'position' ).getY( v ) + 1 ) * 11.5 ) );
+			indices.push( row, Math.max( 0, row - 1 ), 0, 0 );
+			weights.push( 0.7, 0.3, 0, 0 );
+
+		}
+
+		geometry.setAttribute( 'skinIndex', new L.Uint16BufferAttribute( indices, 4 ) );
+		geometry.setAttribute( 'skinWeight', new L.Float32BufferAttribute( weights, 4 ) );
+		const mesh = new L.SkinnedMesh( geometry, material );
+		mesh.add( bones[ 0 ] );
+		mesh.bind( new L.Skeleton( bones ) );
+		mesh.position.set( c % 16 - 8, 0, - Math.floor( c / 16 ) );
+		scene.add( mesh );
+
+		const clips = [ 0, 1, 2 ].map( ( k ) => new L.AnimationClip( `clip${k}`, 1, [
+			new L.VectorKeyframeTrack( 'bone0.position', times, times.flatMap( ( t ) => [ 0, Math.sin( ( t + k ) * 6.28 ) * 0.1, 0 ] ) ),
+			...bones.map( ( bone, b ) => new L.QuaternionKeyframeTrack( `${bone.name}.quaternion`, times, times.flatMap( ( t ) => {
+
+				const angle = Math.sin( ( t + b * 0.1 + k ) * 6.28 ) * 0.3, half = angle / 2;
+				return k === 1 ? [ Math.sin( half ), 0, 0, Math.cos( half ) ] : [ 0, 0, Math.sin( half ), Math.cos( half ) ];
+
+			} ) ) )
+		] ) );
+		const mixer = new L.AnimationMixer( mesh );
+		mixer.clipAction( clips[ 0 ] ).setEffectiveWeight( 0.6 ).play();
+		mixer.clipAction( clips[ c % 2 + 1 ] ).setEffectiveWeight( 0.4 ).play();
+		mixers.push( mixer );
+		skeletons.push( mesh.skeleton );
+
+	}
+
+	scene.updateMatrixWorld();
+	return { scene, mixers, skeletons };
+
+}
 
 // 10 groups of meshes on a ring, as an application would build them.
 function tree( L, count ) {

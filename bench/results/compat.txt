@@ -1,18 +1,20 @@
 node v24.20.0, win32 x64; 5 warm-up runs, median of 21; each library in its own process
 
 workload                                                                three ms  wamr3d ms   wamr3d/three
-math: vector chain (set, applyQuaternion, add, normalize, dot)            2.189      2.260       1.03x
-math: new Vector3 per operation (allocation churn)                        0.795      0.828       1.04x
-math: Matrix4 compose, multiply, invert                                   2.961      3.227       1.09x
-math: Quaternion.setFromEuler + slerp                                    11.014     11.350       1.03x
-math: Box3.expandByPoint + Sphere.containsPoint                           0.823      0.821       1.00x
-math: Color.setHSL + lerp                                                 4.311      3.808       0.88x
-scene: 10,000 meshes, set rotation + position.y, updateMatrixWorld        3.498      2.494       0.71x
-scene: 10,000 meshes, rotation.y += and position.x read                   3.625      2.636       0.73x
-scene: read matrixWorld.elements of 10,000 meshes                         0.465      0.273       0.59x
-scene: getWorldPosition of 10,000 meshes                                  3.238      2.457       0.76x
-scene: object.lookAt on 10,000 meshes                                     5.652      2.830       0.50x
-scene: create + add + remove 10,000 meshes                               31.306     28.946       0.92x
-picking: 100 rays against 1,000 boxes                                     5.896      7.129       1.21x
+math: vector chain (set, applyQuaternion, add, normalize, dot)            3.720      2.235       0.60x
+math: new Vector3 per operation (allocation churn)                        0.827      0.830       1.00x
+math: Matrix4 compose, multiply, invert                                   3.260      3.255       1.00x
+math: Quaternion.setFromEuler + slerp                                    11.981     11.005       0.92x
+math: Box3.expandByPoint + Sphere.containsPoint                           0.828      0.822       0.99x
+math: Color.setHSL + lerp                                                 4.382      3.948       0.90x
+scene: 10,000 meshes, set rotation + position.y, updateMatrixWorld        3.663      2.728       0.74x
+scene: 10,000 meshes, rotation.y += and position.x read                   4.260      2.546       0.60x
+scene: read matrixWorld.elements of 10,000 meshes                         0.469      0.271       0.58x
+scene: getWorldPosition of 10,000 meshes                                  3.526      2.610       0.74x
+scene: object.lookAt on 10,000 meshes                                     5.983      2.818       0.47x
+scene: create + add + remove 10,000 meshes                               31.507     29.550       0.94x
+picking: 100 rays against 1,000 boxes                                     5.855      6.164       1.05x
+animation: 16 skinned characters, 24 bones, two blended clips             0.348      0.272       0.78x
+animation: 200 skinned characters, 24 bones, two blended clips            4.956      4.697       0.95x
 
 wamr3d/three: below 1 means WAMR3D was faster.

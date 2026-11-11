@@ -1,39 +1,39 @@
 node v24.20.0, win32 x64; 5 warm-up runs, 25 samples per workload
 
 start-up (one time, not included below)
-  wamr3d: import 6.4 ms, init (compile + instantiate 765 KiB of wasm) 25.5 ms
-  three:  import 3002.7 ms (unbundled source modules)
+  wamr3d: import 6.8 ms, init (compile + instantiate 777 KiB of wasm) 27.1 ms
+  three:  import 294.4 ms (unbundled source modules)
 
 workload                                                              side      median ms    min ms    max ms   ns/op   wamr3d/three
-Matrix4.multiplyMatrices                                              three       6.191      6.111     6.514     31.0   
-                                                                      wamr3d      7.791      7.683     7.994     39.0   1.26x
-Matrix4.invert (copy + invert)                                        three       6.668      6.504     6.856     33.3   
-                                                                      wamr3d      9.649      9.495     9.891     48.2   1.45x
-Vector3.applyMatrix4                                                  three       1.874      1.873     1.962      9.4   
-                                                                      wamr3d      7.069      6.835     7.482     35.3   3.77x
-Vector3.applyQuaternion                                               three       1.617      1.606     1.698      8.1   
-                                                                      wamr3d      6.552      6.467     6.991     32.8   4.05x
-boundary: getter (v.x)                                                three       1.371      1.320     1.453      6.9   
-                                                                      wamr3d      2.260      2.182     2.382     11.3   1.65x
-boundary: call with a handle (isAlive / .visible)                     three       1.376      1.315     1.539      6.9   
-                                                                      wamr3d      3.377      3.282     3.713     16.9   2.46x
-scene: update 10,000 world matrices (transforms unchanged, forced)    three       1.097      1.074     1.272    109.7   
-                                                                      wamr3d      0.571      0.570     0.659     57.1   0.52x
-scene: set 10,000 transforms + update, one call per property          three       2.568      2.541     2.831    256.8   
-                                                                      wamr3d      0.972      0.971     1.077     97.2   0.38x
-scene: set 10,000 transforms + update, one batched call               three       2.530      2.501     3.040    253.0   
-                                                                      wamr3d      0.685      0.681     0.757     68.5   0.27x
-scene: read back 10,000 world matrices into one Float32Array          three       0.824      0.795     0.880     82.4   
-                                                                      wamr3d      0.265      0.240     0.342     26.5   0.32x
-scene: create + parent + destroy 10,000 objects                       three      38.367     26.269    74.817   3836.7   
-                                                                      wamr3d      1.578      1.527     1.852    157.8   0.04x
-geometry: computeVertexNormals                                        three      10.512     10.395    10.713    159.2   
-                                                                      wamr3d      7.320      7.221     7.455    110.8   0.70x
-geometry: computeBoundingSphere                                       three       1.091      1.079     1.208     16.5   
-                                                                      wamr3d      0.499      0.495     0.552      7.6   0.46x
-geometry: applyMatrix4 (positions + normals)                          three       2.805      2.484     7.432     42.5   
-                                                                      wamr3d      1.566      1.547     1.654     23.7   0.56x
-geometry: upload positions + index (copy into the engine)             three       0.482      0.448     2.289      7.3   
-                                                                      wamr3d      0.350      0.349     0.423      5.3   0.73x
+Matrix4.multiplyMatrices                                              three       6.228      6.071     6.338     31.1   
+                                                                      wamr3d      8.013      7.849     8.204     40.1   1.29x
+Matrix4.invert (copy + invert)                                        three       6.985      6.849     7.184     34.9   
+                                                                      wamr3d      9.711      9.516    12.513     48.6   1.39x
+Vector3.applyMatrix4                                                  three       1.874      1.871     1.970      9.4   
+                                                                      wamr3d      6.863      6.702     7.161     34.3   3.66x
+Vector3.applyQuaternion                                               three       1.657      1.606     1.782      8.3   
+                                                                      wamr3d      6.698      6.509     7.281     33.5   4.04x
+boundary: getter (v.x)                                                three       1.475      1.379     1.655      7.4   
+                                                                      wamr3d      2.311      2.201     2.454     11.6   1.57x
+boundary: call with a handle (isAlive / .visible)                     three       1.439      1.402     1.892      7.2   
+                                                                      wamr3d      3.253      3.076     3.441     16.3   2.26x
+scene: update 10,000 world matrices (transforms unchanged, forced)    three       1.088      1.054     1.295    108.8   
+                                                                      wamr3d      0.593      0.562     0.667     59.3   0.55x
+scene: set 10,000 transforms + update, one call per property          three       2.654      2.539     3.126    265.4   
+                                                                      wamr3d      0.984      0.975     1.111     98.4   0.37x
+scene: set 10,000 transforms + update, one batched call               three       2.667      2.557     3.062    266.7   
+                                                                      wamr3d      0.692      0.684     0.775     69.2   0.26x
+scene: read back 10,000 world matrices into one Float32Array          three       0.986      0.947     1.086     98.6   
+                                                                      wamr3d      0.260      0.237     6.320     26.0   0.26x
+scene: create + parent + destroy 10,000 objects                       three      36.356     26.353    59.983   3635.6   
+                                                                      wamr3d      1.618      1.550     1.779    161.8   0.04x
+geometry: computeVertexNormals                                        three      10.696     10.491    10.925    161.9   
+                                                                      wamr3d      7.357      7.211     7.601    111.4   0.69x
+geometry: computeBoundingSphere                                       three       1.115      1.079     1.184     16.9   
+                                                                      wamr3d      0.499      0.496     0.559      7.6   0.45x
+geometry: applyMatrix4 (positions + normals)                          three       2.942      2.832     3.498     44.5   
+                                                                      wamr3d      1.573      1.565     1.674     23.8   0.53x
+geometry: upload positions + index (copy into the engine)             three       0.475      0.462     0.936      7.2   
+                                                                      wamr3d      0.358      0.350     0.375      5.4   0.75x
 
 wamr3d/three is the ratio of median times: below 1 means WAMR3D was faster, above 1 slower.
