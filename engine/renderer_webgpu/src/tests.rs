@@ -479,3 +479,71 @@ fn equal_keys_keep_scene_order_and_negative_render_orders_come_first() {
     let frame = prepare_frame(&mut world, root, camera, &Lighting::default()).unwrap();
     assert_eq!(frame.draws.iter().map(|d| d.object).collect::<Vec<_>>(), [boxes[3], boxes[0], boxes[1], boxes[2]]);
 }
+
+/// Six boxes from near to far, with materials `a b a b a b`.
+fn alternating(second: Material) -> (World, Entity, Entity, Vec<Entity>) {
+    let (mut world, root, camera, boxes) = scene(&[[0.0, 0.0, -5.0], [0.0, 0.0, -6.0], [0.0, 0.0, -7.0], [0.0, 0.0, -8.0], [0.0, 0.0, -9.0], [0.0, 0.0, -10.0]]);
+    let other = world.create_material(second);
+    let geometry = world.renderable(boxes[0]).unwrap().geometry;
+    for &e in boxes.iter().skip(1).step_by(2) {
+        world.set_renderable(e, Some(Renderable::mesh(geometry, other)));
+    }
+    (world, root, camera, boxes)
+}
+
+#[test]
+fn order_free_opaque_draws_are_grouped_by_material_then_depth() {
+    let (mut world, root, camera, b) = alternating(Material { color: Color::new(0.0, 1.0, 0.0), ..Material::default() });
+    let frame = prepare_frame(&mut world, root, camera, &Lighting::default()).unwrap();
+    // the group of the nearest draw first; each group nearest first
+    assert_eq!(frame.draws.iter().map(|d| d.object).collect::<Vec<_>>(), [b[0], b[2], b[4], b[1], b[3], b[5]]);
+    // the object blocks follow the draws
+    assert_eq!(frame.object_uniforms.len(), 6 * OBJECT_UNIFORM_FLOATS);
+    assert_eq!(frame.object_uniforms[OBJECT_UNIFORM_FLOATS + 14], -7.0);
+}
+
+#[test]
+fn a_run_with_an_order_dependent_draw_keeps_depth_order() {
+    let depth_order = |world: &mut World, root, camera| prepare_frame(world, root, camera, &Lighting::default()).unwrap().draws.iter().map(|d| d.object).collect::<Vec<_>>();
+    let dependent = [
+        Material { depth_write: false, ..Material::default() },
+        Material { depth_test: false, ..Material::default() },
+        Material { state: wamr_core::RenderState { depth_func: 4, ..wamr_core::RenderState::default() }, ..Material::default() },
+        Material { state: wamr_core::RenderState { color_write: false, ..wamr_core::RenderState::default() }, ..Material::default() },
+        Material { state: wamr_core::RenderState { stencil: wamr_core::Stencil { write: true, ..wamr_core::Stencil::default() }, ..wamr_core::RenderState::default() }, ..Material::default() },
+    ];
+    for (i, material) in dependent.into_iter().enumerate() {
+        let (mut world, root, camera, b) = alternating(material);
+        assert_eq!(depth_order(&mut world, root, camera), b, "case {i}");
+    }
+    // another render order is a run of its own and may be grouped
+    let (mut world, root, camera, b) = alternating(Material { color: Color::new(0.0, 1.0, 0.0), ..Material::default() });
+    world.visibility_mut(b[5]).unwrap().render_order = 1.0;
+    assert_eq!(depth_order(&mut world, root, camera), [b[0], b[2], b[4], b[1], b[3], b[5]]);
+}
+
+#[test]
+fn blended_draws_are_never_grouped() {
+    let (mut world, root, camera, b) = alternating(Material { transparent: true, opacity: 0.5, ..Material::default() });
+    let glass = world.create_material(Material { transparent: true, opacity: 0.4, ..Material::default() });
+    let geometry = world.renderable(b[0]).unwrap().geometry;
+    for &e in b.iter().step_by(2) {
+        world.set_renderable(e, Some(Renderable::mesh(geometry, glass)));
+    }
+    let frame = prepare_frame(&mut world, root, camera, &Lighting::default()).unwrap();
+    assert_eq!(frame.draws.iter().map(|d| d.object).collect::<Vec<_>>(), [b[5], b[4], b[3], b[2], b[1], b[0]]);
+}
+
+#[test]
+fn shaders_read_object_blocks_as_the_hosts_bind_them() {
+    // WebGL 2: blocks of OBJECT_BLOCK_DRAWS draws, eight vec4 each
+    let block = format!("vec4 object_data[{}];", OBJECT_BLOCK_DRAWS * OBJECT_UNIFORM_FLOATS / 4);
+    for name in ["mesh.vert", "mesh_quad.vert", "shadow.vert"] {
+        let source = glsl_source(name).unwrap();
+        assert!(source.contains(&block) && source.contains("    load_object(object_range"), "{name}");
+    }
+    // the fragment stage indexes no block array: the shared definition is never called
+    assert!(!glsl_source("mesh.frag").unwrap().contains("    load_object("));
+    // WebGPU: one storage array, entries packed at OBJECT_UNIFORM_FLOATS
+    assert!(shader_source().contains("var<storage, read> objects: array<ObjectUniforms>") && OBJECT_UNIFORM_FLOATS == OBJECT_BINDING_FLOATS);
+}

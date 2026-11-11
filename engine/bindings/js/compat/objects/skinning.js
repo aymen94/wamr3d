@@ -2,7 +2,7 @@
 //
 // Part of the drawable objects; `../objects.js` gathers them.
 
-import { w } from '../engine.js';
+import { floatView, peek, w } from '../engine.js';
 import { Box3, Matrix4, Quaternion, Sphere, Vector3, Vector4 } from '../math.js';
 import * as W from '../../index.js';
 import { Object3D } from '../object3d.js';
@@ -95,17 +95,73 @@ export class Skeleton {
 
 	}
 
-	/** Fills `boneMatrices` with each bone's world matrix times its inverse bind matrix. */
+	/**
+	 * Fills `boneMatrices` with each bone's world matrix times its inverse bind matrix.
+	 * The world matrices are read in one engine call, as `matrixWorld` reads them one at a time.
+	 */
 	update() {
 
-		const matrices = this.boneMatrices;
+		const bones = this.bones, inverses = this.boneInverses, matrices = this.boneMatrices, count = bones.length;
+		let handles = this._handles, seen = this._seen;
 
-		this.bones.forEach( ( bone, i ) => {
+		if ( ! handles || handles.length !== count ) {
 
-			_offset.multiplyMatrices( bone ? bone.matrixWorld : _inverse.identity(), this.boneInverses[ i ] );
-			_offset.toArray( matrices, i * 16 );
+			handles = this._handles = new BigUint64Array( count );
+			seen = this._seen = new Array( count ).fill( undefined );
 
-		} );
+		}
+
+		for ( let i = 0; i < count; i ++ ) {
+
+			const bone = bones[ i ];
+			if ( bone === seen[ i ] ) continue;
+			seen[ i ] = bone;
+			// a missing bone reads as an identity matrix below, whatever this handle holds
+			handles[ i ] = bone ? bone.handle : 0n;
+
+		}
+
+		const at = peek().matricesWorldPtr( handles ) >>> 2, ae = floatView();
+
+		for ( let i = 0; i < count; i ++ ) {
+
+			const be = inverses[ i ].elements, o = i * 16;
+
+			if ( ! bones[ i ] ) {
+
+				_offset.multiplyMatrices( _inverse.identity(), inverses[ i ] ).toArray( matrices, o );
+				continue;
+
+			}
+
+			// the product as `Matrix4.multiplyMatrices` forms it, rounded once on store
+			const a = at + o;
+			const a11 = ae[ a ], a12 = ae[ a + 4 ], a13 = ae[ a + 8 ], a14 = ae[ a + 12 ];
+			const a21 = ae[ a + 1 ], a22 = ae[ a + 5 ], a23 = ae[ a + 9 ], a24 = ae[ a + 13 ];
+			const a31 = ae[ a + 2 ], a32 = ae[ a + 6 ], a33 = ae[ a + 10 ], a34 = ae[ a + 14 ];
+			const a41 = ae[ a + 3 ], a42 = ae[ a + 7 ], a43 = ae[ a + 11 ], a44 = ae[ a + 15 ];
+			const b11 = be[ 0 ], b12 = be[ 4 ], b13 = be[ 8 ], b14 = be[ 12 ];
+			const b21 = be[ 1 ], b22 = be[ 5 ], b23 = be[ 9 ], b24 = be[ 13 ];
+			const b31 = be[ 2 ], b32 = be[ 6 ], b33 = be[ 10 ], b34 = be[ 14 ];
+			const b41 = be[ 3 ], b42 = be[ 7 ], b43 = be[ 11 ], b44 = be[ 15 ];
+			matrices[ o ] = a11 * b11 + a12 * b21 + a13 * b31 + a14 * b41;
+			matrices[ o + 4 ] = a11 * b12 + a12 * b22 + a13 * b32 + a14 * b42;
+			matrices[ o + 8 ] = a11 * b13 + a12 * b23 + a13 * b33 + a14 * b43;
+			matrices[ o + 12 ] = a11 * b14 + a12 * b24 + a13 * b34 + a14 * b44;
+			matrices[ o + 1 ] = a21 * b11 + a22 * b21 + a23 * b31 + a24 * b41;
+			matrices[ o + 5 ] = a21 * b12 + a22 * b22 + a23 * b32 + a24 * b42;
+			matrices[ o + 9 ] = a21 * b13 + a22 * b23 + a23 * b33 + a24 * b43;
+			matrices[ o + 13 ] = a21 * b14 + a22 * b24 + a23 * b34 + a24 * b44;
+			matrices[ o + 2 ] = a31 * b11 + a32 * b21 + a33 * b31 + a34 * b41;
+			matrices[ o + 6 ] = a31 * b12 + a32 * b22 + a33 * b32 + a34 * b42;
+			matrices[ o + 10 ] = a31 * b13 + a32 * b23 + a33 * b33 + a34 * b43;
+			matrices[ o + 14 ] = a31 * b14 + a32 * b24 + a33 * b34 + a34 * b44;
+			matrices[ o + 3 ] = a41 * b11 + a42 * b21 + a43 * b31 + a44 * b41;
+			matrices[ o + 7 ] = a41 * b12 + a42 * b22 + a43 * b32 + a44 * b42;
+			matrices[ o + 11 ] = a41 * b13 + a42 * b23 + a43 * b33 + a44 * b43;
+			matrices[ o + 15 ] = a41 * b14 + a42 * b24 + a43 * b34 + a44 * b44;
+
+		}
 
 	}
 

@@ -18,7 +18,7 @@ export const warnOnce = ( what ) => {
 export const ATTRIBUTES = [ [ 'position', 3 ], [ 'normal', 3 ], [ 'uv', 2 ], [ 'color', 3 ] ];
 export const AUX_ATTRIBUTES = 5, AUX_STRIDE = 60, AUX_FLOATS = 15, AUX_SIZES = [ 4, 2, 4, 4, 1 ], AUX_OFFSETS = [ 0, 4, 6, 10, 14 ];
 export const TOPOLOGIES = [ 'triangle-list', 'line-strip', 'line-list', 'point-list' ];
-export const VERTEX_COLOR_SLOT = 3, MATRIX_SLOT = 4, COLOR_SLOT = 5, AUX_SLOT = 6;
+export const VERTEX_COLOR_SLOT = 3, MATRIX_SLOT = 4, COLOR_SLOT = 5, AUX_SLOT = 6, OBJECT_SLOT = 7;
 
 // Engine pipeline-key bits: a line strip closed back to its first vertex, colours of four
 // floats, a mesh drawn as the edges of its triangles, interleaved extra attributes,
@@ -26,20 +26,29 @@ export const VERTEX_COLOR_SLOT = 3, MATRIX_SLOT = 4, COLOR_SLOT = 5, AUX_SLOT = 
 export const LOOP_KEY = 1 << 7, RGBA_COLOR_KEY = 1 << 8, WIREFRAME_KEY = 1 << 9, AUX_KEY = 1 << 10, PREMULTIPLIED_KEY = 1 << 14, QUAD_KEY = 1 << 15;
 // Host-only bit of shadow pipelines: the caster has an alpha test.
 export const ALPHA_TEST_KEY = 1 << 23;
+// Host-only bit: a draw without instances, issued with its object block's index as
+// `firstInstance` (the shader's `OBJECT_BY_INSTANCE`). Its per-instance inputs have a
+// stride of 0, so that every instance reads the identity matrix and white.
+export const DIRECT_KEY = 1 << 29;
+
+// The object block's index of a draw that is not direct: one u32 per instance at a
+// stride of 0, from a buffer holding 0, 1, 2... bound at the index.
+const objectSlot = ( location ) => ( { arrayStride: 0, stepMode: 'instance', attributes: [ { shaderLocation: location, offset: 0, format: 'uint32' } ] } );
 
 export const vertexBuffers = ( key ) => [
 	{ arrayStride: 12, attributes: [ { shaderLocation: 0, offset: 0, format: 'float32x3' } ] },
 	{ arrayStride: 12, attributes: [ { shaderLocation: 1, offset: 0, format: 'float32x3' } ] },
 	{ arrayStride: 8, attributes: [ { shaderLocation: 2, offset: 0, format: 'float32x2' } ] },
 	key & RGBA_COLOR_KEY ? { arrayStride: 16, attributes: [ { shaderLocation: 3, offset: 0, format: 'float32x4' } ] } : { arrayStride: 12, attributes: [ { shaderLocation: 3, offset: 0, format: 'float32x3' } ] },
-	{ arrayStride: 64, stepMode: 'instance', attributes: [ 0, 1, 2, 3 ].map( ( column ) => ( { shaderLocation: 4 + column, offset: column * 16, format: 'float32x4' } ) ) },
-	{ arrayStride: 12, stepMode: 'instance', attributes: [ { shaderLocation: 8, offset: 0, format: 'float32x3' } ] },
+	{ arrayStride: key & DIRECT_KEY ? 0 : 64, stepMode: 'instance', attributes: [ 0, 1, 2, 3 ].map( ( column ) => ( { shaderLocation: 4 + column, offset: column * 16, format: 'float32x4' } ) ) },
+	{ arrayStride: key & DIRECT_KEY ? 0 : 12, stepMode: 'instance', attributes: [ { shaderLocation: 8, offset: 0, format: 'float32x3' } ] },
 	// with a stride of 0 every vertex reads the same zeros
 	{ arrayStride: key & AUX_KEY ? AUX_STRIDE : 0, attributes: [
 		{ shaderLocation: 9, offset: 0, format: 'float32x4' }, { shaderLocation: 10, offset: 16, format: 'float32x2' },
 		{ shaderLocation: 11, offset: 24, format: 'float32x4' }, { shaderLocation: 12, offset: 40, format: 'float32x4' },
 		{ shaderLocation: 15, offset: 56, format: 'float32' }
-	] }
+	] },
+	objectSlot( 13 )
 ];
 
 // Points and lines as quads read their vertices per instance: a point, a strip's
@@ -53,7 +62,9 @@ export function quadBuffers( key ) {
 		// the line distances of both ends, for dashes
 		{ arrayStride: pairs ? 8 : 4, stepMode: 'instance', attributes: [ { shaderLocation: 1, offset: 0, format: 'float32' }, { shaderLocation: 2, offset: topology === 3 ? 0 : 4, format: 'float32' } ] },
 		null,
-		{ arrayStride: ( pairs ? 2 : 1 ) * components * 4, stepMode: 'instance', attributes: [ { shaderLocation: 3, offset: 0, format: `float32x${components}` }, { shaderLocation: 14, offset: colorSecond, format: `float32x${components}` } ] }
+		{ arrayStride: ( pairs ? 2 : 1 ) * components * 4, stepMode: 'instance', attributes: [ { shaderLocation: 3, offset: 0, format: `float32x${components}` }, { shaderLocation: 14, offset: colorSecond, format: `float32x${components}` } ] },
+		null, null, null,
+		objectSlot( 4 )
 	];
 
 }

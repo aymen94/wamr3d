@@ -4,14 +4,14 @@
 
 import { Renderer, memory } from '../index.js';
 import { HDR_FORMAT } from './formats.js';
-import { ALPHA_TEST_KEY, COLOR_SLOT, STATE_FLAGS_FLOAT, MATRIX_SLOT, vertexBuffers } from './constants.js';
+import { ALPHA_TEST_KEY, COLOR_SLOT, DIRECT_KEY, OBJECT_SLOT, STATE_FLAGS_FLOAT, MATRIX_SLOT, vertexBuffers } from './constants.js';
 
 /** Adds this part's functions and state to the host context `ctx`. */
 export function installShadows( ctx ) {
 
-	const { BONES_PER_ROW, DRAW_FIELDS, MATERIAL_FLOATS, MAX_SHADOWS, SHADOW_FORMAT, bindGeometry, boneLayout, device, distinct, emptyFloatView, emptyVsmView, environmentSampler, frameTexturesLayout, identity, instances, materialStride, objectBindingBytes, objectLayout, setGroups, shadowCameraLayout, shadowModule, shadowPipelineLayout, shadowPipelines, shadowSampler, stride } = ctx;
-	// group 1 offsets of a shadow draw, reused (see `drawRange` in ../webgpu.js)
-	const offsets = new Uint32Array( 2 );
+	const { BONES_PER_ROW, DRAW_FIELDS, MATERIAL_FLOATS, MAX_SHADOWS, SHADOW_FORMAT, bindGeometry, boneLayout, device, distinct, emptyFloatView, emptyVsmView, environmentSampler, frameTexturesLayout, identity, instances, materialStride, objectLayout, setGroups, shadowCameraLayout, shadowModule, shadowPipelineLayout, shadowPipelines, shadowSampler, stride } = ctx;
+	// the group 1 offset (the material block) of a shadow draw, reused (see `drawRange` in ../webgpu.js)
+	const offsets = new Uint32Array( 1 );
 
 	function rebuildFrameTextures() {
 
@@ -71,7 +71,7 @@ export function installShadows( ctx ) {
 		if ( value ) return value;
 		value = device.createRenderPipeline( {
 			layout: shadowPipelineLayout,
-			vertex: { module: shadowModule, entryPoint: 'vertex', buffers: vertexBuffers( key ) },
+			vertex: { module: shadowModule, entryPoint: 'vertex', constants: { OBJECT_BY_INSTANCE: key & DIRECT_KEY ? 1 : 0 }, buffers: vertexBuffers( key ) },
 			fragment: key & ALPHA_TEST_KEY ? { module: shadowModule, entryPoint: 'fragment', targets: [] } : undefined,
 			primitive: { topology: 'triangle-list', frontFace: 'ccw', cullMode: [ 'back', 'front', 'none' ][ key & 3 ] },
 			depthStencil: { format: SHADOW_FORMAT, depthWriteEnabled: true, depthCompare: 'less-equal' }
@@ -201,12 +201,13 @@ export function installShadows( ctx ) {
 
 			ctx.shadowObjects?.destroy();
 			shadowObjectCapacity = Math.max( 64, Math.ceil( total * 1.5 ) );
-			ctx.shadowObjects = device.createBuffer( { size: shadowObjectCapacity * stride, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
+			ctx.shadowObjects = device.createBuffer( { size: shadowObjectCapacity * stride, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST } );
 			ctx.shadowObjectGroup = null;
 
 		}
 
-		ctx.shadowObjectGroup ??= device.createBindGroup( { layout: objectLayout, entries: [ { binding: 0, resource: { buffer: ctx.shadowObjects, size: objectBindingBytes } }, { binding: 1, resource: { buffer: ctx.materialBuffer, size: materialStride } } ] } );
+		ctx.ensureObjectSlots( total );
+		ctx.shadowObjectGroup ??= device.createBindGroup( { layout: objectLayout, entries: [ { binding: 0, resource: { buffer: ctx.shadowObjects } }, { binding: 1, resource: { buffer: ctx.materialBuffer, size: materialStride } } ] } );
 		let calls = 0;
 
 		for ( let p = 0; p < passes; p ++ ) {
@@ -221,7 +222,8 @@ export function installShadows( ctx ) {
 			pass.setViewport( 0, 0, w, h, 0, 1 );
 			pass.setBindGroup( 0, shadowCameraGroup, [ p * 256 ] );
 			pass.setBindGroup( 3, ctx.boneGroup );
-			let state = - 1, bound = null, boundInstances, map = null;
+			pass.setVertexBuffer( OBJECT_SLOT, ctx.objectSlots );
+			let state = - 1, bound = null, boundInstances, map = null, boundMaterial = - 1;
 
 			for ( let i = 0, o = 0; i < slots.length; i ++, o += DRAW_FIELDS ) {
 
@@ -231,7 +233,9 @@ export function installShadows( ctx ) {
 				const block = materials.view, at = material * MATERIAL_FLOATS;
 				const key = draws[ o ] | ( block[ at + 23 ] > 0 || ( block[ at + STATE_FLAGS_FLOAT ] & 256 ) ? ALPHA_TEST_KEY : 0 );
 				const instance = instances( draws[ o + 4 ], draws[ o + 5 ], instanceSources ), copies = instance ? draws[ o + 5 ] : 1;
-				if ( key !== state ) pass.setPipeline( shadowPipeline( state = key, variance ) );
+				// as in the main pass, a caster without instances reads its block through `firstInstance`
+				const drawKey = instance ? key : key | DIRECT_KEY;
+				if ( drawKey !== state ) pass.setPipeline( shadowPipeline( state = drawKey, variance ) );
 
 				if ( instance !== boundInstances ) {
 
@@ -250,11 +254,18 @@ export function installShadows( ctx ) {
 
 				const set = setGroups[ draws[ o + 1 ] ];
 				if ( set !== map ) pass.setBindGroup( 2, map = set );
-				offsets[ 0 ] = ( first + i ) * stride;
-				offsets[ 1 ] = material * materialStride;
-				pass.setBindGroup( 1, ctx.shadowObjectGroup, offsets, 0, 2 );
-				if ( entry.index ) pass.drawIndexed( vertices, copies, start );
-				else pass.draw( vertices, copies, start );
+
+				if ( material !== boundMaterial ) {
+
+					offsets[ 0 ] = ( boundMaterial = material ) * materialStride;
+					pass.setBindGroup( 1, ctx.shadowObjectGroup, offsets, 0, 1 );
+
+				}
+
+				const index = first + i;
+				if ( instance ) pass.setVertexBuffer( OBJECT_SLOT, ctx.objectSlots, index * 4 );
+				if ( entry.index ) pass.drawIndexed( vertices, copies, entry.firstIndex + start, entry.baseVertex, instance ? 0 : index );
+				else pass.draw( vertices, copies, entry.baseVertex + start, instance ? 0 : index );
 				calls ++;
 
 			}

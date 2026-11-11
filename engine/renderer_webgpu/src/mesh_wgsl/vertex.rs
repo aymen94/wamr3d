@@ -32,7 +32,20 @@ struct VertexOutput {
     // world tangent, handedness in w (0 without a tangent attribute)
     @location(7) tangent: vec4<f32>,
     @location(8) line_distance: f32,
+    // what the fragment stage reads of the object block, so that it reads no storage:
+    // the flags and the model's axis lengths, and the normal matrix
+    @location(9) @interpolate(flat) object_flags_scale: vec4<f32>,
+    @location(10) @interpolate(flat) object_normal_0: vec3<f32>,
+    @location(11) @interpolate(flat) object_normal_1: vec3<f32>,
+    @location(12) @interpolate(flat) object_normal_2: vec3<f32>,
 };
+
+fn object_varyings(output: ptr<function, VertexOutput>) {
+    (*output).object_flags_scale = vec4<f32>(object.params.x, length(object.model[0].xyz), length(object.model[1].xyz), length(object.model[2].xyz));
+    (*output).object_normal_0 = object.normal_0.xyz;
+    (*output).object_normal_1 = object.normal_1.xyz;
+    (*output).object_normal_2 = object.normal_2.xyz;
+}
 
 // Whether a world position is clipped away: behind any of the renderer's global planes,
 // or by the material's planes.
@@ -108,6 +121,8 @@ fn cube_face(d: vec3<f32>) -> u32 {
 @vertex
 fn vertex(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
+    object = objects[object_index(input)];
+    object_varyings(&output);
     let flags = u32(object.params.x);
     output.uv = input.uv;
     output.uv1 = input.uv1;
@@ -165,6 +180,7 @@ struct QuadInput {
     @location(3) color: vec4<f32>,
     @location(13) position_b: vec3<f32>,
     @location(14) color_b: vec4<f32>,
+    @location(4) object_slot: u32,
 };
 
 // Points larger than a pixel and lines wider than one, as two triangles per point or
@@ -173,6 +189,8 @@ struct QuadInput {
 @vertex
 fn vertex_quad(input: QuadInput) -> VertexOutput {
     var output: VertexOutput;
+    object = objects[input.object_slot];
+    object_varyings(&output);
     // corners of two triangles: (-1,-1) (1,-1) (1,1) (-1,-1) (1,1) (-1,1)
     let corners = array<vec2<f32>, 6>(vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, 1.0));
     let corner = corners[input.corner % 6u];

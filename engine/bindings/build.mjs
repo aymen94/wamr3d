@@ -52,6 +52,9 @@ for ( const file of [ 'index.js', 'index.d.ts', 'compat.js', 'compat.d.ts', 'mat
 
 }
 
+// the license notice ships with the package
+fs.copyFileSync( path.join( engine, '..', 'LICENSE' ), path.join( dist, 'LICENSE' ) );
+
 // The modules behind compat.js, webgpu.js and webgl.js, and the add-ons.
 for ( const folder of [ 'compat', 'types', 'webgpu', 'webgl', 'addons' ] ) {
 

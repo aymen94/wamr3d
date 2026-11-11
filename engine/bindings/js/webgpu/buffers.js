@@ -28,6 +28,203 @@ export function installBuffers( ctx ) {
 
 	}
 
+	// Small geometries without tangents, second uvs or skinning share buffers: one pool per
+	// set of inputs (which of position, normal, uv and colour the shader reads, and the
+	// colour's floats), with a buffer per input and one for the indices. A draw reaches its
+	// geometry through `baseVertex` and `firstIndex`, so going from one pooled geometry to
+	// another of the same pool binds nothing; indices stay relative to their geometry.
+	// Pools grow by copying into larger buffers, which happens only while geometries are
+	// uploaded, before the frame's passes are recorded.
+	const POOL_MAX_VERTICES = 65536, POOL_MAX_INDICES = 393216, POOL_MIN_VERTICES = 16384, POOL_MIN_INDICES = 49152;
+	const pools = new Map();
+
+	function poolSignature( state, o, vertices, colorSize, auxKey ) {
+
+		if ( auxKey !== '' || vertices === 0 || vertices > POOL_MAX_VERTICES ) return - 1;
+		let signature = 0;
+		for ( let i = 0, p = o + 4; i < ATTRIBUTES.length; i ++, p += 2 ) if ( state[ p ] !== 0 ) signature |= 1 << i;
+		return signature & 1 << VERTEX_COLOR_SLOT ? signature | colorSize << 4 : signature;
+
+	}
+
+	// First fit in a list of free `start, length` pairs in address order.
+	function allocate( free, length ) {
+
+		for ( let i = 0; i < free.length; i += 2 ) {
+
+			if ( free[ i + 1 ] < length ) continue;
+			const start = free[ i ];
+			if ( free[ i + 1 ] === length ) free.splice( i, 2 );
+			else {
+
+				free[ i ] += length;
+				free[ i + 1 ] -= length;
+
+			}
+
+			return start;
+
+		}
+
+		return - 1;
+
+	}
+
+	function deallocate( free, start, length ) {
+
+		let i = 0;
+		while ( i < free.length && free[ i ] < start ) i += 2;
+		free.splice( i, 0, start, length );
+
+		if ( i + 2 < free.length && start + length === free[ i + 2 ] ) {
+
+			free[ i + 1 ] += free[ i + 3 ];
+			free.splice( i + 2, 2 );
+
+		}
+
+		if ( i > 0 && free[ i - 2 ] + free[ i - 1 ] === start ) {
+
+			free[ i - 1 ] += free[ i + 1 ];
+			free.splice( i, 2 );
+
+		}
+
+	}
+
+	function poolStride( pool, slot ) {
+
+		return slot === VERTEX_COLOR_SLOT ? pool.colorSize * 4 : ATTRIBUTES[ slot ][ 1 ] * 4;
+
+	}
+
+	// Moves the pool's buffers (`slots`, or the index when `slots` is null) to larger ones.
+	function growPool( pool, needed, indices ) {
+
+		const old = indices ? pool.indexCapacity : pool.vertexCapacity;
+		const capacity = Math.max( old * 2, old + needed, indices ? POOL_MIN_INDICES : POOL_MIN_VERTICES );
+		if ( capacity * 16 > device.limits.maxBufferSize ) return false;
+		const encoder = device.createCommandEncoder(), retired = [];
+
+		const replace = ( buffer, stride, usage ) => {
+
+			const next = device.createBuffer( { size: capacity * stride, usage: usage | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC } );
+
+			if ( buffer ) {
+
+				encoder.copyBufferToBuffer( buffer, 0, next, 0, old * stride );
+				retired.push( buffer );
+
+			}
+
+			return next;
+
+		};
+
+		if ( indices ) {
+
+			pool.index = replace( pool.index, 4, GPUBufferUsage.INDEX );
+			pool.indexCapacity = capacity;
+			deallocate( pool.indexFree, old, capacity - old );
+
+		} else {
+
+			for ( let slot = 0; slot < ATTRIBUTES.length; slot ++ ) if ( pool.signature & 1 << slot ) pool.buffers[ slot ] = replace( pool.buffers[ slot ], poolStride( pool, slot ), GPUBufferUsage.VERTEX );
+			pool.vertexCapacity = capacity;
+			deallocate( pool.vertexFree, old, capacity - old );
+			// inputs the pool's geometries lack are bound to zeros, read up to the pool's size
+			if ( ( pool.signature & 15 ) !== 15 ) ctx.zeroBytes = Math.max( ctx.zeroBytes, capacity * 16 );
+
+		}
+
+		device.queue.submit( [ encoder.finish() ] );
+		for ( const buffer of retired ) buffer.destroy();
+		for ( const entry of pool.members ) poolBuffers( entry );
+		return true;
+
+	}
+
+	function poolBuffers( entry ) {
+
+		const pool = entry.pool;
+		for ( let slot = 0; slot < ATTRIBUTES.length; slot ++ ) entry.buffers[ slot ] = pool.buffers[ slot ];
+		entry.index = entry.indexCount > 0 ? pool.index : null;
+
+	}
+
+	// Moves `entry` into the pool for `signature`; its attributes are written afterwards
+	// (their versions are reset), its index here. Returns false if it stays on its own.
+	function joinPool( world, entry, signature, vertices ) {
+
+		const index = world.getIndex( entry.handle );
+		if ( index.length > POOL_MAX_INDICES ) return false;
+		let pool = pools.get( signature );
+		if ( ! pool ) pools.set( signature, pool = { signature, colorSize: signature >> 4, buffers: [ null, null, null, null ], index: null, vertexCapacity: 0, indexCapacity: 0, vertexFree: [], indexFree: [], members: new Set() } );
+
+		let base = allocate( pool.vertexFree, vertices );
+		if ( base < 0 && growPool( pool, vertices, false ) ) base = allocate( pool.vertexFree, vertices );
+		if ( base < 0 ) return false;
+		let first = 0;
+
+		if ( index.length > 0 ) {
+
+			first = allocate( pool.indexFree, index.length );
+			if ( first < 0 && growPool( pool, index.length, true ) ) first = allocate( pool.indexFree, index.length );
+
+			if ( first < 0 ) {
+
+				deallocate( pool.vertexFree, base, vertices );
+				return false;
+
+			}
+
+			device.queue.writeBuffer( pool.index, first * 4, index );
+			info.uploads ++;
+
+		}
+
+		for ( const buffer of entry.buffers ) buffer?.destroy();
+		entry.index?.destroy();
+		entry.pool = pool;
+		entry.baseVertex = base;
+		entry.firstIndex = first;
+		entry.indexCount = index.length;
+		entry.poolVertices = vertices;
+		entry.versions.fill( - 1 );
+		pool.members.add( entry );
+		poolBuffers( entry );
+		return true;
+
+	}
+
+	function leavePool( entry ) {
+
+		const pool = entry.pool;
+		pool.members.delete( entry );
+		deallocate( pool.vertexFree, entry.baseVertex, entry.poolVertices );
+		if ( entry.indexCount > 0 ) deallocate( pool.indexFree, entry.firstIndex, entry.indexCount );
+		entry.pool = null;
+		entry.baseVertex = entry.firstIndex = entry.indexCount = 0;
+		entry.buffers.fill( null );
+		entry.versions.fill( - 1 );
+		entry.index = null;
+		entry.indexVersion = - 1;
+
+	}
+
+	function disposePools() {
+
+		for ( const pool of pools.values() ) {
+
+			for ( const buffer of pool.buffers ) buffer?.destroy();
+			pool.index?.destroy();
+
+		}
+
+		pools.clear();
+
+	}
+
 	// GPU buffers follow the engine's data: an attribute or the index is uploaded again
 	// only when its version changes. `state[ o ... ]` is the geometry's record from
 	// `Renderer.geometryState`. Entries are keyed by the handle's slot; a new generation
@@ -44,11 +241,22 @@ export function installBuffers( ctx ) {
 
 		}
 
-		if ( ! entry ) geometries.set( slot, entry = { generation, handle: BigInt( generation ) << 32n | BigInt( slot ), vertices: 0, buffers: [ null, null, null, null ], versions: [ - 1, - 1, - 1, - 1 ], sizes: [ 0, 0, 0, 0 ], aux: null, auxVersions: '', index: null, indexVersion: - 1, loops: null, quads: null, checked: 0 } );
+		if ( ! entry ) geometries.set( slot, entry = { generation, handle: BigInt( generation ) << 32n | BigInt( slot ), vertices: 0, buffers: [ null, null, null, null ], versions: [ - 1, - 1, - 1, - 1 ], sizes: [ 0, 0, 0, 0 ], aux: null, auxVersions: '', index: null, indexVersion: - 1, loops: null, quads: null, checked: 0, pool: null, baseVertex: 0, firstIndex: 0, indexCount: 0, poolVertices: 0, refused: - 2 } );
 		entry.checked = ctx.frameNumber;
 		entry.vertices = vertices;
 		const records = ATTRIBUTES.length + AUX_ATTRIBUTES;
-		const colorSize = state[ o + 4 + records * 2 ];
+		const colorSize = state[ o + 4 + records * 2 ], indexVersion = state[ o + 3 + records * 2 ];
+		const auxKey = auxRecord( state, o + 3 + ATTRIBUTES.length * 2, AUX_ATTRIBUTES );
+		const signature = poolSignature( state, o, vertices, colorSize, auxKey );
+		// a geometry whose inputs, size or index changed is placed again
+		if ( entry.pool && ( signature !== entry.pool.signature || vertices !== entry.poolVertices || indexVersion !== entry.indexVersion ) ) leavePool( entry );
+
+		if ( ! entry.pool && signature >= 0 && entry.refused !== indexVersion ) {
+
+			if ( joinPool( world, entry, signature, vertices ) ) entry.indexVersion = indexVersion;
+			else entry.refused = indexVersion;
+
+		}
 
 		for ( let i = 0, p = o + 3; i < ATTRIBUTES.length; i ++, p += 2 ) {
 
@@ -66,15 +274,25 @@ export function installBuffers( ctx ) {
 
 			if ( version === entry.versions[ i ] && size === entry.sizes[ i ] ) continue;
 			// Created per upload: the index read below may grow the module's memory.
-			entry.buffers[ i ] = upload( new Float32Array( memory().buffer, address, vertices * size ), entry.buffers[ i ], GPUBufferUsage.VERTEX );
+			const data = new Float32Array( memory().buffer, address, vertices * size );
+
+			if ( entry.pool ) {
+
+				device.queue.writeBuffer( entry.pool.buffers[ i ], entry.baseVertex * size * 4, data );
+				info.uploads ++;
+
+			} else {
+
+				entry.buffers[ i ] = upload( data, entry.buffers[ i ], GPUBufferUsage.VERTEX );
+
+			}
+
 			entry.versions[ i ] = version;
 			entry.sizes[ i ] = size;
 
 		}
 
 		// tangent, uv1, skinIndex and skinWeight, interleaved when any of them changed
-		const auxKey = auxRecord( state, o + 3 + ATTRIBUTES.length * 2, AUX_ATTRIBUTES );
-
 		if ( auxKey !== entry.auxVersions ) {
 
 			entry.auxVersions = auxKey;
@@ -104,9 +322,8 @@ export function installBuffers( ctx ) {
 
 		}
 
-		const indexVersion = state[ o + 3 + records * 2 ];
-
-		if ( indexVersion !== entry.indexVersion ) {
+		// a pooled geometry's index was written when it joined the pool
+		if ( ! entry.pool && indexVersion !== entry.indexVersion ) {
 
 			const index = world.getIndex( entry.handle );
 
@@ -129,11 +346,55 @@ export function installBuffers( ctx ) {
 
 	}
 
+	// What the pass in `boundPass` has bound to the geometry slots (the aux slot last) and as
+	// its index, so that only changed bindings are set. `forgetBindings` is called by code
+	// that binds those slots itself.
+	let boundPass = null, boundIndex = null;
+	const boundSlots = [ null, null, null, null, null ];
+
 	function bindGeometry( pass, entry ) {
 
-		for ( let slot = 0; slot < ATTRIBUTES.length; slot ++ ) pass.setVertexBuffer( slot, entry.buffers[ slot ] ?? ctx.zeros );
-		pass.setVertexBuffer( AUX_SLOT, entry.aux ?? auxZeros );
-		if ( entry.index ) pass.setIndexBuffer( entry.index, 'uint32' );
+		if ( pass !== boundPass ) {
+
+			boundPass = pass;
+			boundSlots.fill( null );
+			boundIndex = null;
+
+		}
+
+		for ( let slot = 0; slot < ATTRIBUTES.length; slot ++ ) {
+
+			const buffer = entry.buffers[ slot ] ?? ctx.zeros;
+			if ( buffer !== boundSlots[ slot ] ) pass.setVertexBuffer( slot, boundSlots[ slot ] = buffer );
+
+		}
+
+		const aux = entry.aux ?? auxZeros;
+		if ( aux !== boundSlots[ ATTRIBUTES.length ] ) pass.setVertexBuffer( AUX_SLOT, boundSlots[ ATTRIBUTES.length ] = aux );
+		if ( entry.index && entry.index !== boundIndex ) pass.setIndexBuffer( boundIndex = entry.index, 'uint32' );
+
+	}
+
+	// 0, 1, 2... as u32: draws that are not direct read their object block's index from it
+	// at a stride of 0, bound at the index (see `OBJECT_SLOT`). Grown before any pass of a
+	// frame is recorded.
+	ctx.objectSlots = null;
+
+	function ensureObjectSlots( count ) {
+
+		if ( ctx.objectSlots && ctx.objectSlots.size >= count * 4 ) return;
+		const values = new Uint32Array( Math.max( 64, count ) );
+		for ( let i = 0; i < values.length; i ++ ) values[ i ] = i;
+		ctx.objectSlots?.destroy();
+		ctx.objectSlots = device.createBuffer( { size: values.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST } );
+		device.queue.writeBuffer( ctx.objectSlots, 0, values );
+
+	}
+
+	function forgetBindings() {
+
+		boundPass = boundIndex = null;
+		boundSlots.fill( null );
 
 	}
 
@@ -292,6 +553,7 @@ export function installBuffers( ctx ) {
 	function release( entry ) {
 
 		if ( entry.release ) return entry.release();
+		if ( entry.pool ) leavePool( entry );
 		for ( const buffer of entry.buffers ) buffer?.destroy();
 		entry.aux?.destroy();
 		entry.index?.destroy();
@@ -303,6 +565,6 @@ export function installBuffers( ctx ) {
 
 	}
 
-	Object.assign( ctx, { bindGeometry, derivedIndex, geometry, instances, quadSource, release } );
+	Object.assign( ctx, { bindGeometry, derivedIndex, disposePools, ensureObjectSlots, forgetBindings, geometry, instances, quadSource, release } );
 
 }

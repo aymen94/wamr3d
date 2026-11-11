@@ -34,13 +34,34 @@ layout(std140) uniform FrameBlock {
     vec4 clip_planes[8];
 } frame;
 
-layout(std140) uniform ObjectBlock {
+struct ObjectData {
     mat4 model;
     vec4 normal_0;
     vec4 normal_1;
     vec4 normal_2;
     vec4 params;
-} object;
+};
+
+// The object blocks of 128 consecutive draws, eight vec4 each; the host binds the range
+// holding the draw's. The vertex stages load theirs into `object` first, picked with
+// `object_range` (the first block, and 1 when each instance is a draw of its own, so that
+// consecutive draws of one geometry and material are issued as one instanced draw). The
+// fragment stage gets what it reads of the block as flat varyings instead. A vec4 array:
+// copying a dynamically indexed struct out of a block array stalled ANGLE's D3D shader
+// compiler for minutes.
+layout(std140) uniform ObjectBlock {
+    vec4 object_data[1024];
+};
+ObjectData object;
+
+void load_object(int index) {
+    int at = index * 8;
+    object.model = mat4(object_data[at], object_data[at + 1], object_data[at + 2], object_data[at + 3]);
+    object.normal_0 = object_data[at + 4];
+    object.normal_1 = object_data[at + 5];
+    object.normal_2 = object_data[at + 6];
+    object.params = object_data[at + 7];
+}
 
 // See the WGSL `MaterialUniforms`.
 layout(std140) uniform MaterialBlock {
@@ -249,6 +270,8 @@ layout(location = 10) in vec2 a_uv1;
 layout(location = 11) in vec4 a_skin_index;
 layout(location = 12) in vec4 a_skin_weight;
 layout(location = 15) in float a_line_distance;
+
+uniform ivec2 object_range;
 
 // -1 while drawing into a render target, so that its rows are stored top first, as
 // WebGPU stores them and as they are sampled; 1 otherwise.

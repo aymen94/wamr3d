@@ -182,7 +182,15 @@ fn clipped_by_material(p: vec3<f32>) -> bool {
 }
 
 @group(0) @binding(0) var<uniform> frame: FrameUniforms;
-@group(1) @binding(0) var<uniform> object: ObjectUniforms;
+// Every draw's object block. Ordinary draws are issued with their block's index as
+// `firstInstance` and read it from the instance index (`OBJECT_BY_INSTANCE`), so that
+// they need no binding of their own and consecutive draws of one geometry and material
+// can be one instanced draw. Instanced meshes and quads, whose instance index counts
+// instances, read it from `object_slot`, a per-instance input of stride 0 that the host
+// points at the index. Each entry point loads the block into `object` first.
+@group(1) @binding(0) var<storage, read> objects: array<ObjectUniforms>;
+override OBJECT_BY_INSTANCE: bool = false;
+var<private> object: ObjectUniforms;
 @group(1) @binding(1) var<uniform> material: MaterialUniforms;
 @group(2) @binding(0) var slot_0: texture_2d<f32>;
 @group(2) @binding(1) var sampler_0: sampler;
@@ -294,7 +302,13 @@ struct VertexInput {
     @location(12) skin_weight: vec4<f32>,
     // distance along the line (three.js `lineDistance`), for dashes
     @location(15) line_distance: f32,
+    @location(13) object_slot: u32,
+    @builtin(instance_index) instance: u32,
 };
+
+fn object_index(input: VertexInput) -> u32 {
+    return select(input.object_slot, input.instance, OBJECT_BY_INSTANCE);
+}
 
 // Bone matrix `index` of the frame: four texels of a row of 1024.
 fn bone_matrix(index: u32) -> mat4x4<f32> {

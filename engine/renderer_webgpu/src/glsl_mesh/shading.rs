@@ -39,7 +39,7 @@ vec4 shade() {
     Coords c = Coords(v_uv, v_uv1, dFdx(v_uv), dFdy(v_uv), dFdx(v_uv1), dFdy(v_uv1));
     vec3 position_dx = dFdx(v_world);
     vec3 position_dy = dFdy(v_world);
-    uint object_flags = uint(object.params.x);
+    uint object_flags = uint(v_object_flags_scale.x);
     uint flags = uint(material.params.w) & MATERIAL_FEATURES;
     uint state_flags = uint(material.extra.x) & STATE_FEATURES;
     if (clipped(v_world)) {
@@ -94,7 +94,7 @@ vec4 shade() {
     if (map_present(MAP_NORMAL) && (state_flags & 8u) != 0u) {
         // an object-space normal map: the normal as stored, turned with the object
         vec3 sampled = map_sample(MAP_NORMAL, c).xyz * 2.0 - 1.0;
-        n = normalize(mat3(object.normal_0.xyz, object.normal_1.xyz, object.normal_2.xyz) * sampled) * face;
+        n = normalize(mat3(v_object_normal_0, v_object_normal_1, v_object_normal_2) * sampled) * face;
     } else if (map_present(MAP_NORMAL)) {
         MapCoords m = map_coords(MAP_NORMAL, c);
         vec3 sampled = slot_sample(m.slot, m.uv, m.dx, m.dy).xyz * 2.0 - 1.0;
@@ -172,7 +172,8 @@ vec4 shade() {
     if (map_present(MAP_EMISSIVE)) {
         emissive *= map_sample(MAP_EMISSIVE, c).rgb;
     }
-    vec3 v = normalize(frame.camera_position.xyz - v_world);
+    // towards the eye; under an orthographic camera the same everywhere, as three.js's view direction
+    vec3 v = frame.camera_up.w > 0.5 ? normalize(frame.camera_position.xyz - v_world) : -frame.camera_forward.xyz;
     float n_v = clamp(dot(n, v), 0.0, 1.0);
     vec3 dielectric_f0 = material.specular.rgb;
     float specular_intensity = material.specular.w;
@@ -421,7 +422,7 @@ vec4 shade() {
                 thickness *= map_sample(MAP_THICKNESS, c).g;
             }
             float ior = material.layers.w;
-            vec3 model_scale = vec3(length(object.model[0].xyz), length(object.model[1].xyz), length(object.model[2].xyz));
+            vec3 model_scale = v_object_flags_scale.yzw;
             float half_spread = (ior - 1.0) * 0.025 * material.transmission.w;
             vec3 iors = vec3(ior - half_spread, ior, ior + half_spread);
             vec3 transmitted = vec3(0.0);

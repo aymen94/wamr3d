@@ -7,7 +7,7 @@
 
 import { Renderer, memory } from './index.js';
 import { lightFeatures, meshFeatures, quadInstances } from './webgpu/formats.js';
-import { BONE_UNIT, CUSTOM_BLENDING_FLOAT, ENVIRONMENT_UNIT, LOOP_KEY, MATERIAL_FLOATS, MATERIAL_STRIDE, OBJECT_STRIDE, QUAD_KEY, SHADOW_UNIT, TRANSMISSION_UNIT, UNUSED_FRAMES, VSM_UNIT, WIREFRAME_KEY } from './webgl/constants.js';
+import { BONE_UNIT, CUSTOM_BLENDING_FLOAT, ENVIRONMENT_UNIT, LOOP_KEY, MATERIAL_FLOATS, MATERIAL_STRIDE, OBJECT_BLOCK_DRAWS, OBJECT_FLOATS, OBJECT_STRIDE, QUAD_KEY, SHADOW_UNIT, TRANSMISSION_UNIT, UNUSED_FRAMES, VSM_UNIT, WIREFRAME_KEY } from './webgl/constants.js';
 import { installPrograms } from './webgl/programs.js';
 import { installBuffers } from './webgl/buffers.js';
 import { installTextures } from './webgl/textures.js';
@@ -16,7 +16,7 @@ import { installEnvironment } from './webgl/environment.js';
 
 export async function createWebGLBackend( canvas, { antialias = true, powerPreference = 'high-performance' } = {} ) {
 
-	if ( Renderer.materialUniformSize() !== MATERIAL_STRIDE ) throw new Error( 'WAMR3D: the WebGL 2 host does not match the uniform layout of the engine' );
+	if ( Renderer.materialUniformSize() !== MATERIAL_STRIDE || Renderer.objectUniformSize() !== OBJECT_STRIDE ) throw new Error( 'WAMR3D: the WebGL 2 host does not match the uniform layout of the engine' );
 
 	const gl = canvas.getContext( 'webgl2', { antialias, alpha: false, depth: true, stencil: true, premultipliedAlpha: false, powerPreference } );
 	if ( ! gl ) throw new Error( 'WAMR3D: WebGL 2 is not available in this browser' );
@@ -30,8 +30,10 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 	const MAX_SHADOWS = Renderer.maxShadows(), TEXTURE_SLOTS = Renderer.textureSlots();
 	const GEOMETRY_FIELDS = Renderer.geometryStateSize(), DRAW_FIELDS = Renderer.drawInfoSize(), BONES_PER_ROW = Renderer.boneTextureMatricesPerRow();
 	const TONE_MAPPING = Renderer.toneMappingIndex(), EXPOSURE = Renderer.toneMappingExposureIndex();
-	// Object and material uniforms are bound as ranges of one buffer when the device allows 256-byte offsets.
-	const ranges = OBJECT_STRIDE % gl.getParameter( gl.UNIFORM_BUFFER_OFFSET_ALIGNMENT ) === 0;
+	// Object and material uniforms are bound as ranges of one buffer when the device's
+	// offset alignment divides both (16 KiB of object blocks, a 2 KiB material block).
+	const alignment = gl.getParameter( gl.UNIFORM_BUFFER_OFFSET_ALIGNMENT );
+	const ranges = ( OBJECT_BLOCK_DRAWS * OBJECT_STRIDE ) % alignment === 0 && MATERIAL_STRIDE % alignment === 0;
 	const warned = new Set();
 	const warn = ( what ) => {
 
@@ -52,7 +54,7 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 	installTextures( ctx );
 	installShadows( ctx );
 	installEnvironment( ctx );
-	const { applyMaterialState, applyState, resetState, background, backgroundBuffer, backgroundProgram, bindCustomAttributes, bindGeometry, bindInstances, bindMaps, bindQuads, bindRange, depthSampler, distinct, draw, drawShadows, drawWireframe, effectProgram, ensureShadowTexture, finishPrograms, entries, environment, environmentFramebuffer, environments, frameBuffer, geometries, geometry, hdrTarget, info, instanced, instances, levelBuffers, materialBuffer, meshProgram, multiply, normalMatrix, objectBuffer, panoramaSampler, perInstance, program, programs, quadSource, release, renderTarget, renderTargets, scratchBuffer, screenSampler, setTextures, setUniforms, shaderProgram, shadowFramebuffer, startProgram, shadowObjectBuffer, stackFramebuffer, texture, textures, transmissionTarget, unbindArrays, upload, uploadBones, vsmFramebuffer, white } = ctx;
+	const { applyMaterialState, applyState, resetState, background, backgroundBuffer, backgroundProgram, bindObjects, objectRange, uploadObjects, bindCustomAttributes, bindGeometry, bindGeometryArrays, bindInstances, bindMaps, bindQuads, bindRange, defaultArrays, depthSampler, distinct, draw, drawShadows, drawWireframe, effectProgram, ensureShadowTexture, finishPrograms, entries, environment, environmentFramebuffer, environments, frameBuffer, geometries, geometry, hdrTarget, info, instanced, instances, levelBuffers, materialBuffer, meshProgram, multiply, normalMatrix, objectBuffer, panoramaSampler, perInstance, program, programs, quadSource, release, renderTarget, renderTargets, scratchBuffer, screenSampler, setTextures, setUniforms, shaderProgram, shadowFramebuffer, startProgram, shadowObjectBuffer, stackFramebuffer, texture, textures, transmissionTarget, unbindArrays, upload, uploadBones, vsmFramebuffer, white } = ctx;
 	// ---------------------------------------------------------------- frame
 
 	gl.enable( gl.DEPTH_TEST );
@@ -168,7 +170,7 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 		gl.bindSampler( VSM_UNIT, ctx.vsmTexture ? null : depthSampler );
 		gl.activeTexture( gl.TEXTURE0 + BONE_UNIT );
 		gl.bindTexture( gl.TEXTURE_2D, ctx.boneTexture );
-		let state = - 1, blendState = 0, appliedMaterial = - 1, bound = null, set = null, triangles = 0, boundInstances, material = - 1, current = null;
+		let state = - 1, blendState = 0, appliedMaterial = - 1, bound = null, arrays = null, set = null, triangles = 0, boundInstances, material = - 1, current = null, objects = - 1;
 
 		startPrograms( draws, from, to, srgb, data, extras );
 		const features = drawFeatures;
@@ -189,10 +191,12 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 				if ( shader !== current ) gl.useProgram( shader.id );
 				current = shader;
 				if ( shader.flip ) gl.uniform1f( shader.flip, flipY );
-				const model = data.objects.subarray( i * 64, i * 64 + 16 ), view = extras.view, modelView = multiply( view, model, new Float32Array( 16 ) );
+				const model = data.objects.subarray( i * OBJECT_FLOATS, i * OBJECT_FLOATS + 16 ), view = extras.view, modelView = multiply( view, model, new Float32Array( 16 ) );
 				setUniforms( shader, own, { modelMatrix: model, viewMatrix: view, projectionMatrix: extras.projection, modelViewMatrix: modelView, normalMatrix: normalMatrix( modelView, new Float32Array( 9 ) ), cameraPosition: extras.position, isOrthographic: extras.orthographic, ...lights?.uniforms, ...fog?.uniforms }, sources );
 				applyState( key, customBlending( key, data.materials, draws[ o + 6 ] ) );
 				applyMaterialState( key, data.materials, draws[ o + 6 ] * MATERIAL_FLOATS );
+				defaultArrays();
+				arrays = null;
 				appliedMaterial = - 1;
 				state = - 1;
 				set = null;
@@ -239,7 +243,9 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 
 			}
 
-			bindRange( 1, objectBuffer, i, OBJECT_STRIDE, ranges ? null : data.objects );
+			// the group of object blocks holding this draw's
+			if ( i - i % OBJECT_BLOCK_DRAWS !== objects ) objects = bindObjects( objectBuffer, i, data.objects );
+			const block = i - objects;
 
 			if ( draws[ o + 6 ] !== material ) {
 
@@ -250,15 +256,57 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 
 			if ( quad ) {
 
+				defaultArrays();
+				arrays = null;
 				const topology = key >> 5 & 3, loop = ( key & LOOP_KEY ) !== 0 && vertices > 1;
 				const [ first, count ] = loop ? [ 0, vertices ] : quadInstances( topology, start, vertices );
 				bindQuads( quadSource( world, entry, start, vertices, loop ), topology, first );
+				objectRange( shader, block, 0 );
 				if ( count > 0 ) gl.drawArraysInstanced( gl.TRIANGLES, 0, 6, count );
 				bound = null;
 				boundInstances = undefined;
 				continue;
 
 			}
+
+			if ( instance === null && ( key & WIREFRAME_KEY ) === 0 ) {
+
+				if ( entry !== arrays ) {
+
+					bindGeometryArrays( entry );
+					arrays = entry;
+
+				}
+
+				// The following draws of the same geometry range, material, textures and key,
+				// with blocks in the bound group, are the next instances of one draw.
+				let last = i;
+
+				if ( custom === 0 ) {
+
+					while ( last + 1 < to && last + 1 - objects < OBJECT_BLOCK_DRAWS ) {
+
+						const n = ( last + 1 ) * DRAW_FIELDS;
+						if ( entries[ last + 1 ] !== entry || perInstance[ last + 1 ] !== null || setTextures[ draws[ n + 1 ] ] !== maps || draws[ n ] !== key || draws[ n + 6 ] !== material || draws[ n + 2 ] !== start || draws[ n + 3 ] !== vertices || draws[ n + 7 ] !== 0 ) break;
+						last ++;
+
+					}
+
+				}
+
+				const count = last - i + 1;
+				objectRange( shader, block, 1 );
+				draw( key, entry, start, vertices, count );
+				if ( ( key >> 5 & 3 ) === 0 ) triangles += vertices / 3 * count;
+				o += ( last - i ) * DRAW_FIELDS;
+				i = last;
+				continue;
+
+			}
+
+			// The default vertex array still holds what `bound` and `boundInstances` describe.
+			defaultArrays();
+			arrays = null;
 
 			if ( instance !== boundInstances ) {
 
@@ -274,6 +322,8 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 
 			}
 
+			objectRange( shader, block, 0 );
+
 			if ( key & WIREFRAME_KEY ) {
 
 				drawWireframe( world, entry, start, vertices, copies );
@@ -285,6 +335,7 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 
 		}
 
+		defaultArrays();
 		gl.bindSampler( VSM_UNIT, null );
 		resetState();
 		return triangles;
@@ -358,10 +409,7 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 
 			if ( ranges ) {
 
-				if ( count > ctx.objectCapacity ) ctx.objectCapacity = Math.max( 64, Math.ceil( count * 1.5 ) );
-				gl.bindBuffer( gl.UNIFORM_BUFFER, objectBuffer );
-				gl.bufferData( gl.UNIFORM_BUFFER, ctx.objectCapacity * OBJECT_STRIDE, gl.DYNAMIC_DRAW );
-				if ( count > 0 ) gl.bufferSubData( gl.UNIFORM_BUFFER, 0, objectData );
+				uploadObjects( objectBuffer, objectData );
 				const materials = materialData.length / MATERIAL_FLOATS;
 				if ( materials > ctx.materialCapacity ) ctx.materialCapacity = Math.max( 16, Math.ceil( materials * 1.5 ) );
 				gl.bindBuffer( gl.UNIFORM_BUFFER, materialBuffer );

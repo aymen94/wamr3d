@@ -63,6 +63,15 @@ export function readFloats( ptr, out, count ) {
 
 }
 
+/** A view of the module's memory as floats; take it after any call that may grow the memory. */
+export function floatView() {
+
+	const buffer = W.memory().buffer;
+	if ( floats === null || floats.buffer !== buffer ) floats = new Float32Array( buffer );
+	return floats;
+
+}
+
 /** The World behind every object created here, for the batched low-level calls. */
 export function getWorld() {
 

@@ -20,6 +20,10 @@ in float v_depth;
 in vec2 v_uv1;
 in vec4 v_tangent;
 in float v_line_distance;
+flat in vec4 v_object_flags_scale;
+flat in vec3 v_object_normal_0;
+flat in vec3 v_object_normal_1;
+flat in vec3 v_object_normal_2;
 
 layout(location = 0) out vec4 out_color;
 

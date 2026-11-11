@@ -24,8 +24,9 @@ export const LOOP_KEY = 1 << 7, RGBA_COLOR_KEY = 1 << 8, WIREFRAME_KEY = 1 << 9,
 // Texture units: the twelve slots of a draw (the vertex stage reads slot 9), then the
 // shadow maps, the environments, the transmission copy, the VSM moments, and the bones.
 export const SLOTS = 12, SHADOW_UNIT = 12, ENVIRONMENT_UNIT = 13, TRANSMISSION_UNIT = 14, VSM_UNIT = 15, BONE_UNIT = 16;
-// object blocks padded to the uniform offset alignment; the engine's material block, which `createWebGLBackend` checks
-export const OBJECT_STRIDE = 256, MATERIAL_STRIDE = 2048, MATERIAL_FLOATS = 512;
+// the engine's object block, bound OBJECT_BLOCK_DRAWS at a time (16 KiB), and its
+// material block; `createWebGLBackend` checks both against the engine
+export const OBJECT_STRIDE = 128, OBJECT_FLOATS = 32, OBJECT_BLOCK_DRAWS = 128, MATERIAL_STRIDE = 2048, MATERIAL_FLOATS = 512;
 // Indices of a wireframe over `count` triangle vertices: two per edge, three edges per triangle.
 export const wireframeCount = ( count ) => Math.floor( count / 3 ) * 6;
 

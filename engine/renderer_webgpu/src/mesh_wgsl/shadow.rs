@@ -16,6 +16,7 @@ struct ShadowOutput {
 
 @vertex
 fn vertex(input: VertexInput) -> ShadowOutput {
+    object = objects[object_index(input)];
     var position = input.position;
     var normal = input.normal;
     if (object.params.y > 0.5) {

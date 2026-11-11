@@ -40,12 +40,17 @@ pub use glsl::glsl_source;
 pub use lighting::*;
 pub use shaders::*;
 
-/// Floats per object in [`Frame::object_uniforms`]. 64 floats are 256 bytes, the
-/// uniform-buffer offset alignment every WebGPU implementation accepts.
-pub const OBJECT_UNIFORM_FLOATS: usize = 64;
+/// Floats per object in [`Frame::object_uniforms`]: the shaders read the blocks as an
+/// array indexed by draw (a storage buffer on WebGPU, uniform blocks of
+/// [`OBJECT_BLOCK_DRAWS`] on WebGL 2), so they are packed without padding.
+pub const OBJECT_UNIFORM_FLOATS: usize = 32;
 
 /// Floats of [`OBJECT_UNIFORM_FLOATS`] the shader reads.
 pub const OBJECT_BINDING_FLOATS: usize = 32;
+
+/// Object blocks in one WebGL 2 uniform block: 16 KiB, the smallest
+/// `MAX_UNIFORM_BLOCK_SIZE` WebGL 2 allows.
+pub const OBJECT_BLOCK_DRAWS: usize = 128;
 
 /// Floats per material in [`Frame::material_uniforms`] (2 KiB, a multiple of the
 /// offset alignment).

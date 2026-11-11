@@ -3,12 +3,12 @@
 // Part of the WebGL 2 host; `../webgl.js` creates the context and draws the frames.
 
 import { memory } from '../index.js';
-import { BONE_UNIT, MATERIAL_FLOATS, STATE_FLAGS_FLOAT, MATERIAL_STRIDE, OBJECT_STRIDE } from './constants.js';
+import { BONE_UNIT, MATERIAL_FLOATS, STATE_FLAGS_FLOAT, MATERIAL_STRIDE, OBJECT_BLOCK_DRAWS } from './constants.js';
 
 /** Adds this part's functions and state to the host context `ctx`. */
 export function installShadows( ctx ) {
 
-	const { BONES_PER_ROW, DRAW_FIELDS, MAX_SHADOWS, bindGeometry, bindInstances, bindMaps, bindRange, distinct, draw, floatTargets, frameBuffer, gl, instances, materialBuffer, newTexture, program, ranges, setTextures, shadowObjectBuffer, unbindArrays, upload, warn } = ctx;
+	const { BONES_PER_ROW, DRAW_FIELDS, MAX_SHADOWS, bindGeometry, bindInstances, bindMaps, bindObjects, bindRange, distinct, draw, floatTargets, frameBuffer, gl, instances, materialBuffer, newTexture, objectRange, program, ranges, setTextures, shadowObjectBuffer, unbindArrays, uploadObjects, warn } = ctx;
 
 	// ---------------------------------------------------------------- bones
 
@@ -164,8 +164,8 @@ export function installShadows( ctx ) {
 			gl.framebufferTextureLayer( gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, ctx.shadowTexture, 0, passInfo[ 0 ] );
 			gl.viewport( 0, 0, passInfo[ 1 ], passInfo[ 2 ] );
 			gl.clear( gl.DEPTH_BUFFER_BIT );
-			if ( ranges ) upload( gl.UNIFORM_BUFFER, data, shadowObjectBuffer );
-			let bound = null, boundInstances, set = null;
+			if ( ranges ) uploadObjects( shadowObjectBuffer, data );
+			let bound = null, boundInstances, set = null, objects = - 1;
 
 			for ( let i = 0, o = 0; i < slots.length; i ++, o += DRAW_FIELDS ) {
 
@@ -215,7 +215,8 @@ export function installShadows( ctx ) {
 
 				}
 
-				bindRange( 1, shadowObjectBuffer, i, OBJECT_STRIDE, data );
+				if ( i - i % OBJECT_BLOCK_DRAWS !== objects ) objects = bindObjects( shadowObjectBuffer, i, data );
+				objectRange( shader, i - objects, 0 );
 				bindRange( 3, materialBuffer, material, MATERIAL_STRIDE, frame.materials );
 				draw( 0, entry, start, vertices, copies );
 				calls ++;

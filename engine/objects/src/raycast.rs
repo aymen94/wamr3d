@@ -3,7 +3,7 @@
 //! A mesh is any object with a `Renderable` whose geometry and material are alive.
 //! World matrices are read as they are; update them before casting.
 
-use wamr_core::{AttributeAccess, BufferGeometry, Entity, Primitive, Projection, Raycaster, Side, World};
+use wamr_core::{AttributeAccess, AttributeArray, BufferAttribute, BufferGeometry, Entity, Primitive, Projection, Raycaster, Side, World};
 use wamr_math::{Interpolate, Matrix4, Ray, Sphere, Triangle, Vector2, Vector3};
 
 /// The triangle a ray hit.
@@ -42,17 +42,31 @@ pub struct Intersection {
     pub instance_id: Option<u32>,
 }
 
+/// Vertex `i` of a position attribute. Plain `f32` positions are read straight from the
+/// array; other storage goes through the general accessor.
+#[inline]
+fn vertex(position: &BufferAttribute, i: usize) -> Vector3 {
+    match &position.array {
+        AttributeArray::Float32(values) if !position.normalized => {
+            let at = i * position.item_size;
+            Vector3::new(values[at], values[at + 1], values[at + 2])
+        }
+        _ => position.get_vector3(i),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn check_triangle(
     object: Entity,
     geometry: &BufferGeometry,
+    position: &BufferAttribute,
     side: Side,
     raycaster: &Raycaster,
     local_ray: &Ray,
     matrix_world: &Matrix4,
     [a, b, c]: [usize; 3],
 ) -> Option<Intersection> {
-    let position = geometry.get_attribute("position")?;
-    let (v_a, v_b, v_c) = (position.get_vector3(a), position.get_vector3(b), position.get_vector3(c));
+    let (v_a, v_b, v_c) = (vertex(position, a), vertex(position, b), vertex(position, c));
 
     let local_point = if side == Side::Back {
         local_ray.intersect_triangle(&v_c, &v_b, &v_a, true)?
@@ -115,18 +129,27 @@ fn raycast_mesh(world: &World, object: Entity, raycaster: &Raycaster, intersects
         raycast_line(world, object, renderable.primitive, raycaster, intersects);
         return;
     }
-    let (Some(geometry), Some(material), Some(transform)) =
-        (world.geometry(renderable.geometry), world.material(renderable.material), world.transform(object))
-    else {
+    let (Some(geometry), Some(transform)) = (world.geometry(renderable.geometry), world.transform(object)) else {
         return;
     };
-    if let Some(mut posed) = skinned(world, object, geometry) {
-        posed.compute_bounding_sphere();
-        let sphere = posed.bounding_sphere.unwrap_or_default();
-        raycast_triangles(object, &posed, material.side, &sphere, &transform.matrix_world, raycaster, intersects, true);
+    // Most objects a ray passes are rejected here, before the rest is looked up. A
+    // skinned mesh is bounded by its posed vertices, so it is left to the exact test.
+    let skin = world.skin(object).is_some();
+    let sphere = local_bounding_sphere(geometry);
+    if !skin && clearly_misses(raycaster, &sphere, &transform.matrix_world) {
         return;
     }
-    let sphere = local_bounding_sphere(geometry);
+    let Some(material) = world.material(renderable.material) else {
+        return;
+    };
+    if skin {
+        if let Some(mut posed) = skinned(world, object, geometry) {
+            posed.compute_bounding_sphere();
+            let sphere = posed.bounding_sphere.unwrap_or_default();
+            raycast_triangles(object, &posed, material.side, &sphere, &transform.matrix_world, raycaster, intersects, true);
+            return;
+        }
+    }
     raycast_triangles(object, geometry, material.side, &sphere, &transform.matrix_world, raycaster, intersects, true);
 }
 
@@ -214,8 +237,11 @@ fn raycast_triangles(
     let range_end = geometry.draw_range.start.saturating_add(geometry.draw_range.count) as usize;
     let start = geometry.draw_range.start as usize;
 
+    let Some(position) = geometry.get_attribute("position") else {
+        return;
+    };
     let mut test = |i: usize, vertices: [usize; 3]| {
-        if let Some(mut hit) = check_triangle(object, geometry, side, raycaster, &local_ray, &matrix_world, vertices) {
+        if let Some(mut hit) = check_triangle(object, geometry, position, side, raycaster, &local_ray, &matrix_world, vertices) {
             hit.face_index = (i / 3) as u32;
             intersects.push(hit);
         }
@@ -235,6 +261,41 @@ fn raycast_triangles(
     } else {
         linear_raycast_triangles(geometry, start, range_end, &mut test);
     }
+}
+
+/// Whether the ray's line passes well outside `sphere` placed by `matrix`: a cheaper
+/// form of the exact bounding-sphere test, with one square root instead of three and no
+/// rounding to `f32`. It repeats that test's formula (the ray recast to `near`, the
+/// direction taken as given) and rejects only beyond a margin far larger than the exact
+/// test's roundings, so every object it rejects, the exact test rejects too. Empty and
+/// non-finite bounds are left to the exact test.
+fn clearly_misses(raycaster: &Raycaster, sphere: &Sphere, matrix: &Matrix4) -> bool {
+    let radius = sphere.radius as f64;
+    if !(radius >= 0.0) {
+        return false;
+    }
+    // Read on demand: a widened copy of the whole matrix would go through the Wasm stack.
+    let m = &matrix.elements;
+    let e = |i: usize| m[i] as f64;
+    let (cx, cy, cz) = (sphere.center.x as f64, sphere.center.y as f64, sphere.center.z as f64);
+    let wx = e(0) * cx + e(4) * cy + e(8) * cz + e(12);
+    let wy = e(1) * cx + e(5) * cy + e(9) * cz + e(13);
+    let wz = e(2) * cx + e(6) * cy + e(10) * cz + e(14);
+    let scale_sq = (e(0) * e(0) + e(1) * e(1) + e(2) * e(2))
+        .max(e(4) * e(4) + e(5) * e(5) + e(6) * e(6))
+        .max(e(8) * e(8) + e(9) * e(9) + e(10) * e(10));
+
+    let (o, d, near) = (&raycaster.ray.origin, &raycaster.ray.direction, raycaster.near as f64);
+    let (dx, dy, dz) = (d.x as f64, d.y as f64, d.z as f64);
+    let (ox, oy, oz) = (o.x as f64 + dx * near, o.y as f64 + dy * near, o.z as f64 + dz * near);
+    let (vx, vy, vz) = (wx - ox, wy - oy, wz - oz);
+    let along = vx * dx + vy * dy + vz * dz;
+    let d2 = vx * vx + vy * vy + vz * vz - along * along;
+
+    // the sum of absolute values bounds the length, without a square root
+    let size = wx.abs() + wy.abs() + wz.abs() + ox.abs() + oy.abs() + oz.abs();
+    let reach = radius * scale_sq.sqrt() * (1.0 + 1e-5) + 1e-5 * size;
+    d2 > reach * reach
 }
 
 fn linear_raycast_triangles(geometry: &BufferGeometry, start: usize, range_end: usize, test: &mut impl FnMut(usize, [usize; 3])) {
@@ -449,6 +510,9 @@ pub fn intersect_instances(world: &World, raycaster: &Raycaster, object: Entity,
     for (id, elements) in matrices.chunks_exact(16).enumerate() {
         instance.elements.copy_from_slice(elements);
         matrix_world.multiply_matrices(&transform.matrix_world, &instance);
+        if clearly_misses(raycaster, &sphere, &matrix_world) {
+            continue;
+        }
         raycast_triangles(object, geometry, material.side, &sphere, &matrix_world, raycaster, &mut found, true);
         intersects.extend(found.drain(..).map(|hit| Intersection { instance_id: Some(id as u32), ..hit }));
     }

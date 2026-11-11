@@ -83,6 +83,9 @@ export function installPrograms( ctx ) {
 
 		};
 
+		// where the vertex stage finds the draw's object block, and the value it was last given
+		value.objectRange = gl.getUniformLocation( id, 'object_range' );
+		value.range = [ - 1, - 1 ];
 		block( 'FrameBlock', 0 );
 		block( 'ObjectBlock', 1 );
 		block( 'BackgroundBlock', 2 );
@@ -288,6 +291,7 @@ export function installPrograms( ctx ) {
 	// inputs) when their version changes; integer inputs get integer data.
 	function bindCustomAttributes( world, entry, shader ) {
 
+		ctx.defaultArrays();
 		entry.custom ??= new Map();
 
 		for ( const attribute of shader.custom ) {

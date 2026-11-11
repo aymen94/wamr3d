@@ -4,6 +4,7 @@
 
 import { memory } from '../index.js';
 import { auxRecord } from '../webgpu/formats.js';
+import { OBJECT_BLOCK_DRAWS, OBJECT_FLOATS, OBJECT_STRIDE } from './constants.js';
 import { ALPHA_TO_COVERAGE_KEY, ATTRIBUTES, AUX_ATTRIBUTES, BLEND_COLOR_FLOAT, COLOR_WRITE_OFF_KEY, DEPTH_FUNC_SHIFT, POLYGON_OFFSET_FLOAT, STENCIL_FLOAT, AUX_FLOATS, AUX_LOCATIONS, AUX_OFFSETS, AUX_SIZES, AUX_STRIDE, INSTANCE_COLOR_SLOT, INSTANCE_SLOT, LOOP_KEY, MISSING, PREMULTIPLIED_KEY, QUAD_B, QUAD_COLOR_B, QUAD_KEY, VERTEX_COLOR_SLOT, wireframeCount } from './constants.js';
 
 /** Adds this part's functions and state to the host context `ctx`. */
@@ -13,10 +14,15 @@ export function installBuffers( ctx ) {
 
 	// ---------------------------------------------------------------- buffers
 
+	// the bound vertex array of a geometry (see `bindGeometryArrays`), or null for the default one
+	let arraysBound = null;
+
 	const info = { calls: 0, shadowCalls: 0, triangles: 0, candidates: 0, geometries: 0, textures: 0, pipelines: 0, uploads: 0 };
 
 	function upload( target, data, existing ) {
 
+		// the index binding belongs to the bound vertex array
+		if ( target === gl.ELEMENT_ARRAY_BUFFER ) defaultArrays();
 		const buffer = existing ?? gl.createBuffer();
 		gl.bindBuffer( target, buffer );
 		gl.bufferData( target, data, gl.DYNAMIC_DRAW );
@@ -53,7 +59,13 @@ export function installBuffers( ctx ) {
 
 			if ( address === 0 ) {
 
-				if ( entry.buffers[ i ] ) gl.deleteBuffer( entry.buffers[ i ] );
+				if ( entry.buffers[ i ] ) {
+
+					gl.deleteBuffer( entry.buffers[ i ] );
+					dropArrays( entry );
+
+				}
+
 				entry.buffers[ i ] = null;
 				entry.versions[ i ] = - 1;
 				continue;
@@ -61,6 +73,7 @@ export function installBuffers( ctx ) {
 			}
 
 			if ( version === entry.versions[ i ] && size === entry.sizes[ i ] ) continue;
+			if ( ! entry.buffers[ i ] || size !== entry.sizes[ i ] ) dropArrays( entry );
 			entry.buffers[ i ] = upload( gl.ARRAY_BUFFER, new Float32Array( memory().buffer, address, vertices * size ), entry.buffers[ i ] );
 			entry.versions[ i ] = version;
 			entry.sizes[ i ] = size;
@@ -77,8 +90,11 @@ export function installBuffers( ctx ) {
 
 				if ( entry.aux ) gl.deleteBuffer( entry.aux );
 				entry.aux = null;
+				dropArrays( entry );
 
 			} else {
+
+				if ( ! entry.aux ) dropArrays( entry );
 
 				const data = new Float32Array( vertices * AUX_FLOATS ), view = new Float32Array( memory().buffer );
 				const offsets = AUX_OFFSETS, sizes = AUX_SIZES;
@@ -108,9 +124,11 @@ export function installBuffers( ctx ) {
 
 				if ( entry.index ) gl.deleteBuffer( entry.index );
 				entry.index = null;
+				dropArrays( entry );
 
 			} else {
 
+				if ( ! entry.index ) dropArrays( entry );
 				entry.index = upload( gl.ELEMENT_ARRAY_BUFFER, index, entry.index );
 
 			}
@@ -157,6 +175,7 @@ export function installBuffers( ctx ) {
 
 	function release( entry ) {
 
+		dropArrays( entry );
 		for ( const buffer of entry.buffers ) if ( buffer ) gl.deleteBuffer( buffer );
 		if ( entry.aux ) gl.deleteBuffer( entry.aux );
 		if ( entry.index ) gl.deleteBuffer( entry.index );
@@ -209,6 +228,7 @@ export function installBuffers( ctx ) {
 	// A float array input read from `buffer`, per vertex (divisor 0) or per instance (1).
 	function arrayInput( location, buffer, size, stride, offset, divisor ) {
 
+		defaultArrays();
 		const s = input( location );
 
 		if ( s.array !== true ) {
@@ -236,6 +256,7 @@ export function installBuffers( ctx ) {
 	// An input without an array, holding one value for every vertex.
 	function constantInput( location, x, y, z, w ) {
 
+		defaultArrays();
 		const s = input( location );
 
 		if ( s.array !== false ) {
@@ -244,6 +265,14 @@ export function installBuffers( ctx ) {
 			s.array = false;
 
 		}
+
+		constantValue( s, location, x, y, z, w );
+
+	}
+
+	// The value an input without an array reads. It is context state, shared by every
+	// vertex array, unlike whether the input reads an array.
+	function constantValue( s, location, x, y, z, w ) {
 
 		if ( s.x !== x || s.y !== y || s.z !== z || s.w !== w ) {
 
@@ -265,6 +294,7 @@ export function installBuffers( ctx ) {
 
 	function bindGeometry( entry ) {
 
+		defaultArrays();
 		for ( let slot = 0; slot < ATTRIBUTES.length; slot ++ ) {
 
 			const buffer = entry.buffers[ slot ];
@@ -282,6 +312,87 @@ export function installBuffers( ctx ) {
 		}
 
 		gl.bindBuffer( gl.ELEMENT_ARRAY_BUFFER, entry.index );
+
+	}
+
+	// A geometry drawn without instances, as a wireframe, quads or a shader material keeps
+	// its vertex inputs in a vertex array of its own: one call binds them all, where the
+	// default array needs a call per input that differs from the previous draw's (most of
+	// them, as draws are ordered by depth). The arrays are never changed after they are
+	// made; everything else uses the default array, and the helpers above switch back to
+	// it before they change any input.
+	function bindGeometryArrays( entry ) {
+
+		let arrays = entry.arrays;
+
+		if ( ! arrays ) {
+
+			arrays = entry.arrays = gl.createVertexArray();
+			gl.bindVertexArray( arrays );
+
+			for ( let slot = 0; slot < ATTRIBUTES.length; slot ++ ) {
+
+				const buffer = entry.buffers[ slot ];
+				if ( ! buffer ) continue;
+				gl.enableVertexAttribArray( slot );
+				gl.bindBuffer( gl.ARRAY_BUFFER, buffer );
+				gl.vertexAttribPointer( slot, entry.sizes[ slot ], gl.FLOAT, false, 0, 0 );
+
+			}
+
+			if ( entry.aux ) {
+
+				gl.bindBuffer( gl.ARRAY_BUFFER, entry.aux );
+
+				for ( let a = 0; a < AUX_ATTRIBUTES; a ++ ) {
+
+					gl.enableVertexAttribArray( AUX_LOCATIONS[ a ] );
+					gl.vertexAttribPointer( AUX_LOCATIONS[ a ], AUX_SIZES[ a ], gl.FLOAT, false, AUX_STRIDE, AUX_OFFSETS[ a ] * 4 );
+
+				}
+
+			}
+
+			gl.bindBuffer( gl.ELEMENT_ARRAY_BUFFER, entry.index );
+
+		} else if ( arraysBound !== arrays ) gl.bindVertexArray( arrays );
+
+		arraysBound = arrays;
+
+		// what the inputs without arrays read: as `bindGeometry` and `bindInstances( null )` set them
+		for ( let slot = 0; slot < ATTRIBUTES.length; slot ++ ) {
+
+			if ( entry.buffers[ slot ] ) continue;
+			const value = MISSING[ slot ];
+			constantValue( input( slot ), slot, value[ 0 ], value[ 1 ], value[ 2 ], value[ 3 ] );
+
+		}
+
+		if ( ! entry.aux ) for ( let a = 0; a < AUX_ATTRIBUTES; a ++ ) constantValue( input( AUX_LOCATIONS[ a ] ), AUX_LOCATIONS[ a ], 0, 0, 0, 0 );
+		for ( let column = 0; column < 4; column ++ ) constantValue( input( INSTANCE_SLOT + column ), INSTANCE_SLOT + column, column === 0 ? 1 : 0, column === 1 ? 1 : 0, column === 2 ? 1 : 0, column === 3 ? 1 : 0 );
+		constantValue( input( INSTANCE_COLOR_SLOT ), INSTANCE_COLOR_SLOT, 1, 1, 1, 1 );
+
+	}
+
+	// Binds the default vertex array again, if a geometry's is bound.
+	function defaultArrays() {
+
+		if ( arraysBound !== null ) {
+
+			gl.bindVertexArray( null );
+			arraysBound = null;
+
+		}
+
+	}
+
+	// Forgets a geometry's vertex array when its buffers change.
+	function dropArrays( entry ) {
+
+		if ( ! entry.arrays ) return;
+		if ( arraysBound === entry.arrays ) defaultArrays();
+		gl.deleteVertexArray( entry.arrays );
+		entry.arrays = null;
 
 	}
 
@@ -389,6 +500,8 @@ export function installBuffers( ctx ) {
 
 	// Passes that draw a full-screen triangle read no vertex arrays.
 	function unbindArrays() {
+
+		defaultArrays();
 
 		for ( let location = 0; location <= QUAD_COLOR_B; location ++ ) {
 
@@ -542,13 +655,13 @@ export function installBuffers( ctx ) {
 
 		const indices = wireframeCount( vertices );
 		if ( indices === 0 ) return;
+		defaultArrays();
 		gl.bindBuffer( gl.ELEMENT_ARRAY_BUFFER, wireframeIndex( world, entry, start, vertices ) );
 		gl.drawElementsInstanced( gl.LINES, indices, gl.UNSIGNED_INT, 0, copies );
 
 	}
 
 	const frameBuffer = gl.createBuffer(), objectBuffer = gl.createBuffer(), materialBuffer = gl.createBuffer(), shadowObjectBuffer = gl.createBuffer(), backgroundBuffer = gl.createBuffer(), scratchBuffer = gl.createBuffer();
-	ctx.objectCapacity = 0;
 	ctx.materialCapacity = 0;
 
 	// Binds block `binding` to element `i` (of `size` bytes) of `buffer`, or uploads it from
@@ -567,6 +680,50 @@ export function installBuffers( ctx ) {
 
 	}
 
+	// Uploads the object blocks of a frame or shadow pass into `buffer`, which is sized in
+	// whole groups of OBJECT_BLOCK_DRAWS so that every group can be bound in full.
+	function uploadObjects( buffer, data ) {
+
+		const count = data.length / OBJECT_FLOATS, capacity = Math.max( 1, Math.ceil( count / OBJECT_BLOCK_DRAWS ) ) * OBJECT_BLOCK_DRAWS;
+		gl.bindBuffer( gl.UNIFORM_BUFFER, buffer );
+		gl.bufferData( gl.UNIFORM_BUFFER, capacity * OBJECT_STRIDE, gl.DYNAMIC_DRAW );
+		if ( count > 0 ) gl.bufferSubData( gl.UNIFORM_BUFFER, 0, data );
+
+	}
+
+	// Binds the OBJECT_BLOCK_DRAWS object blocks holding block `i` of `buffer` (or uploads
+	// them from `data` into a scratch buffer without ranges); returns the first of them.
+	const objectScratch = new Float32Array( OBJECT_BLOCK_DRAWS * OBJECT_FLOATS );
+
+	function bindObjects( buffer, i, data ) {
+
+		const first = i - i % OBJECT_BLOCK_DRAWS;
+		if ( ranges ) gl.bindBufferRange( gl.UNIFORM_BUFFER, 1, buffer, first * OBJECT_STRIDE, OBJECT_BLOCK_DRAWS * OBJECT_STRIDE );
+		else {
+
+			objectScratch.fill( 0 ).set( data.subarray( first * OBJECT_FLOATS, ( first + OBJECT_BLOCK_DRAWS ) * OBJECT_FLOATS ) );
+			gl.bindBuffer( gl.UNIFORM_BUFFER, buffer );
+			gl.bufferData( gl.UNIFORM_BUFFER, objectScratch, gl.DYNAMIC_DRAW );
+			gl.bindBufferBase( gl.UNIFORM_BUFFER, 1, buffer );
+
+		}
+
+		return first;
+
+	}
+
+	// Points the program's `object_range` at block `first` of the bound group, with
+	// `step` 1 when each instance of the draw is a draw of its own; set only on change.
+	function objectRange( shader, first, step ) {
+
+		const range = shader.range;
+		if ( range[ 0 ] === first && range[ 1 ] === step ) return;
+		range[ 0 ] = first;
+		range[ 1 ] = step;
+		gl.uniform2i( shader.objectRange, first, step );
+
+	}
+
 	function bindMaps( maps ) {
 
 		for ( let slot = 0; slot < TEXTURE_SLOTS; slot ++ ) {
@@ -578,6 +735,6 @@ export function installBuffers( ctx ) {
 
 	}
 
-	Object.assign( ctx, { applyMaterialState, resetState, applyState, arrayInput, forgetInput, backgroundBuffer, bindGeometry, bindInstances, bindMaps, bindQuads, bindRange, distinct, draw, drawWireframe, entries, frameBuffer, geometries, geometry, info, instanced, instances, materialBuffer, objectBuffer, perInstance, quadSource, release, scratchBuffer, setTextures, shadowObjectBuffer, unbindArrays, upload } );
+	Object.assign( ctx, { applyMaterialState, resetState, applyState, arrayInput, forgetInput, backgroundBuffer, bindGeometry, bindGeometryArrays, bindObjects, defaultArrays, bindInstances, bindMaps, bindQuads, bindRange, objectRange, uploadObjects, distinct, draw, drawWireframe, entries, frameBuffer, geometries, geometry, info, instanced, instances, materialBuffer, objectBuffer, perInstance, quadSource, release, scratchBuffer, setTextures, shadowObjectBuffer, unbindArrays, upload } );
 
 }

@@ -10,8 +10,23 @@ out float v_depth;
 out vec2 v_uv1;
 out vec4 v_tangent;
 out float v_line_distance;
+// What the fragment stage reads of the object block, so that it indexes no block array:
+// the flags and the model's axis lengths, and the normal matrix.
+flat out vec4 v_object_flags_scale;
+flat out vec3 v_object_normal_0;
+flat out vec3 v_object_normal_1;
+flat out vec3 v_object_normal_2;
+
+void object_varyings() {
+    v_object_flags_scale = vec4(object.params.x, length(object.model[0].xyz), length(object.model[1].xyz), length(object.model[2].xyz));
+    v_object_normal_0 = object.normal_0.xyz;
+    v_object_normal_1 = object.normal_1.xyz;
+    v_object_normal_2 = object.normal_2.xyz;
+}
 
 void main() {
+    load_object(object_range.x + gl_InstanceID * object_range.y);
+    object_varyings();
     uint flags = uint(object.params.x);
     v_uv = a_uv;
     v_uv1 = a_uv1;
@@ -69,6 +84,7 @@ layout(location = 13) in vec3 a_position_b;
 layout(location = 14) in vec4 a_color_b;
 
 uniform float flip_y;
+uniform ivec2 object_range;
 
 out vec3 v_normal;
 out vec3 v_world;
@@ -79,8 +95,23 @@ out float v_depth;
 out vec2 v_uv1;
 out vec4 v_tangent;
 out float v_line_distance;
+// What the fragment stage reads of the object block, so that it indexes no block array:
+// the flags and the model's axis lengths, and the normal matrix.
+flat out vec4 v_object_flags_scale;
+flat out vec3 v_object_normal_0;
+flat out vec3 v_object_normal_1;
+flat out vec3 v_object_normal_2;
+
+void object_varyings() {
+    v_object_flags_scale = vec4(object.params.x, length(object.model[0].xyz), length(object.model[1].xyz), length(object.model[2].xyz));
+    v_object_normal_0 = object.normal_0.xyz;
+    v_object_normal_1 = object.normal_1.xyz;
+    v_object_normal_2 = object.normal_2.xyz;
+}
 
 void main() {
+    load_object(object_range.x);
+    object_varyings();
     int index = gl_VertexID - (gl_VertexID / 6) * 6;
     vec2 corner = index == 0 || index == 3 ? vec2(-1.0, -1.0) : index == 1 ? vec2(1.0, -1.0) : index == 5 ? vec2(-1.0, 1.0) : vec2(1.0, 1.0);
     vec2 pixel = frame.transmission.xy * 2.0;

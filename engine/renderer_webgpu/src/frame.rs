@@ -93,6 +93,8 @@ struct GeometryInfo {
     range_end: u32,
     /// In the geometry's space.
     sphere: Sphere,
+    /// The geometry's place among the frame's geometries, for [`group_order_free_runs`].
+    slot: u32,
 }
 
 impl GeometryInfo {
@@ -112,7 +114,68 @@ impl GeometryInfo {
         if geometry.bounding_sphere.is_none() {
             geometry.compute_bounding_sphere();
         }
-        Some(Self { has_colors, color_key, aux_key, range_start, range_end, sphere: geometry.bounding_sphere.unwrap_or_default() })
+        Some(Self { has_colors, color_key, aux_key, range_start, range_end, sphere: geometry.bounding_sphere.unwrap_or_default(), slot: 0 })
+    }
+}
+
+/// The group key of a draw whose order matters; see [`group_order_free_runs`].
+const NOT_ORDER_FREE: u64 = u64::MAX;
+
+/// Within each run of opaque draws of one render order, when every draw of the run is
+/// order-free, puts draws with the same group key (pipeline key, material, geometry) next
+/// to each other, so that the hosts can issue them together. Groups follow the depth
+/// order of their nearest draw, and each group stays nearest first (a stable counting
+/// sort of the depth-sorted run).
+///
+/// An order-free draw tests and writes depth with `Less` or `LessEqual` and writes colour
+/// without blending or stencil, so of two such draws covering a pixel the nearer one is
+/// kept whichever comes first; only exactly equal depths can resolve differently. A run
+/// holding any other draw (depth writes off, other depth functions, stencil) keeps its
+/// order, since those draws depend on what was drawn before them.
+fn group_order_free_runs(keys: &mut [u128], group_keys: &[u64]) {
+    let mut ranks: IdHashMap<u64, u32> = IdHashMap::default();
+    let (mut counts, mut ranked, mut scratch) = (Vec::new(), Vec::new(), Vec::new());
+    let mut start = 0;
+    while start < keys.len() {
+        let run_key = keys[start] >> 64;
+        let mut end = start + 1;
+        while end < keys.len() && keys[end] >> 64 == run_key {
+            end += 1;
+        }
+        let run = &mut keys[start..end];
+        start = end;
+        if run.len() < 3 || run.iter().any(|&key| group_keys[key as u32 as usize] == NOT_ORDER_FREE) {
+            continue;
+        }
+        ranks.clear();
+        counts.clear();
+        ranked.clear();
+        for &key in run.iter() {
+            let next = counts.len() as u32;
+            let rank = *ranks.entry(group_keys[key as u32 as usize]).or_insert(next);
+            if rank == next {
+                counts.push(0u32);
+            }
+            counts[rank as usize] += 1;
+            ranked.push(rank);
+        }
+        if counts.len() < 2 {
+            continue;
+        }
+        // first position of each group, then each draw in run order
+        let mut at = 0;
+        for count in counts.iter_mut() {
+            let n = *count;
+            *count = at;
+            at += n;
+        }
+        scratch.clear();
+        scratch.resize(run.len(), 0u128);
+        for (&key, &rank) in run.iter().zip(&ranked) {
+            scratch[counts[rank as usize] as usize] = key;
+            counts[rank as usize] += 1;
+        }
+        run.copy_from_slice(&scratch);
     }
 }
 
@@ -163,11 +226,14 @@ pub fn prepare_frame(world: &mut World, root: Entity, camera: Entity, lighting: 
     let mut frame = Frame { shadow_type: lighting.shadow_type, ..Frame::default() };
     let mut entries: Vec<Entry> = Vec::new();
     let mut parts: Vec<(MaterialHandle, u32, u32)> = Vec::new();
+    // per entry, its group key for `group_order_free_runs`
+    let mut group_keys: Vec<u64> = Vec::new();
     let mut materials = Materials::new();
     let mut environments = Environments { list: Vec::new(), scene: lighting.environment };
     let mut skins = Skins { offsets: IdHashMap::default() };
     let mut casters: Vec<Entity> = Vec::new();
     let mut last_geometry: Option<(GeometryHandle, GeometryInfo)> = None;
+    let mut geometry_infos: IdHashMap<GeometryHandle, GeometryInfo> = IdHashMap::default();
 
     for &object in &visible {
         let Some(renderable) = world.renderable(object).copied() else {
@@ -186,22 +252,30 @@ pub fn prepare_frame(world: &mut World, root: Entity, camera: Entity, lighting: 
             continue;
         }
 
-        // Objects that share a geometry are usually neighbours in the scene graph; the
-        // attribute lookups by name are made once for a run of them.
+        // The attribute lookups by name are made once per geometry and frame; objects that
+        // share a geometry are often neighbours in the scene graph, which skips the map.
         let geometry_info = match last_geometry {
             Some((handle, info)) if handle == renderable.geometry => info,
             _ => {
-                let Some(geometry) = world.geometry_mut(renderable.geometry) else {
-                    continue;
-                };
-                let Some(info) = GeometryInfo::of(geometry) else {
-                    continue;
+                let info = match geometry_infos.get(&renderable.geometry) {
+                    Some(info) => *info,
+                    None => {
+                        let Some(geometry) = world.geometry_mut(renderable.geometry) else {
+                            continue;
+                        };
+                        let Some(mut info) = GeometryInfo::of(geometry) else {
+                            continue;
+                        };
+                        info.slot = geometry_infos.len() as u32;
+                        geometry_infos.insert(renderable.geometry, info);
+                        info
+                    }
                 };
                 last_geometry = Some((renderable.geometry, info));
                 info
             }
         };
-        let GeometryInfo { has_colors, color_key, aux_key, range_start, range_end, sphere } = geometry_info;
+        let GeometryInfo { has_colors, color_key, aux_key, range_start, range_end, sphere, slot: geometry_slot } = geometry_info;
         let mut sphere = sphere;
         let groups = if world.materials(object).is_empty() { Vec::new() } else { world.geometry(renderable.geometry).map_or_else(Vec::new, |g| g.groups.clone()) };
 
@@ -285,6 +359,18 @@ pub fn prepare_frame(world: &mut World, root: Entity, camera: Entity, lighting: 
                 custom: material.custom,
             };
             let line = matches!(renderable.primitive, Primitive::Line | Primitive::LineSegments | Primitive::LineLoop);
+            let state = &material.state;
+            let order_free = category == 0
+                && material.custom == 0
+                && material.depth_test
+                && material.depth_write
+                && matches!(state.depth_func, 2 | 3)
+                && state.color_write
+                && !state.stencil.write
+                && !state.alpha_to_coverage;
+            // what draws issued together share; equal keys of different draws only affect
+            // how well they group, the hosts compare the draws themselves
+            group_keys.push(if order_free { u64::from(draw.pipeline) << 32 | u64::from(draw.material & 0xffff) << 16 | u64::from(geometry_slot & 0xffff) } else { NOT_ORDER_FREE });
             entries.push(Entry { category, render_order: visibility.render_order, vertex_colors, receive_shadow: visibility.receive_shadow, sprite: renderable.sprite, line, skin, draw, matrix_world });
         }
     }
@@ -304,6 +390,7 @@ pub fn prepare_frame(world: &mut World, root: Entity, camera: Entity, lighting: 
         })
         .collect();
     keys.sort_unstable();
+    group_order_free_runs(&mut keys, &group_keys);
     let order = keys.iter().map(|&key| key as u32);
     frame.opaque_count = entries.iter().filter(|e| e.category == 0).count() as u32;
     frame.transmissive_count = entries.iter().filter(|e| e.category == 1).count() as u32;

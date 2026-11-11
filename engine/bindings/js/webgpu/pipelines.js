@@ -4,7 +4,7 @@
 
 import { Renderer } from '../index.js';
 import { BLEND_FACTORS, FEATURE_NAMES, HDR_FORMAT, HDR_KEY, RGBA8_KEY, SINGLE_KEY, customBlend } from './formats.js';
-import { ALPHA_TO_COVERAGE_KEY, COLOR_WRITE_OFF_KEY, DEPTH_FORMAT, DEPTH_FUNCTIONS, DEPTH_FUNC_SHIFT, PREMULTIPLIED_KEY, QUAD_KEY, STENCIL_FUNCTIONS, STENCIL_OPERATIONS, TOPOLOGIES, quadBuffers, vertexBuffers } from './constants.js';
+import { ALPHA_TO_COVERAGE_KEY, COLOR_WRITE_OFF_KEY, DEPTH_FORMAT, DIRECT_KEY, DEPTH_FUNCTIONS, DEPTH_FUNC_SHIFT, PREMULTIPLIED_KEY, QUAD_KEY, STENCIL_FUNCTIONS, STENCIL_OPERATIONS, TOPOLOGIES, quadBuffers, vertexBuffers } from './constants.js';
 
 /** Adds this part's functions and state to the host context `ctx`. */
 export function installPipelines( ctx ) {
@@ -88,7 +88,7 @@ export function installPipelines( ctx ) {
 
 		return {
 			layout,
-			vertex: quad ? { module, entryPoint: 'vertex_quad', buffers: quadBuffers( key ) } : { module, entryPoint: 'vertex', buffers: vertexBuffers( key ) },
+			vertex: quad ? { module, entryPoint: 'vertex_quad', buffers: quadBuffers( key ) } : { module, entryPoint: 'vertex', constants: { OBJECT_BY_INSTANCE: key & DIRECT_KEY ? 1 : 0 }, buffers: vertexBuffers( key ) },
 			fragment: { module, entryPoint: 'fragment', constants, targets: [ { format: key & HDR_KEY ? HDR_FORMAT : key & RGBA8_KEY ? 'rgba8unorm' : format, blend: blend( key, custom ), writeMask: key & COLOR_WRITE_OFF_KEY ? 0 : GPUColorWrite.ALL } ] },
 			primitive: { topology, frontFace: 'ccw', cullMode: quad ? 'none' : [ 'back', 'front', 'none' ][ key & 3 ], stripIndexFormat: topology === 'line-strip' ? 'uint32' : undefined },
 			depthStencil: depthStencil( key, state, topology === 'triangle-list' ),

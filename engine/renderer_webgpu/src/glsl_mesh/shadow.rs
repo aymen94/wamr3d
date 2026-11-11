@@ -8,6 +8,7 @@ out vec2 v_uv1;
 out vec3 v_world;
 
 void main() {
+    load_object(object_range.x + gl_InstanceID * object_range.y);
     vec3 position = a_position;
     vec3 normal = a_normal;
     if (object.params.y > 0.5) {

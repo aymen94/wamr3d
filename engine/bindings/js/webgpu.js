@@ -11,7 +11,7 @@
 
 import { Renderer, memory } from './index.js';
 import { HDR_FORMAT, HDR_KEY, SINGLE_KEY, lightFeatures, meshFeatures, quadInstances } from './webgpu/formats.js';
-import { BLEND_COLOR_FLOAT, COLOR_SLOT, CUSTOM_BLENDING_FLOAT, LOOP_KEY, POLYGON_OFFSET_FLOAT, STENCIL_FLOAT, MATRIX_SLOT, QUAD_KEY, UNUSED_FRAMES, VERTEX_COLOR_SLOT, WIREFRAME_KEY, warnOnce, wireframeCount } from './webgpu/constants.js';
+import { BLEND_COLOR_FLOAT, COLOR_SLOT, CUSTOM_BLENDING_FLOAT, DIRECT_KEY, LOOP_KEY, OBJECT_SLOT, POLYGON_OFFSET_FLOAT, STENCIL_FLOAT, MATRIX_SLOT, QUAD_KEY, UNUSED_FRAMES, VERTEX_COLOR_SLOT, WIREFRAME_KEY, warnOnce, wireframeCount } from './webgpu/constants.js';
 import { installState } from './webgpu/state.js';
 import { installPipelines } from './webgpu/pipelines.js';
 import { installTextures } from './webgpu/textures.js';
@@ -48,8 +48,9 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 	const dfgData = new Float32Array( Renderer.dfgTable() );
 	const dfgTable = device.createBuffer( { size: dfgData.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
 	device.queue.writeBuffer( dfgTable, 0, dfgData );
+	// The frame's object blocks, read by index, and the draw's material block.
 	const objectLayout = device.createBindGroupLayout( { entries: [
-		{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { hasDynamicOffset: true, minBindingSize: objectBindingBytes } },
+		{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage', minBindingSize: objectBindingBytes } },
 		{ binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { hasDynamicOffset: true, minBindingSize: materialStride } }
 	] } );
 	// A texture and its sampler per slot (the order of `Renderer.textureSets`). Only the
@@ -98,7 +99,7 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 	installTextures( ctx );
 	installBuffers( ctx );
 	installShadows( ctx );
-	const { auxZeros, background, backgroundPipeline, bindGeometry, derivedIndex, distinct, drawShadows, effectPipeline, ensureHdrTargets, ensureTargets, ensureTransmission, entries, environment, environmentPasses, generateMipmaps, geometries, geometry, groups, identity, info, instanced, instances, noEnvironmentView, perInstance, pipeline, pipelineAsync, pipelines, quadSource, rebuildFrameTextures, release, renderTarget, renderTargets, setGroups, textureSetGroup, textureSets, textures, uploadBones, white } = ctx;
+	const { auxZeros, background, backgroundPipeline, bindGeometry, derivedIndex, disposePools, distinct, ensureObjectSlots, drawShadows, effectPipeline, ensureHdrTargets, ensureTargets, ensureTransmission, entries, environment, environmentPasses, forgetBindings, generateMipmaps, geometries, geometry, groups, identity, info, instanced, instances, noEnvironmentView, perInstance, pipeline, pipelineAsync, pipelines, quadSource, rebuildFrameTextures, release, renderTarget, renderTargets, setGroups, textureSetGroup, textureSets, textures, uploadBones, white } = ctx;
 
 	// A material's polygon offset and stencil settings as a pipeline-cache key: '' for the
 	// defaults (no offset, stencil untouched), else factor, units, packed stencil settings,
@@ -112,9 +113,9 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 
 	}
 
-	// The dynamic offsets of group 1, passed as a typed array: the form of `setBindGroup`
-	// that takes an array converts and allocates a sequence on every draw.
-	const offsets = new Uint32Array( 2 );
+	// The dynamic offset of group 1 (the material block), passed as a typed array: the
+	// form of `setBindGroup` that takes an array converts and allocates a sequence.
+	const offsets = new Uint32Array( 1 );
 
 	// Per material of the frame, the draw key of the pipeline last chosen for it and that
 	// pipeline. Draws are ordered by depth, so materials alternate from draw to draw;
@@ -126,13 +127,18 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 
 		pass.setBindGroup( 0, ctx.frameGroup );
 		pass.setBindGroup( 3, frameTextures );
+		// every pipeline declares the object slot; direct draws do not read it
+		pass.setVertexBuffer( OBJECT_SLOT, ctx.objectSlots );
 		materialKeys.length = materialPipelines.length = 0;
-		let current = null, reference = 0, constant = null, bound = null, map = null, triangles = 0, boundInstances = undefined;
+		let current = null, reference = 0, constant = null, bound = null, map = null, triangles = 0, boundInstances = undefined, boundMaterial = - 1;
 
 		for ( let i = from, o = from * DRAW_FIELDS; i < to; i ++, o += DRAW_FIELDS ) {
 
 			const entry = entries[ i ], key = draws[ o ], start = draws[ o + 2 ], vertices = draws[ o + 3 ], material = draws[ o + 6 ], custom = draws[ o + 7 ];
 			const instance = perInstance[ i ], copies = instance ? draws[ o + 5 ] : 1;
+			// Direct draws read their object block through `firstInstance`; the others through
+			// the object slot input, pointed at their index below.
+			const direct = instance === null && ( key & QUAD_KEY ) === 0 && custom === 0;
 
 			if ( custom > 0 && custom < 16 ) {
 
@@ -145,12 +151,13 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 				if ( custom >= 16 ) warnOnce( 'ShaderMaterial and RawShaderMaterial (GLSL) draw only on WebGL 2; drawn unlit' );
 				const blocks = ctx.materials.view, at = material * MATERIAL_FLOATS;
 				const blending = ( key & 4 ) && ( key >> 11 & 7 ) === 5 ? blocks[ at + CUSTOM_BLENDING_FLOAT ] : 0;
-				let chosen = materialKeys[ material ] === key ? materialPipelines[ material ] : null;
+				const drawKey = direct ? key | DIRECT_KEY : key;
+				let chosen = materialKeys[ material ] === drawKey ? materialPipelines[ material ] : null;
 
 				if ( ! chosen ) {
 
-					chosen = pipeline( key | variant, blending, materialState( blocks, at ), meshFeatures( blocks, at, ctx.lightFeatures ) );
-					materialKeys[ material ] = key;
+					chosen = pipeline( drawKey | variant, blending, materialState( blocks, at ), meshFeatures( blocks, at, ctx.lightFeatures ) );
+					materialKeys[ material ] = drawKey;
 					materialPipelines[ material ] = chosen;
 
 				}
@@ -169,9 +176,15 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 
 			}
 			if ( groups[ i ] !== map ) pass.setBindGroup( 2, map = groups[ i ] );
-			offsets[ 0 ] = i * stride;
-			offsets[ 1 ] = material * materialStride;
-			pass.setBindGroup( 1, ctx.objectGroup, offsets, 0, 2 );
+
+			if ( material !== boundMaterial ) {
+
+				offsets[ 0 ] = ( boundMaterial = material ) * materialStride;
+				pass.setBindGroup( 1, ctx.objectGroup, offsets, 0, 1 );
+
+			}
+
+			if ( ! direct ) pass.setVertexBuffer( OBJECT_SLOT, ctx.objectSlots, i * 4 );
 
 			if ( key & QUAD_KEY ) {
 
@@ -179,9 +192,12 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 				const topology = key >> 5 & 3, loop = ( key & LOOP_KEY ) !== 0 && vertices > 1;
 				const source = quadSource( world, entry, start, vertices, loop );
 				const [ first, count ] = loop ? [ 0, vertices ] : quadInstances( topology, start, vertices );
-				pass.setVertexBuffer( 0, source.buffers[ 0 ] ?? ctx.zeros );
-				pass.setVertexBuffer( VERTEX_COLOR_SLOT, source.buffers[ VERTEX_COLOR_SLOT ] ?? ctx.zeros );
+				// the geometry's own vertices start at its place in a pool
+				const shift = source === entry ? entry.baseVertex : 0;
+				pass.setVertexBuffer( 0, source.buffers[ 0 ] ?? ctx.zeros, shift * 12 );
+				pass.setVertexBuffer( VERTEX_COLOR_SLOT, source.buffers[ VERTEX_COLOR_SLOT ] ?? ctx.zeros, shift && source.buffers[ VERTEX_COLOR_SLOT ] ? shift * source.sizes[ VERTEX_COLOR_SLOT ] * 4 : 0 );
 				pass.setVertexBuffer( 1, source.distance ?? ctx.zeros );
+				forgetBindings();
 				bound = null;
 				if ( count > 0 ) pass.draw( 6, count, 0, first );
 				continue;
@@ -210,15 +226,41 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 				if ( indices > 1 ) {
 
 					pass.setIndexBuffer( derivedIndex( world, entry, start, vertices, wireframe ), 'uint32' );
-					pass.drawIndexed( indices, copies, 0 );
+					pass.drawIndexed( indices, copies, 0, entry.baseVertex, direct ? i : 0 );
 					// the geometry's own index buffer is bound again by the next draw
+					forgetBindings();
 					bound = null;
 
 				}
 
-			} else if ( entry.index ) pass.drawIndexed( vertices, copies, start );
-			else pass.draw( vertices, copies, start );
-			if ( ( key >> 5 & 3 ) === 0 ) triangles += vertices / 3 * copies;
+			} else if ( direct ) {
+
+				// The following draws of the same geometry range, material, textures and key
+				// are the next instances of one draw: their blocks follow this one's.
+				let last = i;
+
+				while ( last + 1 < to ) {
+
+					const n = ( last + 1 ) * DRAW_FIELDS;
+					if ( entries[ last + 1 ] !== entry || perInstance[ last + 1 ] !== null || groups[ last + 1 ] !== map || draws[ n ] !== key || draws[ n + 6 ] !== material || draws[ n + 2 ] !== start || draws[ n + 3 ] !== vertices || draws[ n + 7 ] !== 0 ) break;
+					last ++;
+
+				}
+
+				const count = last - i + 1;
+				if ( entry.index ) pass.drawIndexed( vertices, count, entry.firstIndex + start, entry.baseVertex, i );
+				else pass.draw( vertices, count, entry.baseVertex + start, i );
+				if ( ( key >> 5 & 3 ) === 0 ) triangles += vertices / 3 * count;
+				o += ( last - i ) * DRAW_FIELDS;
+				i = last;
+
+			} else {
+
+				if ( entry.index ) pass.drawIndexed( vertices, copies, entry.firstIndex + start, entry.baseVertex );
+				else pass.draw( vertices, copies, entry.baseVertex + start );
+				if ( ( key >> 5 & 3 ) === 0 ) triangles += vertices / 3 * copies;
+
+			}
 
 		}
 
@@ -250,7 +292,9 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 					const key = draws[ o ], custom = draws[ o + 7 ], at = draws[ o + 6 ] * MATERIAL_FLOATS;
 					if ( custom > 0 && custom < 16 ) continue;
 					const blending = ( key & 4 ) && ( key >> 11 & 7 ) === 5 ? blocks[ at + CUSTOM_BLENDING_FLOAT ] : 0;
-					pending.push( pipelineAsync( key | passVariant, blending, materialState( blocks, at ), meshFeatures( blocks, at, ctx.lightFeatures ) ) );
+					// the variant `drawRange` picks for a draw without instances
+					const direct = draws[ o + 4 ] === 0 && ( key & QUAD_KEY ) === 0 && custom === 0 ? DIRECT_KEY : 0;
+					pending.push( pipelineAsync( key | direct | passVariant, blending, materialState( blocks, at ), meshFeatures( blocks, at, ctx.lightFeatures ) ) );
 
 				}
 
@@ -303,7 +347,8 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 
 					ctx.objectBuffer?.destroy();
 					ctx.objectCapacity = Math.max( 64, Math.ceil( count * 1.5 ) );
-					ctx.objectBuffer = device.createBuffer( { size: ctx.objectCapacity * stride, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
+					ctx.objectBuffer = device.createBuffer( { size: ctx.objectCapacity * stride, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST } );
+					ensureObjectSlots( ctx.objectCapacity );
 
 				}
 
@@ -316,7 +361,7 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 
 				}
 
-				ctx.objectGroup = device.createBindGroup( { layout: objectLayout, entries: [ { binding: 0, resource: { buffer: ctx.objectBuffer, size: objectBindingBytes } }, { binding: 1, resource: { buffer: ctx.materialBuffer, size: materialStride } } ] } );
+				ctx.objectGroup = device.createBindGroup( { layout: objectLayout, entries: [ { binding: 0, resource: { buffer: ctx.objectBuffer } }, { binding: 1, resource: { buffer: ctx.materialBuffer, size: materialStride } } ] } );
 
 			}
 
@@ -513,6 +558,7 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 			renderTargets.clear();
 			for ( const entry of geometries.values() ) release( entry );
 			geometries.clear();
+			disposePools();
 			for ( const entry of textures.values() ) entry.texture?.destroy();
 			textures.clear();
 			for ( const entry of instanced.values() ) {
@@ -523,7 +569,7 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 			}
 
 			instanced.clear();
-			for ( const resource of [ white, identity, dfgTable, auxZeros, ctx.ones, ctx.zeros, ctx.objectBuffer, ctx.materialBuffer, ctx.frameBuffer, ctx.depthTexture, ctx.colorTexture, ctx.hdrTexture, ctx.hdrMultisample, ctx.outputSettings, ctx.shadowTexture, ctx.shadowCameras, ctx.shadowObjects, ctx.boneTexture, emptyFloat, emptyVsm, ctx.vsmTexture, ctx.vsmScratch, ctx.transmission?.texture, ctx.transmission?.depth, ctx.vsm?.settings, ctx.vsm?.placeholder ] ) resource?.destroy();
+			for ( const resource of [ white, identity, dfgTable, auxZeros, ctx.ones, ctx.zeros, ctx.objectSlots, ctx.objectBuffer, ctx.materialBuffer, ctx.frameBuffer, ctx.depthTexture, ctx.colorTexture, ctx.hdrTexture, ctx.hdrMultisample, ctx.outputSettings, ctx.shadowTexture, ctx.shadowCameras, ctx.shadowObjects, ctx.boneTexture, emptyFloat, emptyVsm, ctx.vsmTexture, ctx.vsmScratch, ctx.transmission?.texture, ctx.transmission?.depth, ctx.vsm?.settings, ctx.vsm?.placeholder ] ) resource?.destroy();
 			environmentPasses.dispose();
 			context.unconfigure();
 			// Destroying the device while frames are still queued on the GPU can block the page

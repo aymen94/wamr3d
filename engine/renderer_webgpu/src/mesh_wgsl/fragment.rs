@@ -29,7 +29,7 @@ fn fragment(input: VertexOutput, @builtin(front_facing) front: bool) -> @locatio
     c.d1y = dpdy(input.uv1);
     let position_dx = dpdx(input.world_position);
     let position_dy = dpdy(input.world_position);
-    let object_flags = u32(object.params.x);
+    let object_flags = u32(input.object_flags_scale.x);
     let flags = u32(material.params.w) & MATERIAL_FEATURES;
     let state_flags = u32(material.extra.x) & STATE_FEATURES;
     fragment_pixel = input.clip_position.xy;
@@ -89,7 +89,7 @@ fn fragment(input: VertexOutput, @builtin(front_facing) front: bool) -> @locatio
     if (map_present(MAP_NORMAL) && (state_flags & 8u) != 0u) {
         // an object-space normal map: the normal as stored, turned with the object
         let sampled = map_sample(MAP_NORMAL, c).xyz * 2.0 - 1.0;
-        n = normalize(mat3x3<f32>(object.normal_0.xyz, object.normal_1.xyz, object.normal_2.xyz) * sampled) * face;
+        n = normalize(mat3x3<f32>(input.object_normal_0, input.object_normal_1, input.object_normal_2) * sampled) * face;
     } else if (map_present(MAP_NORMAL)) {
         let m = map_coords(MAP_NORMAL, c);
         let sampled = slot_sample(m.slot, m.uv, m.dx, m.dy).xyz * 2.0 - 1.0;
@@ -179,7 +179,8 @@ fn fragment(input: VertexOutput, @builtin(front_facing) front: bool) -> @locatio
     if (map_present(MAP_EMISSIVE)) {
         emissive *= map_sample(MAP_EMISSIVE, c).rgb;
     }
-    let v = normalize(frame.camera_position.xyz - input.world_position);
+    // towards the eye; under an orthographic camera the same everywhere, as three.js's view direction
+    let v = select(-frame.camera_forward.xyz, normalize(frame.camera_position.xyz - input.world_position), frame.camera_up.w > 0.5);
     let n_v = saturate(dot(n, v));
     // standard: the dielectric layer's reflectance head on and at grazing angles, tinted
     // and scaled by the specular layer's maps
@@ -454,7 +455,7 @@ fn fragment(input: VertexOutput, @builtin(front_facing) front: bool) -> @locatio
                 thickness *= map_sample(MAP_THICKNESS, c).g;
             }
             let ior = material.layers.w;
-            let model_scale = vec3<f32>(length(object.model[0].xyz), length(object.model[1].xyz), length(object.model[2].xyz));
+            let model_scale = input.object_flags_scale.yzw;
             let half_spread = (ior - 1.0) * 0.025 * material.transmission.w;
             let iors = vec3<f32>(ior - half_spread, ior, ior + half_spread);
             var transmitted = vec3<f32>(0.0);

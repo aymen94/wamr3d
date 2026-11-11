@@ -231,3 +231,56 @@ fn set_from_camera_aims_through_the_view() {
 
     assert!(!set_from_camera(&mut raycaster, &world, floor, Vector2::default()));
 }
+
+/// The exact bounding-sphere test of `raycast_triangles`: true when it lets the ray on.
+fn passes_exact_sphere_test(raycaster: &Raycaster, sphere: &Sphere, matrix: &Matrix4) -> bool {
+    let mut sphere = *sphere;
+    sphere.apply_matrix4(matrix);
+    let mut ray = raycaster.ray;
+    ray.recast(raycaster.near);
+    sphere.contains_point(&ray.origin) || ray.intersect_sphere(&sphere).is_some()
+}
+
+#[test]
+fn the_quick_sphere_test_only_rejects_what_the_exact_test_rejects() {
+    // xorshift: deterministic without a dependency
+    let mut state = 0x9E37_79B9_7F4A_7C15u64;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state >> 11) as f64 / (1u64 << 53) as f64
+    };
+    let (mut rejected, mut grazing) = (0, 0);
+    for case in 0..200_000 {
+        let span = [1.0, 100.0, 1e5][case % 3];
+        let mut r = |s: f64| ((next() * 2.0 - 1.0) * s) as f32;
+        let mut matrix = Matrix4::default();
+        let mut quaternion = wamr_math::Quaternion::new(r(1.0), r(1.0), r(1.0), r(1.0));
+        quaternion.normalize();
+        matrix.compose(&Vector3::new(r(span), r(span), r(span)), &quaternion, &Vector3::new(r(4.0), r(4.0), r(4.0)));
+        let sphere = Sphere::new(Vector3::new(r(span), r(span), r(span)), r(span).abs());
+        let mut direction = Vector3::new(r(1.0), r(1.0), r(1.0));
+        direction.normalize();
+        let mut raycaster = Raycaster::new(Vector3::new(r(span), r(span), r(span)), direction, [0.0, r(span).abs()][case % 2], f32::INFINITY);
+
+        // Every fourth ray is aimed to pass at almost exactly the sphere's radius.
+        if case % 4 == 0 {
+            let mut world = sphere;
+            world.apply_matrix4(&matrix);
+            let mut aside = Vector3::new(r(1.0), r(1.0), r(1.0));
+            aside.cross(&direction).normalize();
+            let offset = world.radius * (1.0 + r(1e-6));
+            let mut origin = world.center;
+            origin.add_scaled_vector(&aside, offset).add_scaled_vector(&direction, -2.0 * span as f32);
+            raycaster.ray.origin = origin;
+            grazing += 1;
+        }
+
+        if clearly_misses(&raycaster, &sphere, &matrix) {
+            rejected += 1;
+            assert!(!passes_exact_sphere_test(&raycaster, &sphere, &matrix), "case {case}: rejected a sphere the exact test accepts");
+        }
+    }
+    assert!(rejected > 50_000 && grazing > 0, "rejected {rejected}");
+}
