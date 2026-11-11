@@ -94,8 +94,8 @@ impl<T> Shared<T> {
 /// Owner of a scene: its objects, their components, and the geometries, materials,
 /// render targets and interleaved buffers they use.
 ///
-/// Everything is addressed by handle. Dropping the world frees all of it. See
-/// AGENTS.md section 10 (Section 5 / 5.3) for the ownership and disposal rules.
+/// Everything is addressed by handle. Dropping the world frees all of it. `destroy`
+/// leaves children alive as roots; geometries and materials are freed only by `dispose_*`.
 #[derive(Default)]
 pub struct World {
     entities: Arena<EntityTag>,

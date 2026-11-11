@@ -54,4 +54,4 @@ WAMR3D covers the scene graph, math, built-in objects, materials, loaders, anima
 - [Configuration and development checks](https://github.com/aymen94/wamr3d/blob/main/CONFIGURATION.md)
 - [Project website and examples](https://github.com/aymen94/wamr3d)
 
-The project is MIT-licensed. Third-party notices are included in the repository.
+The project is MIT-licensed. 

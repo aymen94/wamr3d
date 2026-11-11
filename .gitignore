@@ -33,7 +33,6 @@ coverage/
 # Environment and local tool settings
 .env
 .env.local
-.claude/settings.local.json
 
 # Editors and OS
 .vscode/
