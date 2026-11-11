@@ -291,6 +291,113 @@ export const MAPS = {
 		} );
 		return { scene, camera };
 
+	},
+
+	// Many distinct small geometries, more vertices and indices than fit at first in the
+	// buffers a renderer may share between them: indexed and not, with vertex colours,
+	// without normals or uvs, as lines and as a wireframe. Frames drawn before the compared
+	// one hold geometries that are then disposed, and one geometry changes size.
+	geometry_pool( L ) {
+
+		const { scene, camera } = stage( L, 0, 0, 9 );
+		const sun = new L.DirectionalLight( 0xffffff, 2.5 );
+		sun.position.set( 2, 3, 4 );
+		scene.add( sun, new L.AmbientLight( 0xffffff, 0.4 ) );
+		const place = ( object, i ) => {
+
+			object.position.set( ( i % 8 - 3.5 ) * 1.1, 2.2 - Math.floor( i / 8 ) * 1.1, 0 );
+			scene.add( object );
+			return object;
+
+		};
+
+		const temporary = [];
+		for ( let i = 0; i < 12; i ++ ) temporary.push( place( new L.Mesh( new L.TorusKnotGeometry( 0.3, 0.1, 80 + i, 10 ), new L.MeshBasicMaterial( { color: 0xffffff } ) ), i ) );
+
+		const resized = new L.BufferGeometry().copy( new L.BoxGeometry( 0.6, 0.6, 0.6 ) );
+		const kept = [];
+		for ( let i = 0; i < 24; i ++ ) kept.push( new L.Mesh( new L.SphereGeometry( 0.4, 40 + i, 20 + i % 5 ), new L.MeshStandardMaterial( { color: [ 0x4f8cff, 0xd85a3a, 0x6fd08c, 0xffb454 ][ i % 4 ], roughness: 0.5 } ) ) );
+		kept.push( new L.Mesh( resized, new L.MeshStandardMaterial( { color: 0xb070ff, roughness: 0.4 } ) ) );
+		kept.push( new L.Mesh( new L.BoxGeometry( 0.7, 0.7, 0.7 ).toNonIndexed(), new L.MeshStandardMaterial( { color: 0x40c0c0, roughness: 0.6 } ) ) );
+
+		const colored = new L.BoxGeometry( 0.7, 0.7, 0.7 ), colors = [];
+		for ( let v = 0; v < colored.getAttribute( 'position' ).count; v ++ ) colors.push( v % 3 === 0 ? 1 : 0.2, v % 3 === 1 ? 1 : 0.2, v % 3 === 2 ? 1 : 0.2 );
+		colored.setAttribute( 'color', new L.Float32BufferAttribute( colors, 3 ) );
+		kept.push( new L.Mesh( colored, new L.MeshBasicMaterial( { vertexColors: true } ) ) );
+
+		const bare = new L.BufferGeometry();
+		bare.setAttribute( 'position', new L.Float32BufferAttribute( [ - 0.4, - 0.4, 0, 0.4, - 0.4, 0, 0, 0.4, 0 ], 3 ) );
+		kept.push( new L.Mesh( bare, new L.MeshBasicMaterial( { color: 0xffe080 } ) ) );
+		kept.push( new L.LineSegments( new L.EdgesGeometry( new L.BoxGeometry( 0.7, 0.7, 0.7 ) ), new L.LineBasicMaterial( { color: 0xffffff } ) ) );
+		kept.push( new L.Mesh( new L.SphereGeometry( 0.4, 12, 8 ), new L.MeshBasicMaterial( { color: 0x80ff80, wireframe: true } ) ) );
+		kept.forEach( ( object, i ) => {
+
+			object.rotation.set( 0.5, 0.7, 0 );
+			if ( i >= 12 ) place( object, i + 4 );
+
+		} );
+
+		async function setup( renderer ) {
+
+			renderer.render( scene, camera );
+			for ( const mesh of temporary ) {
+
+				scene.remove( mesh );
+				mesh.geometry.dispose();
+
+			}
+
+			kept.slice( 0, 12 ).forEach( place );
+			renderer.render( scene, camera );
+			resized.copy( new L.TorusGeometry( 0.3, 0.12, 12, 32 ) );
+
+		}
+
+		return { scene, camera, setup };
+
+	},
+
+	// 160 meshes sharing a geometry, in two interleaved materials at varied depths,
+	// each turned (about the view axis) and scaled its own way: more draws than one group of object blocks holds,
+	// which a renderer may issue together. Between them an instanced mesh, points drawn as
+	// quads, and a mesh without depth writes in a later render order. The boxes face the
+	// camera and do not overlap, so that edges, which WebGL 2 antialiases differently,
+	// stay a small share of the image.
+	draw_batches( L ) {
+
+		// seen straight on without perspective, the boxes show their front faces only
+		const { scene } = stage( L, 0, 0, 14 );
+		const camera = new L.OrthographicCamera( - 8.5, 8.5, 6.4, - 6.4, 0.1, 100 );
+		camera.position.set( 0, 0, 14 );
+		const sun = new L.DirectionalLight( 0xffffff, 2.5 );
+		sun.position.set( 2, 3, 4 );
+		scene.add( sun, new L.AmbientLight( 0xffffff, 0.4 ) );
+		const box = new L.BoxGeometry( 0.45, 0.45, 0.45 );
+		const materials = [ new L.MeshStandardMaterial( { color: 0x4f8cff, roughness: 0.5 } ), new L.MeshStandardMaterial( { color: 0xd85a3a, roughness: 0.5 } ) ];
+
+		for ( let i = 0; i < 160; i ++ ) {
+
+			const mesh = new L.Mesh( box, materials[ i % 3 === 0 ? 1 : 0 ] );
+			mesh.position.set( ( i % 16 - 7.5 ) * 1.0, ( Math.floor( i / 16 ) - 4.5 ) * 1.1, - ( i * 7 % 11 ) * 0.3 );
+			mesh.rotation.z = i * 0.37;
+			mesh.scale.setScalar( 0.7 + ( i % 5 ) * 0.1 );
+			scene.add( mesh );
+
+		}
+
+		const instanced = new L.InstancedMesh( new L.SphereGeometry( 0.2, 12, 8 ), materials[ 0 ], 8 );
+		const matrix = new L.Matrix4();
+		for ( let i = 0; i < 8; i ++ ) instanced.setMatrixAt( i, matrix.makeTranslation( ( i - 3.5 ) * 1.6, 6, 0.5 ) );
+		scene.add( instanced );
+		const points = new L.BufferGeometry();
+		points.setAttribute( 'position', new L.Float32BufferAttribute( [ - 6, - 6, 1, - 4, - 6, 1, - 2, - 6, 1, 0, - 6, 1 ], 3 ) );
+		scene.add( new L.Points( points, new L.PointsMaterial( { color: 0xffe080, size: 8, sizeAttenuation: false } ) ) );
+		const overlay = new L.Mesh( new L.PlaneGeometry( 3, 1.2 ), new L.MeshBasicMaterial( { color: 0xffffff, depthWrite: false } ) );
+		overlay.position.set( 0, 0, 1 );
+		overlay.renderOrder = 1;
+		scene.add( overlay );
+		return { scene, camera };
+
 	}
 
 };
