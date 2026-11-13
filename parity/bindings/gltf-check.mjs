@@ -129,4 +129,20 @@ mixer.clipAction( clip ).play();
 mixer.update( 0.5 );
 check( 'animation plays', Math.abs( morph.position.x - 1 ) < 1e-6, 'x at t=0.5: ' + morph.position.x );
 check( 'binary glb rejected without JSON', await loader.parseAsync( new Uint8Array( [ 0x67, 0x6C, 0x54, 0x46, 2, 0, 0, 0, 12, 0, 0, 0 ] ).buffer, '' ).then( () => false, () => true ) );
+
+// A mesh used by several nodes: each node gets only the transform and name it defines,
+// and copies of a mesh's primitives keep their associations.
+const shared = await loader.parseAsync( JSON.stringify( {
+	asset: { version: '2.0' }, scene: 0, scenes: [ { nodes: [ 0, 1, 2, 3, 4 ] } ],
+	nodes: [ { name: 'A', mesh: 0, translation: [ 5, 0, 0 ], rotation: [ 0, 0, Math.SQRT1_2, Math.SQRT1_2 ], scale: [ 2, 2, 2 ] }, { mesh: 0 }, { name: 'C', mesh: 0, translation: [ 0, 3, 0 ] }, { name: 'P', mesh: 1, translation: [ 1, 0, 0 ] }, { name: 'Q', mesh: 1 } ],
+	meshes: [ { name: 'tri', primitives: [ { attributes: { POSITION: 0 } } ] }, { name: 'two', primitives: [ { attributes: { POSITION: 0 } }, { attributes: { POSITION: 0 } } ] } ],
+	accessors: [ gltf.accessors[ 0 ] ], bufferViews: gltf.bufferViews, buffers: gltf.buffers
+} ), '' );
+const [ a, b, c, p, q ] = shared.scene.children;
+const identity = ( o ) => o.position.toArray().every( ( v ) => v === 0 ) && o.quaternion.toArray().join() === '0,0,0,1' && o.scale.toArray().every( ( v ) => v === 1 );
+check( 'shared mesh: first node keeps its transform', a.name === 'A' && a.position.x === 5 && a.scale.x === 2 && Math.abs( a.quaternion.z - Math.SQRT1_2 ) < 1e-6 );
+check( 'shared mesh: node without a transform', identity( b ) && b.name === 'tri_instance_1', `${b.name} ${b.position.toArray()} ${b.quaternion.toArray()} ${b.scale.toArray()}` );
+check( 'shared mesh: node with a translation only', c.position.y === 3 && c.position.x === 0 && c.quaternion.w === 1 && c.scale.x === 1, `${c.position.toArray()} ${c.quaternion.toArray()} ${c.scale.toArray()}` );
+check( 'shared mesh: distinct objects', new Set( [ a, b, c ] ).size === 3 && p.children[ 0 ] !== q.children[ 0 ] && identity( q ) );
+check( 'shared mesh: copies keep associations', [ ...p.children, ...q.children ].every( ( child, i ) => shared.parser.associations.get( child )?.meshes === 1 && shared.parser.associations.get( child )?.primitives === i % 2 ) );
 process.exitCode = failed ? 1 : 0;

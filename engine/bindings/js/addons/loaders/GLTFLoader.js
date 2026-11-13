@@ -246,6 +246,10 @@ class GLTFParser {
 		this.skinnedMeshes = new Set();
 		for ( const skin of json.skins ?? [] ) for ( const joint of skin.joints ) this.joints.add( joint );
 		for ( const node of json.nodes ?? [] ) if ( node.mesh !== undefined && node.skin !== undefined ) this.skinnedMeshes.add( node.mesh );
+		// how many nodes use each mesh, and how many of those have taken their copy
+		this.meshRefs = new Map();
+		this.meshUses = new Map();
+		for ( const node of json.nodes ?? [] ) if ( node.mesh !== undefined ) this.meshRefs.set( node.mesh, ( this.meshRefs.get( node.mesh ) ?? 0 ) + 1 );
 
 	}
 
