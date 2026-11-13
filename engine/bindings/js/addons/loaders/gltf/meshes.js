@@ -178,6 +178,7 @@ export class GLTFMeshes {
 		if ( meshes.length === 1 ) return meshes[ 0 ];
 		const group = new Group();
 		for ( const mesh of meshes ) group.add( mesh );
+		this.associations.set( group, { meshes: index } );
 		return group;
 
 	}
