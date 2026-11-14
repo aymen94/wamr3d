@@ -6,6 +6,23 @@ import { pattern, stage, toneMapped } from './common.js';
 
 export const BASIC = {
 
+	// No background: the canvas keeps transparency, as with three.js's default `alpha`. The
+	// clear colour shows at a quarter alpha, a half-transparent plane adds to it, an opaque
+	// box covers it.
+	transparent_canvas( L ) {
+
+		const { scene, camera } = stage( L, 0, 0.3, 4 );
+		scene.background = null;
+		const solid = new L.Mesh( new L.BoxGeometry( 1.2, 1.2, 1.2 ), new L.MeshBasicMaterial( { color: 0x4f8cff } ) );
+		solid.position.x = - 0.9;
+		solid.rotation.set( 0.4, 0.6, 0 );
+		const glass = new L.Mesh( new L.PlaneGeometry( 1.6, 1.6 ), new L.MeshBasicMaterial( { color: 0xffb454, transparent: true, opacity: 0.5 } ) );
+		glass.position.x = 0.9;
+		scene.add( solid, glass );
+		return { scene, camera, setup: ( renderer ) => renderer.setClearColor( 0x20c070, 0.25 ) };
+
+	},
+
 	// Unlit, two overlapping boxes: transforms, projection and the depth test.
 	cube( L ) {
 

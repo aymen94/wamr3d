@@ -18,7 +18,7 @@ import { installTextures } from './webgpu/textures.js';
 import { installBuffers } from './webgpu/buffers.js';
 import { installShadows } from './webgpu/shadows.js';
 
-export async function createBackend( canvas, { antialias = true, powerPreference = 'high-performance', fallbackAdapter = false } = {} ) {
+export async function createBackend( canvas, { antialias = true, powerPreference = 'high-performance', fallbackAdapter = false, alpha = true } = {} ) {
 
 	if ( ! globalThis.navigator?.gpu ) throw new Error( 'WAMR3D: WebGPU is not available in this browser' );
 	const adapter = await navigator.gpu.requestAdapter( fallbackAdapter ? { forceFallbackAdapter: true } : { powerPreference } );
@@ -30,7 +30,8 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 	// The shader writes linear colour into an sRGB view of the canvas, so blending and
 	// the multisample resolve happen in linear light and the GPU encodes on write.
 	const canvasFormat = navigator.gpu.getPreferredCanvasFormat(), format = canvasFormat + '-srgb';
-	context.configure( { device, format: canvasFormat, viewFormats: [ format ], alphaMode: 'opaque' } );
+	// With `alpha`, the canvas holds premultiplied colour and the page shows through.
+	context.configure( { device, format: canvasFormat, viewFormats: [ format ], alphaMode: alpha ? 'premultiplied' : 'opaque' } );
 
 	const samples = antialias ? 4 : 1;
 	const stride = Renderer.objectUniformSize(), objectBindingBytes = Renderer.objectBindingSize(), materialStride = Renderer.materialUniformSize();
@@ -430,8 +431,11 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 
 			const encoder = device.createCommandEncoder();
 			const shadowCalls = drawShadows( encoder, renderer, instanceSources, ctx.materials );
-			// Tone mapping applies only to what is drawn to the canvas, as in three.js.
-			const toneMapping = offscreen ? 0 : frameUniforms[ TONE_MAPPING ], hdr = toneMapping !== 0;
+			// Tone mapping applies only to what is drawn to the canvas, as in three.js. A frame
+			// that may leave the canvas transparent also goes through the output pass, which
+			// premultiplies in sRGB as three.js does; drawn straight into the sRGB canvas, a
+			// partly covered pixel would hold more colour than its alpha allows.
+			const toneMapping = offscreen ? 0 : frameUniforms[ TONE_MAPPING ], hdr = toneMapping !== 0 || ( ! offscreen && alpha && clear.a < 1 );
 			if ( hdr ) ensureHdrTargets();
 			else if ( ! offscreen ) ctx.ensureColorTarget();
 

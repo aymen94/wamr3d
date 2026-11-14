@@ -11,7 +11,7 @@
 - `LineMaterial.dashOffset` does not move the dashes.
 - `UnrealBloomPass` uses five fixed blur kernels (3, 5, 7, 9, 11); per-level bloom tint colors are not applied.
 - Rectangular area-light diffuse evaluation is implemented, while specular and clearcoat highlights are approximated without LTC tables. Skinned meshes are frustum-culled using posed-vertex bounds.
-- **WebGL 2:** 1-pixel points, lines and wireframes rasterize slightly differently from WebGPU. Without `EXT_color_buffer_float`, rendering falls back to 8-bit targets, blends in the sRGB canvas, and disables tone mapping, float render targets, environment maps and VSM.
+- **WebGL 2:** 1-pixel points, lines and wireframes rasterize slightly differently from WebGPU. Without `EXT_color_buffer_float`, rendering falls back to 8-bit targets, blends in the sRGB canvas (so partly covered pixels of a transparent canvas are not premultiplied in sRGB as three.js does), and disables tone mapping, float render targets, environment maps and VSM.
 - `wireframeLinewidth` other than 1, `CustomToneMapping`, `DataTexture` formats other than RGBA, and offset, repeat or rotation of background textures warn and have no effect.
 - Frame preparation writes draws in sorted order: about 3.4 ms of 17 ms for 39,000 draws natively. Reading blocks through an index instead would break the consecutive blocks that instanced batching needs.
 - `renderer.info.render.calls` counts objects drawn, as three.js does, not the fewer instanced draws the hosts issue.

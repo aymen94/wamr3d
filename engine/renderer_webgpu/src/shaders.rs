@@ -296,9 +296,9 @@ pub const TONE_MAPPING_INDEX: usize = 35;
 /// Index in [`Frame::frame_uniforms`] of the tone mapping exposure.
 pub const TONE_MAPPING_EXPOSURE_INDEX: usize = 39;
 
-/// The output pass used when tone mapping is on. As in three.js, the scene is drawn
-/// in linear colour into a half-float target, and this pass tone-maps every pixel,
-/// background included, onto the sRGB canvas. Blending therefore happens before tone
+/// The output pass used when tone mapping is on or the canvas may show through. As in
+/// three.js, the scene is drawn in linear colour into a half-float target, and this pass
+/// tone-maps every pixel, background included, onto the sRGB canvas. Blending therefore happens before tone
 /// mapping, and `Material.toneMapped` has no effect on screen output.
 pub const OUTPUT_SHADER_MAIN: &str = r#"
 // x the tone mapping (three.js constant), y the exposure
@@ -315,10 +315,26 @@ fn vertex(@builtin(vertex_index) index: u32) -> Output {
     return output;
 }
 
+fn linear_to_srgb(color: vec3<f32>) -> vec3<f32> {
+    return select(pow(max(color, vec3<f32>(0.0)), vec3<f32>(0.41666)) * 1.055 - 0.055, color * 12.92, color <= vec3<f32>(0.0031308));
+}
+
+fn srgb_to_linear(color: vec3<f32>) -> vec3<f32> {
+    return select(pow(color * 0.9478672986 + 0.0521327014, vec3<f32>(2.4)), color * 0.0773993808, color <= vec3<f32>(0.04045));
+}
+
 @fragment
 fn fragment(input: Output) -> @location(0) vec4<f32> {
     let color = textureLoad(source, vec2<i32>(input.position.xy), 0);
-    return vec4<f32>(tone_mapped(color.rgb, settings.x, settings.y), 1.0);
+    // The target holds premultiplied colour. As three.js does, tone-map and encode the
+    // straight colour and premultiply in sRGB; the canvas view encodes what this returns,
+    // so return the linear value of that premultiplied sRGB colour.
+    let alpha = clamp(color.a, 0.0, 1.0);
+    if (alpha <= 0.0) {
+        return vec4<f32>(0.0);
+    }
+    let encoded = linear_to_srgb(tone_mapped(color.rgb / alpha, settings.x, settings.y)) * alpha;
+    return vec4<f32>(srgb_to_linear(encoded), alpha);
 }
 "#;
 

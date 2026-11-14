@@ -14,11 +14,12 @@ import { installTextures } from './webgl/textures.js';
 import { installShadows } from './webgl/shadows.js';
 import { installEnvironment } from './webgl/environment.js';
 
-export async function createWebGLBackend( canvas, { antialias = true, powerPreference = 'high-performance' } = {} ) {
+export async function createWebGLBackend( canvas, { antialias = true, powerPreference = 'high-performance', alpha = true } = {} ) {
 
 	if ( Renderer.materialUniformSize() !== MATERIAL_STRIDE || Renderer.objectUniformSize() !== OBJECT_STRIDE ) throw new Error( 'WAMR3D: the WebGL 2 host does not match the uniform layout of the engine' );
 
-	const gl = canvas.getContext( 'webgl2', { antialias, alpha: false, depth: true, stencil: true, premultipliedAlpha: false, powerPreference } );
+	// With `alpha`, the canvas holds premultiplied colour and the page shows through.
+	const gl = canvas.getContext( 'webgl2', { antialias, alpha, depth: true, stencil: true, premultipliedAlpha: true, powerPreference } );
 	if ( ! gl ) throw new Error( 'WAMR3D: WebGL 2 is not available in this browser' );
 
 	// Half-float targets carry tone mapping, render targets of float type and the
