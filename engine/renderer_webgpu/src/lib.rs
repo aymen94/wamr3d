@@ -33,7 +33,7 @@ mod shaders;
 #[cfg(test)]
 mod tests;
 
-pub use frame::{material_flags, material_slots, object_flags, pack_material, prepare_frame};
+pub use frame::{material_flags, material_slots, object_flags, pack_material, prepare_frame, prepare_frame_into, FrameScratch};
 pub use dfg::dfg_table;
 pub use effects::*;
 pub use glsl::glsl_source;

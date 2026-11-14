@@ -19,10 +19,17 @@ pub(super) fn shadow_pass(
     environments: &mut Environments,
     skins: &mut Skins,
     frame: &mut Frame,
-) -> ShadowPass {
+    pass: &mut ShadowPass,
+) {
     let mut frustum = Frustum::default();
     frustum.set_from_projection_matrix(view_projection, CoordinateSystem::WebGPU, false);
-    let mut pass = ShadowPass { layer, width, height, view_projection: view_projection.elements, ..ShadowPass::default() };
+    // a pass of an earlier frame, emptied: its buffers keep their capacity
+    pass.layer = layer;
+    pass.width = width;
+    pass.height = height;
+    pass.view_projection = view_projection.elements;
+    pass.draws.clear();
+    pass.object_uniforms.clear();
 
     for &object in objects {
         let (Some(renderable), Some(visibility), Some(matrix_world)) =
@@ -92,5 +99,4 @@ pub(super) fn shadow_pass(
         });
         push_object(&mut pass.object_uniforms, &matrix_world, 0, skin, None);
     }
-    pass
 }

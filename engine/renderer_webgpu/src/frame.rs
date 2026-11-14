@@ -45,6 +45,7 @@ struct Entry {
 }
 
 /// Skinning matrices of the frame, computed once per skinned object.
+#[derive(Default)]
 struct Skins {
     /// Per object, its first matrix plus one and its number of matrices.
     offsets: IdHashMap<Entity, (u32, u32)>,
@@ -132,9 +133,8 @@ const NOT_ORDER_FREE: u64 = u64::MAX;
 /// kept whichever comes first; only exactly equal depths can resolve differently. A run
 /// holding any other draw (depth writes off, other depth functions, stencil) keeps its
 /// order, since those draws depend on what was drawn before them.
-fn group_order_free_runs(keys: &mut [u128], group_keys: &[u64]) {
-    let mut ranks: IdHashMap<u64, u32> = IdHashMap::default();
-    let (mut counts, mut ranked, mut scratch) = (Vec::new(), Vec::new(), Vec::new());
+fn group_order_free_runs(keys: &mut [u128], group_keys: &[u64], grouping: &mut Grouping) {
+    let Grouping { ranks, counts, ranked, scratch } = grouping;
     let mut start = 0;
     while start < keys.len() {
         let run_key = keys[start] >> 64;
@@ -171,12 +171,81 @@ fn group_order_free_runs(keys: &mut [u128], group_keys: &[u64]) {
         }
         scratch.clear();
         scratch.resize(run.len(), 0u128);
-        for (&key, &rank) in run.iter().zip(&ranked) {
+        for (&key, &rank) in run.iter().zip(ranked.iter()) {
             scratch[counts[rank as usize] as usize] = key;
             counts[rank as usize] += 1;
         }
-        run.copy_from_slice(&scratch);
+        run.copy_from_slice(scratch);
     }
+}
+
+/// The working buffers of [`group_order_free_runs`].
+#[derive(Default)]
+struct Grouping {
+    ranks: IdHashMap<u64, u32>,
+    counts: Vec<u32>,
+    ranked: Vec<u32>,
+    scratch: Vec<u128>,
+}
+
+/// The working buffers of [`prepare_frame_into`], kept between frames so that preparing a
+/// frame again reuses their capacity instead of allocating.
+#[derive(Default)]
+pub struct FrameScratch {
+    stack: Vec<Entity>,
+    visible: Vec<Entity>,
+    entries: Vec<Entry>,
+    parts: Vec<(MaterialHandle, u32, u32)>,
+    groups: Vec<wamr_core::Group>,
+    group_keys: Vec<u64>,
+    keys: Vec<u128>,
+    grouping: Grouping,
+    materials: Materials,
+    skins: Skins,
+    casters: Vec<Entity>,
+    geometry_infos: IdHashMap<GeometryHandle, GeometryInfo>,
+    casting: Vec<(usize, LightShadow, Matrix4)>,
+}
+
+/// Empties `frame` for a new frame, keeping the capacity of its buffers. Shadow passes
+/// stay, to be refilled in place by the shadow loop. Lists every field, so a new one
+/// cannot be left out.
+fn reset_frame(frame: &mut Frame, shadow_type: ShadowType) {
+    let Frame {
+        draws,
+        opaque_count,
+        transmissive_count,
+        frame_uniforms,
+        object_uniforms,
+        material_uniforms,
+        skin_matrices,
+        candidates,
+        shadows: _,
+        shadow_map_width,
+        shadow_map_height,
+        shadow_type: frame_shadow_type,
+        shadow_blur,
+        environments,
+        environment_lod_max,
+        background,
+        background_uniforms,
+    } = frame;
+    draws.clear();
+    *opaque_count = 0;
+    *transmissive_count = 0;
+    frame_uniforms.clear();
+    object_uniforms.clear();
+    material_uniforms.clear();
+    skin_matrices.clear();
+    *candidates = 0;
+    *shadow_map_width = 0;
+    *shadow_map_height = 0;
+    *frame_shadow_type = shadow_type;
+    shadow_blur.clear();
+    environments.clear();
+    *environment_lod_max = 0;
+    *background = None;
+    background_uniforms.clear();
 }
 
 /// `value`'s bits as an unsigned integer that orders as `f32::total_cmp` orders floats.
@@ -204,8 +273,22 @@ fn push_object(out: &mut Vec<f32>, matrix_world: &Matrix4, flags: u32, skin: u32
 ///
 /// World matrices must be up to date. Returns `None` if `camera` is not a camera.
 /// Geometries without a bounding sphere get one computed and cached; that is the only
-/// change made to the world.
+/// change made to the world. To build frame after frame without allocating, keep a
+/// [`Frame`] and a [`FrameScratch`] and use [`prepare_frame_into`].
 pub fn prepare_frame(world: &mut World, root: Entity, camera: Entity, lighting: &Lighting) -> Option<Frame> {
+    let mut frame = Frame::default();
+    prepare_frame_into(world, root, camera, lighting, &mut frame, &mut FrameScratch::default()).then_some(frame)
+}
+
+/// [`prepare_frame`] into `frame`, which is overwritten, reusing the buffers of `frame` and
+/// `scratch` from earlier frames. Returns false, leaving `frame` unchanged, if `camera` is
+/// not a camera.
+pub fn prepare_frame_into(world: &mut World, root: Entity, camera: Entity, lighting: &Lighting, frame: &mut Frame, scratch: &mut FrameScratch) -> bool {
+    prepare_with(world, root, camera, lighting, frame, scratch).is_some()
+}
+
+// `None` only if `camera` is not a camera, before `frame` is touched.
+fn prepare_with(world: &mut World, root: Entity, camera: Entity, lighting: &Lighting, frame: &mut Frame, scratch: &mut FrameScratch) -> Option<()> {
     // WebGPU clip space has depth 0..1 whatever convention the camera was created with.
     let mut gpu_camera: Camera = *world.camera(camera)?;
     gpu_camera.coordinate_system = CoordinateSystem::WebGPU;
@@ -220,22 +303,22 @@ pub fn prepare_frame(world: &mut World, root: Entity, camera: Entity, lighting: 
     let mut frustum = Frustum::default();
     frustum.set_from_projection_matrix(&view_projection, CoordinateSystem::WebGPU, gpu_camera.reversed_depth);
 
-    let mut visible = Vec::new();
-    world.traverse_visible(root, |e| visible.push(e));
+    let FrameScratch { stack, visible, entries, parts, groups, group_keys, keys, grouping, materials, skins, casters, geometry_infos, casting } = scratch;
+    visible.clear();
+    world.traverse_visible_with(root, stack, |e| visible.push(e));
 
-    let mut frame = Frame { shadow_type: lighting.shadow_type, ..Frame::default() };
-    let mut entries: Vec<Entry> = Vec::new();
-    let mut parts: Vec<(MaterialHandle, u32, u32)> = Vec::new();
+    reset_frame(frame, lighting.shadow_type);
+    entries.clear();
     // per entry, its group key for `group_order_free_runs`
-    let mut group_keys: Vec<u64> = Vec::new();
-    let mut materials = Materials::new();
-    let mut environments = Environments { list: Vec::new(), scene: lighting.environment };
-    let mut skins = Skins { offsets: IdHashMap::default() };
-    let mut casters: Vec<Entity> = Vec::new();
+    group_keys.clear();
+    materials.clear();
+    let mut environments = Environments { list: std::mem::take(&mut frame.environments), scene: lighting.environment };
+    skins.offsets.clear();
+    casters.clear();
     let mut last_geometry: Option<(GeometryHandle, GeometryInfo)> = None;
-    let mut geometry_infos: IdHashMap<GeometryHandle, GeometryInfo> = IdHashMap::default();
+    geometry_infos.clear();
 
-    for &object in &visible {
+    for &object in visible.iter() {
         let Some(renderable) = world.renderable(object).copied() else {
             continue;
         };
@@ -277,7 +360,12 @@ pub fn prepare_frame(world: &mut World, root: Entity, camera: Entity, lighting: 
         };
         let GeometryInfo { has_colors, color_key, aux_key, range_start, range_end, sphere, slot: geometry_slot } = geometry_info;
         let mut sphere = sphere;
-        let groups = if world.materials(object).is_empty() { Vec::new() } else { world.geometry(renderable.geometry).map_or_else(Vec::new, |g| g.groups.clone()) };
+        groups.clear();
+        if !world.materials(object).is_empty() {
+            if let Some(geometry) = world.geometry(renderable.geometry) {
+                groups.extend_from_slice(&geometry.groups);
+            }
+        }
 
         // One part per material: the whole draw range, or one per geometry group when
         // the object has a material for each group.
@@ -287,7 +375,7 @@ pub fn prepare_frame(world: &mut World, root: Entity, camera: Entity, lighting: 
                 parts.push((renderable.material, range_start, range_end));
             }
         } else {
-            for group in &groups {
+            for group in groups.iter() {
                 let handle = world.materials(object).get(group.material_index as usize).copied();
                 if let Some(handle) = handle.filter(|h| world.material(*h).is_some()) {
                     parts.push((handle, group.start.max(range_start), group.start.saturating_add(group.count).min(range_end)));
@@ -296,7 +384,7 @@ pub fn prepare_frame(world: &mut World, root: Entity, camera: Entity, lighting: 
         }
         // the scene's override material, where the object's own allows it
         if let Some(override_material) = lighting.override_material.filter(|h| world.material(*h).is_some()) {
-            for part in &mut parts {
+            for part in parts.iter_mut() {
                 if world.material(part.0).is_some_and(|m| m.state.allow_override) {
                     part.0 = override_material;
                 }
@@ -331,7 +419,7 @@ pub fn prepare_frame(world: &mut World, root: Entity, camera: Entity, lighting: 
         let mut view_position = Vector3::new(matrix_world.elements[12], matrix_world.elements[13], matrix_world.elements[14]);
         view_position.apply_matrix4(&gpu_camera.matrix_world_inverse);
 
-        for &(handle, start, end) in &parts {
+        for &(handle, start, end) in parts.iter() {
             let Some(material) = world.material(handle) else {
                 continue;
             };
@@ -380,17 +468,14 @@ pub fn prepare_frame(world: &mut World, root: Entity, camera: Entity, lighting: 
     // The keys are packed into one integer per draw that ends with the entry's index:
     // sorting them reads no entries and gives the order a stable sort by the same keys
     // would.
-    let mut keys: Vec<u128> = entries
-        .iter()
-        .enumerate()
-        .map(|(index, e)| {
-            let depth = total_order_bits(e.draw.depth);
-            let depth = if e.category == 2 { !depth } else { depth };
-            u128::from(e.category) << 96 | u128::from(total_order_bits(e.render_order)) << 64 | u128::from(depth) << 32 | index as u128
-        })
-        .collect();
+    keys.clear();
+    keys.extend(entries.iter().enumerate().map(|(index, e)| {
+        let depth = total_order_bits(e.draw.depth);
+        let depth = if e.category == 2 { !depth } else { depth };
+        u128::from(e.category) << 96 | u128::from(total_order_bits(e.render_order)) << 64 | u128::from(depth) << 32 | index as u128
+    }));
     keys.sort_unstable();
-    group_order_free_runs(&mut keys, &group_keys);
+    group_order_free_runs(keys, group_keys, grouping);
     let order = keys.iter().map(|&key| key as u32);
     frame.opaque_count = entries.iter().filter(|e| e.category == 0).count() as u32;
     frame.transmissive_count = entries.iter().filter(|e| e.category == 1).count() as u32;
@@ -416,7 +501,7 @@ pub fn prepare_frame(world: &mut World, root: Entity, camera: Entity, lighting: 
     frame.frame_uniforms.extend([right.x, right.y, right.z, lighting.viewport[1] * 0.5 / lighting.viewport[2].max(1e-6), up.x, up.y, up.z, f32::from(u8::from(perspective))]);
     // Shadow maps in light order, each with its light and view-projection: one per
     // directional or spot light, one per cube face of a point light.
-    let mut casting: Vec<(usize, LightShadow, Matrix4)> = Vec::new();
+    casting.clear();
     if lighting.shadows {
         for (index, light) in lights.iter().enumerate() {
             let Some(shadow) = light.shadow else {
@@ -476,6 +561,9 @@ pub fn prepare_frame(world: &mut World, root: Entity, camera: Entity, lighting: 
     frame.shadow_map_width = casting.iter().map(|(_, s, _)| s.map_width.max(1)).max().unwrap_or(1);
     frame.shadow_map_height = casting.iter().map(|(_, s, _)| s.map_height.max(1)).max().unwrap_or(1);
     let filter = f32::from(lighting.shadow_type as u8);
+    // the passes of the previous frame are refilled, so their buffers keep their capacity
+    let mut passes = std::mem::take(&mut frame.shadows);
+    passes.truncate(casting.len());
     for (layer, (light, shadow, view_projection)) in casting.iter().enumerate() {
         // x, y from -1..1 to 0..1; WebGPU depth is already 0..1.
         let mut to_map = Matrix4::default();
@@ -491,9 +579,12 @@ pub fn prepare_frame(world: &mut World, root: Entity, camera: Entity, lighting: 
         frame.frame_uniforms.extend([width as f32 / frame.shadow_map_width as f32, height as f32 / frame.shadow_map_height as f32, layer as f32, filter]);
         frame.shadow_blur.push([shadow.radius, shadow.blur_samples.max(1) as f32]);
 
-        let pass = shadow_pass(world, &casters, camera_layers, view_projection, layer as u32, width, height, &mut materials, &mut environments, &mut skins, &mut frame);
-        frame.shadows.push(pass);
+        if layer == passes.len() {
+            passes.push(ShadowPass::default());
+        }
+        shadow_pass(world, casters, camera_layers, view_projection, layer as u32, width, height, materials, &mut environments, skins, frame, &mut passes[layer]);
     }
+    frame.shadows = passes;
 
     // the environments are known once every material of the frame was packed
     frame.frame_uniforms.resize(ENVIRONMENT_OFFSET, 0.0);
@@ -550,7 +641,7 @@ pub fn prepare_frame(world: &mut World, root: Entity, camera: Entity, lighting: 
         frame.draws.push(draw);
     }
 
-    Some(frame)
+    Some(())
 }
 
 #[cfg(test)]

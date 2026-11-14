@@ -84,9 +84,20 @@ impl World {
         self.traverse_inner(entity, true, &mut callback);
     }
 
+    /// [`World::traverse_visible`] with a stack the caller keeps, so that repeated
+    /// traversals reuse its capacity instead of allocating. `stack` is emptied first.
+    pub fn traverse_visible_with(&self, entity: Entity, stack: &mut Vec<Entity>, mut callback: impl FnMut(Entity)) {
+        self.traverse_stack(entity, true, stack, &mut callback);
+    }
+
     pub(crate) fn traverse_inner(&self, entity: Entity, visible_only: bool, callback: &mut dyn FnMut(Entity)) {
+        self.traverse_stack(entity, visible_only, &mut Vec::new(), callback);
+    }
+
+    fn traverse_stack(&self, entity: Entity, visible_only: bool, stack: &mut Vec<Entity>, callback: &mut dyn FnMut(Entity)) {
         // An explicit stack: scene graphs can be deeper than the Wasm call stack allows.
-        let mut stack = vec![entity];
+        stack.clear();
+        stack.push(entity);
 
         while let Some(e) = stack.pop() {
             if !self.is_alive(e) {

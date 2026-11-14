@@ -547,3 +547,44 @@ fn shaders_read_object_blocks_as_the_hosts_bind_them() {
     // WebGPU: one storage array, entries packed at OBJECT_UNIFORM_FLOATS
     assert!(shader_source().contains("var<storage, read> objects: array<ObjectUniforms>") && OBJECT_UNIFORM_FLOATS == OBJECT_BINDING_FLOATS);
 }
+
+#[test]
+fn a_reused_frame_equals_a_new_one() {
+    // A: a point light's six shadow passes over four boxes; B: fewer boxes, one shadow pass
+    // and no lights' passes left over. Each reuse must give exactly what a new frame gives.
+    let (mut a, root_a, camera_a, boxes_a) = scene(&[[0.0, 0.0, -5.0], [2.0, 0.0, -6.0], [-2.0, 1.0, -7.0], [0.0, -1.0, -4.0]]);
+    for &e in &boxes_a {
+        a.visibility_mut(e).unwrap().cast_shadow = true;
+    }
+    let point_shadow = LightShadow {
+        blur_samples: 8,
+        projection: ShadowProjection::Perspective { fov: 90.0, aspect: 1.0, near: 0.5, far: 50.0 },
+        target: Vector3::new(0.0, 0.0, -5.0),
+        bias: 0.0,
+        normal_bias: 0.0,
+        intensity: 1.0,
+        radius: 1.0,
+        map_width: 256,
+        map_height: 256,
+    };
+    let lighting_a = Lighting { lights: vec![Light { kind: LightKind::Point, shadow: Some(point_shadow), ..Light::default() }], shadows: true, ..Lighting::default() };
+    let (mut b, root_b, camera_b, boxes_b) = scene(&[[0.0, 0.0, -3.0], [1.0, 0.0, -8.0]]);
+    b.visibility_mut(boxes_b[1]).unwrap().cast_shadow = true;
+    let sun = LightShadow { projection: ShadowProjection::Orthographic { left: -5.0, right: 5.0, top: 5.0, bottom: -5.0, near: 0.5, far: 50.0 }, ..point_shadow };
+    let lighting_b = Lighting { lights: vec![Light { direction: Vector3::new(0.0, 10.0, 0.0), shadow: Some(sun), ..Light::default() }], shadows: true, ..Lighting::default() };
+
+    fn check(world: &mut World, root: Entity, camera: Entity, lighting: &Lighting, frame: &mut Frame, scratch: &mut FrameScratch) {
+        assert!(prepare_frame_into(world, root, camera, lighting, frame, scratch));
+        assert_eq!(*frame, prepare_frame(world, root, camera, lighting).unwrap());
+    }
+    let (mut frame, mut scratch) = (Frame::default(), FrameScratch::default());
+    check(&mut a, root_a, camera_a, &lighting_a, &mut frame, &mut scratch);
+    check(&mut b, root_b, camera_b, &lighting_b, &mut frame, &mut scratch);
+    assert_eq!(frame.shadows.len(), 1);
+    check(&mut a, root_a, camera_a, &lighting_a, &mut frame, &mut scratch);
+    assert_eq!(frame.shadows.len(), POINT_SHADOW_FACES);
+    // not a camera: the frame is left as it was
+    let kept = frame.clone();
+    assert!(!prepare_frame_into(&mut a, root_a, boxes_a[0], &lighting_a, &mut frame, &mut scratch));
+    assert_eq!(frame, kept);
+}
