@@ -112,6 +112,15 @@ const skinned = scene.getObjectByProperty( 'isSkinnedMesh', true );
 check( 'skin', skinned && skinned.skeleton?.bones.length === 2 && skinned.skeleton.bones[ 0 ].isBone && skinned.material.isMeshBasicMaterial );
 const camera = result.cameras[ 0 ];
 check( 'camera', camera?.isPerspectiveCamera && Math.abs( camera.fov - 0.8 * 180 / Math.PI ) < 1e-4 && camera.aspect === 1.5 );
+// a registered plugin is made with the parser, and its root hooks are awaited in order
+const hooks = [];
+const withPlugin = await new GLTFLoader().register( ( parser ) => ( {
+	name: 'EXT_probe',
+	beforeRoot: () => new Promise( ( done ) => setTimeout( () => done( hooks.push( 'before:' + parser.json.asset.version ) ), 5 ) ),
+	afterRoot: ( loaded ) => new Promise( ( done ) => setTimeout( () => done( hooks.push( 'after:' + loaded.scenes.length ), loaded.userData.probe = true ), 5 ) )
+} ) ).parseAsync( JSON.stringify( gltf ), '' );
+check( 'plugin hooks', hooks.join() === 'before:2.0,after:1' && withPlugin.userData.probe === true, hooks.join() );
+check( 'plugin listed', withPlugin.parser.plugins.EXT_probe?.name === 'EXT_probe' && withPlugin.parser.extensions.EXT_probe === true );
 const light = scene.getObjectByProperty( 'isSpotLight', true );
 check( 'light', light && light.intensity === 3 && Math.abs( light.angle - 0.4 ) < 1e-6 && Math.abs( light.penumbra - 0.5 ) < 1e-6 );
 const instanced = scene.getObjectByProperty( 'isInstancedMesh', true );

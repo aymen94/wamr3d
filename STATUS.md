@@ -9,6 +9,7 @@
 - **TSL / node materials** (`src/nodes/`, `src/materials/nodes/`) are not ported: no node materials and no node-based post-processing.
 - **`ShaderMaterial`** draws unlit on WebGPU because GLSL shaders are WebGL-only. On WebGL 2 it supports lights and fog when `lights` and `fog` are enabled, but not shadows or rectangular area lights. A `ShaderPass` with GLSL other than the built-in passes needs WebGL 2.
 - `LineMaterial.dashOffset` does not move the dashes.
+- `GLTFLoader` plugins registered with `register()` get the parser and their `beforeRoot` and `afterRoot` hooks; the other hooks of three.js's plugin interface (`loadMesh`, `loadMaterial`, `extendMaterialParams`, `getMaterialType` and the rest) are not called.
 - `UnrealBloomPass` uses five fixed blur kernels (3, 5, 7, 9, 11); per-level bloom tint colors are not applied.
 - Rectangular area-light diffuse evaluation is implemented, while specular and clearcoat highlights are approximated without LTC tables. Skinned meshes are frustum-culled using posed-vertex bounds.
 - **WebGL 2:** 1-pixel points, lines and wireframes rasterize slightly differently from WebGPU. Without `EXT_color_buffer_float`, rendering falls back to 8-bit targets, blends in the sRGB canvas, and disables tone mapping, float render targets, environment maps and VSM.
