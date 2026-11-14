@@ -34,7 +34,7 @@ if ( ! browser ) throw new Error( 'no Chrome or Edge found' );
 
 const profile = fs.mkdtempSync( path.join( os.tmpdir(), 'wamr3d-measure-' ) );
 const flags = [ '--headless=new', '--no-first-run', `--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, `--window-size=${WIDTH},${HEIGHT}`, '--disable-background-timer-throttling', '--disable-renderer-backgrounding' ];
-flags.push( ...( gpu ? [ '--enable-gpu', '--use-angle=d3d11', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu' ] : [ '--enable-unsafe-swiftshader' ] ) );
+flags.push( ...( gpu ? [ '--enable-gpu', ...( process.platform === 'win32' ? [ '--use-angle=d3d11' ] : [] ), '--ignore-gpu-blocklist', '--enable-unsafe-webgpu' ] : [ '--enable-unsafe-swiftshader' ] ) );
 const child = spawn( browser, [ ...flags, 'about:blank' ], { stdio: 'ignore' } );
 const sleep = ( ms ) => new Promise( ( resolve ) => setTimeout( resolve, ms ) );
 

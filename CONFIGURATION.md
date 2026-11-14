@@ -93,7 +93,7 @@ The website depends on the **published** `wamr3d` package (`website/package.json
 | A page shows old behaviour | `dist/wamr3d` is stale: rebuild with `node engine/bindings/build.mjs`, then reload. |
 | Browser checks time out or cannot connect | the server is not running on port 8080. |
 | A visual case renders black | run it with `--console` to see the page's errors and warnings. |
-| WebGPU is unavailable in the headless browser | the scripts pass `--enable-unsafe-webgpu --use-angle=d3d11`; check `chrome://gpu` in a normal window, update the GPU driver, or use `--browser=edge`. |
+| WebGPU is unavailable in the headless browser | the scripts pass `--enable-unsafe-webgpu` (and `--use-angle=d3d11` on Windows; elsewhere the browser's default ANGLE backend, Metal on macOS); check `chrome://gpu` in a normal window, update the GPU driver, or use `--browser=edge`. |
 | Benchmarks are 20-50% slower than usual | leftover headless browsers: in PowerShell, `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" \| Where-Object { $_.CommandLine -match '--headless' }` lists them; stop those using a `wamr3d-` profile folder. |
 | `node parity/bindings/check.mjs` or `bench/bench.mjs` cannot find `three` | run `npm install` at the root. |
 | Edits made by scripts show every line changed | line endings: most files are LF, the root `README.md` is CRLF; keep each file's endings. |
