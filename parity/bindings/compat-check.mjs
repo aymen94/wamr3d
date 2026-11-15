@@ -10,6 +10,7 @@
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import * as C from '../../dist/wamr3d/compat.js';
+import { w } from '../../dist/wamr3d/compat/engine.js';
 
 const EXPECTED = fileURLToPath( new URL( './compat-expected.json', import.meta.url ) );
 const generate = process.argv.includes( '--generate' );
@@ -366,6 +367,41 @@ expected.forEach( ( [ label, want ], i ) => {
 } );
 
 console.log( `${values} values against three.js${generate ? '' : ' (stored)'}, largest scaled error ${worst.toExponential( 3 )} (tolerance ${TOLERANCE})` );
+
+// Materials are synced every frame: once sent, an unchanged material makes no engine call.
+{
+
+	const world = Object.getPrototypeOf( w() ), sent = [], originals = [];
+	const environment = { intensityFor: () => 1, localClipping: false };
+
+	for ( const name of Object.getOwnPropertyNames( world ) ) {
+
+		if ( ! name.startsWith( 'setMaterial' ) ) continue;
+		const original = world[ name ];
+		originals.push( [ name, original ] );
+		world[ name ] = function ( ...args ) {
+
+			sent.push( name );
+			return original.apply( this, args );
+
+		};
+
+	}
+
+	for ( const [ name, Class ] of Object.entries( C ) ) {
+
+		if ( ! name.endsWith( 'Material' ) || typeof Class !== 'function' || ! Class.prototype._sync ) continue;
+		const material = new Class();
+		material._sync( environment );
+		sent.length = 0;
+		material._sync( environment );
+		if ( sent.length > 0 ) failures.push( `an unchanged ${name} sent ${sent.join( ', ' )} again` );
+
+	}
+
+	for ( const [ name, original ] of originals ) world[ name ] = original;
+
+}
 
 if ( failures.length > 0 ) {
 
