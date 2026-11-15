@@ -356,7 +356,7 @@ export function installPrograms( ctx ) {
 		return ( start ? startProgram : program )( key, quad ? 'mesh_quad.vert' : 'mesh.vert', 'mesh.frag', defines );
 
 	};
-	const backgroundProgram = ( srgb ) => program( srgb ? 'background:srgb' : 'background', 'fullscreen.vert', 'background.frag', define( srgb ) );
+	const backgroundProgram = ( srgb, start = false ) => ( start ? startProgram : program )( srgb ? 'background:srgb' : 'background', 'fullscreen.vert', 'background.frag', define( srgb ) );
 
 	// KHR_parallel_shader_compile tells when a program is built without waiting for it.
 	const parallel = gl.getExtension( 'KHR_parallel_shader_compile' );

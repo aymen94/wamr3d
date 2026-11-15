@@ -300,8 +300,22 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 
 			};
 
+			const transmissive = renderer.transmissiveCount() > 0;
 			start( count, variant );
-			if ( renderer.transmissiveCount() > 0 ) start( renderer.opaqueCount(), HDR_KEY | SINGLE_KEY );
+			if ( transmissive ) start( renderer.opaqueCount(), HDR_KEY | SINGLE_KEY );
+			// the passes that prefilter the environment (or a blurred background), the background
+			// pass and the output pass of canvas frames
+			const background = renderer.backgroundInfo();
+			if ( renderer.environmentInfo().length > 0 || background[ 1 ] === 1 ) pending.push( ctx.preparePmrem() );
+
+			if ( background.length > 0 ) {
+
+				pending.push( ctx.prepareBackground( variant ) );
+				if ( transmissive ) pending.push( ctx.prepareBackground( HDR_KEY | SINGLE_KEY ) );
+
+			}
+
+			if ( variant === HDR_KEY ) pending.push( ctx.prepareOutput() );
 			return Promise.all( pending ).then( () => {} );
 
 		},
