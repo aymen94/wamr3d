@@ -71,3 +71,11 @@ fn timer_shell() {
     t.update(500.0);
     assert_eq!((t.get_delta(), t.get_elapsed()), (0.5, 0.5));
 }
+
+#[test]
+fn vertex_inputs_follow_the_attribute_table() {
+    for (slot, (name, _)) in crate::renderer::VERTEX_ATTRIBUTES.iter().enumerate() {
+        assert_eq!(crate::renderer::vertex_input(name), Some(slot));
+    }
+    assert_eq!(crate::renderer::vertex_input("uv2"), None);
+}
