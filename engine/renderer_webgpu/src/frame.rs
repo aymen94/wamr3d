@@ -124,9 +124,12 @@ const NOT_ORDER_FREE: u64 = u64::MAX;
 
 /// Within each run of opaque draws of one render order, when every draw of the run is
 /// order-free, puts draws with the same group key (pipeline key, material, geometry) next
-/// to each other, so that the hosts can issue them together. Groups follow the depth
-/// order of their nearest draw, and each group stays nearest first (a stable counting
-/// sort of the depth-sorted run).
+/// to each other, so that the hosts can issue them together, and groups of the same
+/// pipeline key and material next to each other, so that the hosts bind each material
+/// once rather than for every draw when each object has a geometry of its own. Pipeline
+/// and material pairs follow the depth order of their nearest draw, groups within a pair
+/// likewise, and each group stays nearest first (a stable counting sort of the
+/// depth-sorted run).
 ///
 /// An order-free draw tests and writes depth with `Less` or `LessEqual` and writes colour
 /// without blending or stencil, so of two such draws covering a pixel the nearer one is
@@ -134,7 +137,7 @@ const NOT_ORDER_FREE: u64 = u64::MAX;
 /// holding any other draw (depth writes off, other depth functions, stencil) keeps its
 /// order, since those draws depend on what was drawn before them.
 fn group_order_free_runs(keys: &mut [u128], group_keys: &[u64], grouping: &mut Grouping) {
-    let Grouping { ranks, counts, ranked, scratch } = grouping;
+    let Grouping { ranks, pair_ranks, counts, pairs, pair_starts, ranked, scratch } = grouping;
     let mut start = 0;
     while start < keys.len() {
         let run_key = keys[start] >> 64;
@@ -148,13 +151,24 @@ fn group_order_free_runs(keys: &mut [u128], group_keys: &[u64], grouping: &mut G
             continue;
         }
         ranks.clear();
+        pair_ranks.clear();
         counts.clear();
+        pairs.clear();
+        pair_starts.clear();
         ranked.clear();
         for &key in run.iter() {
+            let group_key = group_keys[key as u32 as usize];
             let next = counts.len() as u32;
-            let rank = *ranks.entry(group_keys[key as u32 as usize]).or_insert(next);
+            let rank = *ranks.entry(group_key).or_insert(next);
             if rank == next {
                 counts.push(0u32);
+                // the pipeline key and material: the group key without its geometry
+                let next_pair = pair_starts.len() as u32;
+                let pair = *pair_ranks.entry(group_key >> 16).or_insert(next_pair);
+                if pair == next_pair {
+                    pair_starts.push(0u32);
+                }
+                pairs.push(pair);
             }
             counts[rank as usize] += 1;
             ranked.push(rank);
@@ -162,12 +176,21 @@ fn group_order_free_runs(keys: &mut [u128], group_keys: &[u64], grouping: &mut G
         if counts.len() < 2 {
             continue;
         }
-        // first position of each group, then each draw in run order
+        // first position of each pair, then of each group (groups in rank order, so a
+        // pair's groups keep the order of their nearest draws), then each draw in run order
+        for (&count, &pair) in counts.iter().zip(pairs.iter()) {
+            pair_starts[pair as usize] += count;
+        }
         let mut at = 0;
-        for count in counts.iter_mut() {
-            let n = *count;
-            *count = at;
+        for start in pair_starts.iter_mut() {
+            let n = *start;
+            *start = at;
             at += n;
+        }
+        for (count, &pair) in counts.iter_mut().zip(pairs.iter()) {
+            let n = *count;
+            *count = pair_starts[pair as usize];
+            pair_starts[pair as usize] += n;
         }
         scratch.clear();
         scratch.resize(run.len(), 0u128);
@@ -183,7 +206,11 @@ fn group_order_free_runs(keys: &mut [u128], group_keys: &[u64], grouping: &mut G
 #[derive(Default)]
 struct Grouping {
     ranks: IdHashMap<u64, u32>,
+    pair_ranks: IdHashMap<u64, u32>,
     counts: Vec<u32>,
+    /// Per group, the rank of its pipeline key and material.
+    pairs: Vec<u32>,
+    pair_starts: Vec<u32>,
     ranked: Vec<u32>,
     scratch: Vec<u128>,
 }
