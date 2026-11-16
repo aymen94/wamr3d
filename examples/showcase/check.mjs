@@ -28,7 +28,7 @@ const browser = [
 if ( ! browser ) throw new Error( 'no Chrome or Edge found' );
 
 const profile = fs.mkdtempSync( path.join( os.tmpdir(), 'wamr3d-showcase-' ) );
-const child = spawn( browser, [ '--headless=new', '--no-first-run', '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu', '--use-angle=d3d11', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', `--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, `--window-size=${WIDTH},${HEIGHT}`, 'about:blank' ], { stdio: 'ignore' } );
+const child = spawn( browser, [ '--headless=new', '--no-first-run', '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu', ...( process.platform === 'win32' ? [ '--use-angle=d3d11' ] : [] ), '--disable-background-timer-throttling', '--disable-renderer-backgrounding', `--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, `--window-size=${WIDTH},${HEIGHT}`, 'about:blank' ], { stdio: 'ignore' } );
 const sleep = ( ms ) => new Promise( ( resolve ) => setTimeout( resolve, ms ) );
 let failed = false;
 

@@ -34,7 +34,7 @@ const browser = [
 if ( ! browser ) throw new Error( 'no Chrome or Edge found' );
 
 const profile = fs.mkdtempSync( path.join( os.tmpdir(), 'wamr3d-visual-' ) );
-const child = spawn( browser, [ ...( headed ? [] : [ '--headless=new' ] ), '--no-first-run', '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu', '--use-angle=d3d11', `--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, '--window-size=1280,800', 'about:blank' ], { stdio: 'ignore' } );
+const child = spawn( browser, [ ...( headed ? [] : [ '--headless=new' ] ), '--no-first-run', '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu', ...( process.platform === 'win32' ? [ '--use-angle=d3d11' ] : [] ), `--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, '--window-size=1280,800', 'about:blank' ], { stdio: 'ignore' } );
 const sleep = ( ms ) => new Promise( ( resolve ) => setTimeout( resolve, ms ) );
 const save = ( file, dataUrl ) => fs.writeFileSync( file, Buffer.from( dataUrl.split( ',' )[ 1 ], 'base64' ) );
 
