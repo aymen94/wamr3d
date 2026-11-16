@@ -228,7 +228,11 @@ layout(location = 0) out vec4 out_color;
 
 void main() {
     vec4 color = texelFetch(source, ivec2(gl_FragCoord.xy), 0);
-    out_color = vec4(linear_to_srgb(tone_mapped(color.rgb, settings.x, settings.y)), 1.0);
+    // the target holds premultiplied colour: tone-map and encode the straight colour, then
+    // premultiply again in sRGB, as three.js does for canvases with alpha
+    float alpha = clamp(color.a, 0.0, 1.0);
+    vec3 straight = alpha > 0.0 ? color.rgb / alpha : vec3(0.0);
+    out_color = vec4(linear_to_srgb(tone_mapped(straight, settings.x, settings.y)) * alpha, alpha);
 }
 "#;
 

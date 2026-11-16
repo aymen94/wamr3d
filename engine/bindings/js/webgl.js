@@ -14,11 +14,12 @@ import { installTextures } from './webgl/textures.js';
 import { installShadows } from './webgl/shadows.js';
 import { installEnvironment } from './webgl/environment.js';
 
-export async function createWebGLBackend( canvas, { antialias = true, powerPreference = 'high-performance' } = {} ) {
+export async function createWebGLBackend( canvas, { antialias = true, powerPreference = 'high-performance', alpha = false } = {} ) {
 
 	if ( Renderer.materialUniformSize() !== MATERIAL_STRIDE || Renderer.objectUniformSize() !== OBJECT_STRIDE ) throw new Error( 'WAMR3D: the WebGL 2 host does not match the uniform layout of the engine' );
 
-	const gl = canvas.getContext( 'webgl2', { antialias, alpha: false, depth: true, stencil: true, premultipliedAlpha: false, powerPreference } );
+	// With `alpha`, the canvas holds premultiplied colour and the page shows through.
+	const gl = canvas.getContext( 'webgl2', { antialias, alpha, depth: true, stencil: true, premultipliedAlpha: true, powerPreference } );
 	if ( ! gl ) throw new Error( 'WAMR3D: WebGL 2 is not available in this browser' );
 
 	// Half-float targets carry tone mapping, render targets of float type and the
@@ -355,10 +356,27 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 			const count = renderer.prepare( world, root, camera );
 			ctx.lightFeatures = lightFeatures( renderer.frameUniforms() );
 			const draws = renderer.drawInfo(), data = frameData( renderer, count );
-			const started = startPrograms( draws, 0, count, ! target && ! floatTargets, data, extras );
-			if ( renderer.transmissiveCount() > 0 ) started.push( ...startPrograms( draws, 0, renderer.opaqueCount(), false, data, extras ) );
+			const srgb = ! target && ! floatTargets, transmissive = renderer.transmissiveCount() > 0;
+			const started = startPrograms( draws, 0, count, srgb, data, extras );
+			if ( transmissive ) started.push( ...startPrograms( draws, 0, renderer.opaqueCount(), false, data, extras ) );
 			// the pass that tone-maps and encodes canvas frames drawn through a linear target
 			if ( ! target && floatTargets ) started.push( startProgram( 'output', 'fullscreen.vert', 'output.frag' ) );
+			// the passes that prefilter the environment (or a blurred background), and the background pass
+			const background = renderer.backgroundInfo();
+
+			if ( floatTargets && ( renderer.environmentInfo().length > 0 || background[ 1 ] === 1 ) ) {
+
+				started.push( startProgram( 'pmrem:equirect', 'pmrem.vert', 'pmrem.equirect' ), startProgram( 'pmrem:ggx', 'pmrem.vert', 'pmrem.ggx' ) );
+
+			}
+
+			if ( background.length > 0 ) {
+
+				started.push( backgroundProgram( srgb, true ) );
+				if ( transmissive ) started.push( backgroundProgram( false, true ) );
+
+			}
+
 			return finishPrograms( started );
 
 		},

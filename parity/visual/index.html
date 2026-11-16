@@ -106,6 +106,8 @@ try {
 
 			}
 
+			// alpha counts towards a pixel being off, not towards the mean: opaque cases are unchanged
+			worst = Math.max( worst, Math.abs( actual[ i + 3 ] - expected[ i + 3 ] ) );
 			difference.data[ i + 3 ] = 255;
 			if ( worst > PIXEL_THRESHOLD ) different ++;
 			if ( offBackground( actual, i ) ) covered ++;

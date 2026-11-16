@@ -13,7 +13,6 @@ import { backends, textureSources } from './textures.js';
 
 let frameStamp = 0;
 const IDENTITY3 = new Float32Array( [ 1, 0, 0, 0, 1, 0, 0, 0, 1 ] );
-const linear = ( { r, g, b } ) => ( { r, g, b, a: 1 } );
 const BACKENDS = [ 'auto', 'webgpu', 'webgl' ];
 
 // The lights of a frame in world space, for shader materials with `lights` (WebGL).
@@ -98,16 +97,16 @@ function shaderLightUniforms( lights, view ) {
  * `'auto'` tries WebGPU on a GPU, then WebGL 2, then the browser's software WebGPU
  * adapter, and reports a fallback once on the console.
  */
-async function createRenderBackend( canvas, { backend, antialias, powerPreference } ) {
+async function createRenderBackend( canvas, { backend, antialias, powerPreference, alpha } ) {
 
-	if ( backend === 'webgpu' ) return createBackend( canvas, { antialias, powerPreference } );
-	if ( backend === 'webgl' ) return createWebGLBackend( canvas, { antialias, powerPreference } );
+	if ( backend === 'webgpu' ) return createBackend( canvas, { antialias, powerPreference, alpha } );
+	if ( backend === 'webgl' ) return createWebGLBackend( canvas, { antialias, powerPreference, alpha } );
 	const failures = [];
 
 	for ( const attempt of [
-		() => createBackend( canvas, { antialias, powerPreference } ),
-		() => createWebGLBackend( canvas, { antialias, powerPreference } ),
-		() => createBackend( canvas, { antialias, fallbackAdapter: true } )
+		() => createBackend( canvas, { antialias, powerPreference, alpha } ),
+		() => createWebGLBackend( canvas, { antialias, powerPreference, alpha } ),
+		() => createBackend( canvas, { antialias, fallbackAdapter: true, alpha } )
 	] ) {
 
 		try {
@@ -135,21 +134,28 @@ async function createRenderBackend( canvas, { backend, antialias, powerPreferenc
  * `backend`: `'auto'` (the default) picks WebGPU and falls back to WebGL 2; `'webgpu'` or
  * `'webgl'` use only that API. `forceWebGL: true`, as in three.js, is `backend: 'webgl'`.
  * After `init()`, `renderer.backend.isWebGPUBackend` or `isWebGLBackend` says which runs.
+ *
+ * `alpha` (default true, as in three.js): the canvas keeps transparency, and the clear
+ * alpha starts at 0, so the page shows through where nothing is drawn.
  */
 export class WebGPURenderer {
 
-	constructor( { canvas, antialias = false, powerPreference, backend = 'auto', forceWebGL = false } = {} ) {
+	constructor( { canvas, antialias = false, powerPreference, backend = 'auto', forceWebGL = false, alpha = true } = {} ) {
 
 		if ( ! BACKENDS.includes( backend ) ) throw new Error( `WAMR3D: unknown backend "${backend}" (use ${BACKENDS.join( ', ' )})` );
 		this.domElement = canvas ?? document.createElement( 'canvas' );
 		this.info = { render: { calls: 0, triangles: 0 }, memory: { geometries: 0 } };
-		this._options = { antialias, powerPreference, backend: forceWebGL ? 'webgl' : backend };
+		this._options = { antialias, powerPreference, backend: forceWebGL ? 'webgl' : backend, alpha };
+		this.alpha = alpha;
 		/** The backend drawing the frames once `init()` has finished, otherwise null. */
 		this.backend = null;
 		this._pixelRatio = 1;
 		this._width = this.domElement.width;
 		this._height = this.domElement.height;
 		this._clearColor = new Color( 0x000000 );
+		this._clearAlpha = alpha ? 0 : 1;
+		// the linear, premultiplied clear colour the hosts receive, reused every frame
+		this._clear = { r: 0, g: 0, b: 0, a: 1 };
 		this.toneMapping = NoToneMapping;
 		// false keeps what the target holds and draws over it
 		this.autoClear = true;
@@ -233,9 +239,22 @@ export class WebGPURenderer {
 
 	}
 
-	setClearColor( color ) {
+	setClearColor( color, alpha = 1 ) {
 
 		this._clearColor.set( color );
+		this._clearAlpha = alpha;
+
+	}
+
+	getClearAlpha() {
+
+		return this._clearAlpha;
+
+	}
+
+	setClearAlpha( alpha ) {
+
+		this._clearAlpha = alpha;
 
 	}
 
@@ -424,7 +443,7 @@ export class WebGPURenderer {
 		const map = environment.texture;
 		if ( map !== null ) frame.setEnvironment( map.id, environmentWidth( map ), this._inverseRotation( environment.rotation, 0 ) );
 		else frame.clearEnvironment();
-		this._syncBackground( scene );
+		const textureBackground = this._syncBackground( scene );
 
 		const fog = scene.fog;
 		if ( fog ) frame.setFog( fog.isFogExp2 ? 2 : 1, fog.color.r, fog.color.g, fog.color.b, fog.near ?? 0, fog.far ?? 0, fog.density ?? 0 );
@@ -433,13 +452,30 @@ export class WebGPURenderer {
 		const backend = this._backend;
 		const rt = this._renderTarget, texture = rt?.texture;
 		const target = rt ? { id: texture.id, width: Math.max( 1, rt.width | 0 ), height: Math.max( 1, rt.height | 0 ), samples: rt.samples, type: texture.type === UnsignedByteType ? 'byte' : 'float', texture, textures: rt.textures, depthTexture: rt.depthTexture ?? null } : null;
-		if ( compile ) return backend.compile( w(), this._frame, scene.handle, camera.handle, target, this._extras( camera, backend, scene, shaderLights ) );
-		backend.render( w(), this._frame, scene.handle, camera.handle, linear( scene.background && scene.background.isColor ? scene.background : this._clearColor ), textureSources, instanceSources, target, this._pixelRatio, this._extras( camera, backend, scene, shaderLights ) );
+		const clear = this._clearValue( scene.background, textureBackground );
+		if ( compile ) return backend.compile( w(), this._frame, scene.handle, camera.handle, target, this._extras( camera, backend, scene, shaderLights ), clear );
+		backend.render( w(), this._frame, scene.handle, camera.handle, clear, textureSources, instanceSources, target, this._pixelRatio, this._extras( camera, backend, scene, shaderLights ) );
 		// marks what was drawn into the target, for environments made from it
 		if ( rt ) for ( const each of rt.textures ) each.version ++;
 		this.info.render.calls = backend.info.calls;
 		this.info.render.triangles = backend.info.triangles;
 		this.info.memory.geometries = backend.info.geometries;
+
+	}
+
+	// The colour the frame starts from: a colour background, opaque; otherwise the clear
+	// colour with the clear alpha, premultiplied on a canvas with alpha as three.js does. A
+	// texture background drawn this frame covers every pixel, so it starts opaque too. Without alpha the
+	// canvas is opaque, and so is the clear colour.
+	_clearValue( background, textureBackground ) {
+
+		const clear = this._clear, color = background && background.isColor ? background : this._clearColor;
+		const a = background && background.isColor || textureBackground || ! this.alpha ? 1 : Math.min( Math.max( this._clearAlpha, 0 ), 1 );
+		clear.r = color.r * a;
+		clear.g = color.g * a;
+		clear.b = color.b * a;
+		clear.a = a;
+		return clear;
 
 	}
 
@@ -529,6 +565,7 @@ export class WebGPURenderer {
 		if ( ! panorama && ( background.offset.x !== 0 || background.offset.y !== 0 || background.repeat.x !== 1 || background.repeat.y !== 1 || background.rotation !== 0 ) ) ignored( 'offset, repeat and rotation of a background texture' );
 		const rotation = panorama ? this._inverseRotation( scene.backgroundRotation, 1 ) : IDENTITY3;
 		frame.setBackground( background.id, kind, environmentWidth( background ), scene.backgroundIntensity ?? 1, blurriness, rotation );
+		return true;
 
 	}
 
@@ -575,13 +612,14 @@ WebGPURenderer.prototype.isWebGPURenderer = true;
 /**
  * The same renderer drawing with WebGL 2 (`backend: 'webgl'`), for code written for
  * three.js's `WebGLRenderer`. It starts `init()` itself; frames rendered before it has
- * finished are skipped, and `setAnimationLoop` waits for it.
+ * finished are skipped, and `setAnimationLoop` waits for it. As in three.js's
+ * `WebGLRenderer`, `alpha` defaults to false, so the canvas is opaque.
  */
 export class WebGLRenderer extends WebGPURenderer {
 
 	constructor( parameters = {} ) {
 
-		super( { ...parameters, backend: 'webgl' } );
+		super( { ...parameters, alpha: parameters.alpha ?? false, backend: 'webgl' } );
 		this.init().catch( ( error ) => console.error( error ) );
 
 	}

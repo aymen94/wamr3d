@@ -18,7 +18,7 @@ import { installTextures } from './webgpu/textures.js';
 import { installBuffers } from './webgpu/buffers.js';
 import { installShadows } from './webgpu/shadows.js';
 
-export async function createBackend( canvas, { antialias = true, powerPreference = 'high-performance', fallbackAdapter = false } = {} ) {
+export async function createBackend( canvas, { antialias = true, powerPreference = 'high-performance', fallbackAdapter = false, alpha = false } = {} ) {
 
 	if ( ! globalThis.navigator?.gpu ) throw new Error( 'WAMR3D: WebGPU is not available in this browser' );
 	const adapter = await navigator.gpu.requestAdapter( fallbackAdapter ? { forceFallbackAdapter: true } : { powerPreference } );
@@ -30,13 +30,19 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 	// The shader writes linear colour into an sRGB view of the canvas, so blending and
 	// the multisample resolve happen in linear light and the GPU encodes on write.
 	const canvasFormat = navigator.gpu.getPreferredCanvasFormat(), format = canvasFormat + '-srgb';
-	context.configure( { device, format: canvasFormat, viewFormats: [ format ], alphaMode: 'opaque' } );
+	// With `alpha`, the canvas holds premultiplied colour and the page shows through.
+	context.configure( { device, format: canvasFormat, viewFormats: [ format ], alphaMode: alpha ? 'premultiplied' : 'opaque' } );
 
 	const samples = antialias ? 4 : 1;
 	const stride = Renderer.objectUniformSize(), objectBindingBytes = Renderer.objectBindingSize(), materialStride = Renderer.materialUniformSize();
 	const GEOMETRY_FIELDS = Renderer.geometryStateSize(), DRAW_FIELDS = Renderer.drawInfoSize();
 	const module = device.createShaderModule( { code: Renderer.shaderSource() } );
 	const TONE_MAPPING = Renderer.toneMappingIndex(), EXPOSURE = Renderer.toneMappingExposureIndex();
+	// Whether a canvas frame is drawn through the HDR target and the output pass: with tone
+	// mapping, and when the canvas may show through, since the output pass premultiplies in
+	// sRGB as three.js does; drawn straight into the sRGB view, a partly covered pixel would
+	// hold more colour than its alpha allows. `compile` and `render` must agree.
+	const throughOutput = ( toneMapping, clear ) => toneMapping !== 0 || ( alpha && clear !== null && clear.a < 1 );
 	const MATERIAL_FLOATS = materialStride / 4;
 
 	const frameLayout = device.createBindGroupLayout( { entries: [
@@ -274,15 +280,16 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 
 		/**
 		 * Builds the mesh pipelines that `render` with the same scene, camera and target
-		 * would use, without drawing; resolves once they are ready.
+		 * would use, without drawing; resolves once they are ready. `clear` is the colour
+		 * `render` will get, or null for an opaque one.
 		 */
-		compile( world, renderer, root, camera, target = null ) {
+		compile( world, renderer, root, camera, target = null, extras = null, clear = null ) {
 
 			const offscreen = target ? renderTarget( target ) : null;
 			const count = renderer.prepare( world, root, camera );
 			const frameUniforms = renderer.frameUniforms();
 			ctx.lightFeatures = lightFeatures( frameUniforms );
-			const variant = offscreen ? offscreen.variant : frameUniforms[ TONE_MAPPING ] !== 0 ? HDR_KEY : 0;
+			const variant = offscreen ? offscreen.variant : throughOutput( frameUniforms[ TONE_MAPPING ], clear ) ? HDR_KEY : 0;
 			const draws = renderer.drawInfo(), blocks = new Float32Array( memory().buffer, renderer.materialUniformsPtr(), renderer.materialUniformsLength() );
 			const pending = [];
 			const start = ( to, passVariant ) => {
@@ -300,8 +307,22 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 
 			};
 
+			const transmissive = renderer.transmissiveCount() > 0;
 			start( count, variant );
-			if ( renderer.transmissiveCount() > 0 ) start( renderer.opaqueCount(), HDR_KEY | SINGLE_KEY );
+			if ( transmissive ) start( renderer.opaqueCount(), HDR_KEY | SINGLE_KEY );
+			// the passes that prefilter the environment (or a blurred background), the background
+			// pass and the output pass of canvas frames
+			const background = renderer.backgroundInfo();
+			if ( renderer.environmentInfo().length > 0 || background[ 1 ] === 1 ) pending.push( ctx.preparePmrem() );
+
+			if ( background.length > 0 ) {
+
+				pending.push( ctx.prepareBackground( variant ) );
+				if ( transmissive ) pending.push( ctx.prepareBackground( HDR_KEY | SINGLE_KEY ) );
+
+			}
+
+			if ( variant === HDR_KEY ) pending.push( ctx.prepareOutput() );
 			return Promise.all( pending ).then( () => {} );
 
 		},
@@ -431,7 +452,7 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 			const encoder = device.createCommandEncoder();
 			const shadowCalls = drawShadows( encoder, renderer, instanceSources, ctx.materials );
 			// Tone mapping applies only to what is drawn to the canvas, as in three.js.
-			const toneMapping = offscreen ? 0 : frameUniforms[ TONE_MAPPING ], hdr = toneMapping !== 0;
+			const toneMapping = offscreen ? 0 : frameUniforms[ TONE_MAPPING ], hdr = ! offscreen && throughOutput( toneMapping, clear );
 			if ( hdr ) ensureHdrTargets();
 			else if ( ! offscreen ) ctx.ensureColorTarget();
 

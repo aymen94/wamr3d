@@ -30,7 +30,7 @@ Commands run from the repository root unless they start with `cd`. "A build" mea
 
 Visual parity options: `--cases=a,b`, `--headed`, `--browser=edge`, `--console` (prints what each page logs; use it when a case renders black or times out). Diffs go to `parity/visual/out/` (gitignored); screenshots saved from WebGL 2 runs are black (the canvas does not keep its drawing buffer), but the comparison reads the pixels itself. Tolerances: `parity/visual/cases.js` (mean difference 1.5 of 255, at most 2% of pixels off by more than 12).
 
-**Known failures:** with `--backend=webgl`, `lines`, `points` and `wireframe` differ by 2.5–4.4% of pixels because WebGL 2 rasterizes 1-pixel primitives differently (36 of 39 pass). Any other failure is a regression.
+**Known failures:** with `--backend=webgl`, `lines`, `points` and `wireframe` differ by 2.5–4.4% of pixels because WebGL 2 rasterizes 1-pixel primitives differently (37 of 40 pass). Any other failure is a regression.
 
 ## What to run for a change
 

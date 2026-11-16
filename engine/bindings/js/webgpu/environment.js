@@ -53,29 +53,64 @@ export function createEnvironmentPasses( device, { format, samples, texture, tex
 	const environments = new Map();
 	let pmrem = null;
 
+	// The two passes that prefilter environments, made with `create` (synchronous or async).
+	function pmremDescriptors() {
+
+		const pmremModule = device.createShaderModule( { code: Renderer.pmremShaderSource() } );
+		const vertex = { module: pmremModule, entryPoint: 'vertex', buffers: [ { arrayStride: 24, attributes: [ { shaderLocation: 0, offset: 0, format: 'float32x3' }, { shaderLocation: 1, offset: 12, format: 'float32x3' } ] } ] };
+		// One explicit layout for both passes: an automatic one would leave out the
+		// settings the equirectangular pass does not read.
+		const pmremLayout = device.createBindGroupLayout( { entries: [
+			{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: {} },
+			{ binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+			{ binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
+		] } );
+		const layout = device.createPipelineLayout( { bindGroupLayouts: [ pmremLayout ] } );
+		return {
+			layout: pmremLayout,
+			equirect: { layout, vertex, fragment: { module: pmremModule, entryPoint: 'equirect', targets: [ { format: HDR_FORMAT } ] } },
+			ggx: { layout, vertex, fragment: { module: pmremModule, entryPoint: 'ggx', targets: [ { format: HDR_FORMAT } ] } }
+		};
+
+	}
+
+	function pmremPasses( descriptors, create ) {
+
+		return {
+			layout: descriptors.layout,
+			equirect: create( descriptors.equirect ),
+			ggx: create( descriptors.ggx ),
+			sampler: device.createSampler( { magFilter: 'linear', minFilter: 'linear' } ),
+			levels: new Map()
+		};
+
+	}
+
+	let pmremPending = null;
+
+	// Builds the prefiltering passes without blocking, for `compile`.
+	function preparePmrem() {
+
+		if ( pmrem ) return Promise.resolve();
+		return pmremPending ??= ( async () => {
+
+			const passes = pmremPasses( pmremDescriptors(), ( descriptor ) => device.createRenderPipelineAsync( descriptor ) );
+			const [ equirect, ggx ] = await Promise.all( [ passes.equirect, passes.ggx ] );
+			pmrem ??= { ...passes, equirect, ggx };
+
+		} )().catch( ( error ) => {
+
+			// a later `compile` or the first prefilter tries again
+			pmremPending = null;
+			throw error;
+
+		} );
+
+	}
+
 	function prefilter( source, gpuSource, lodMax ) {
 
-		if ( ! pmrem ) {
-
-			const pmremModule = device.createShaderModule( { code: Renderer.pmremShaderSource() } );
-			const vertex = { module: pmremModule, entryPoint: 'vertex', buffers: [ { arrayStride: 24, attributes: [ { shaderLocation: 0, offset: 0, format: 'float32x3' }, { shaderLocation: 1, offset: 12, format: 'float32x3' } ] } ] };
-			// One explicit layout for both passes: an automatic one would leave out the
-			// settings the equirectangular pass does not read.
-			const pmremLayout = device.createBindGroupLayout( { entries: [
-				{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: {} },
-				{ binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-				{ binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
-			] } );
-			const layout = device.createPipelineLayout( { bindGroupLayouts: [ pmremLayout ] } );
-			pmrem = {
-				layout: pmremLayout,
-				equirect: device.createRenderPipeline( { layout, vertex, fragment: { module: pmremModule, entryPoint: 'equirect', targets: [ { format: HDR_FORMAT } ] } } ),
-				ggx: device.createRenderPipeline( { layout, vertex, fragment: { module: pmremModule, entryPoint: 'ggx', targets: [ { format: HDR_FORMAT } ] } } ),
-				sampler: device.createSampler( { magFilter: 'linear', minFilter: 'linear' } ),
-				levels: new Map()
-			};
-
-		}
+		pmrem ??= pmremPasses( pmremDescriptors(), ( descriptor ) => device.createRenderPipeline( descriptor ) );
 
 		const cubeSize = 2 ** lodMax, width = 3 * Math.max( cubeSize, 16 * 7 ), height = 4 * cubeSize;
 		const total = lodMax - LOD_MIN + 1 + EXTRA_LODS, sizes = [];
@@ -231,20 +266,38 @@ export function createEnvironmentPasses( device, { format, samples, texture, tex
 	let backgroundModule = null, backgroundBuffer = null, backgroundGroup = null, backgroundBound = null;
 	let backgroundSource = null, backgroundSourceView = null;
 
-	function backgroundPipeline( variant ) {
+	function backgroundDescriptor( variant ) {
 
-		let value = backgroundPipelines.get( variant );
-		if ( value ) return value;
 		backgroundModule ??= device.createShaderModule( { code: Renderer.backgroundShaderSource() } );
-		value = device.createRenderPipeline( {
+		return {
 			layout: device.createPipelineLayout( { bindGroupLayouts: [ backgroundLayout ] } ),
 			vertex: { module: backgroundModule, entryPoint: 'vertex' },
 			fragment: { module: backgroundModule, entryPoint: 'fragment', targets: [ { format: variant & HDR_KEY ? HDR_FORMAT : variant & RGBA8_KEY ? 'rgba8unorm' : format } ] },
 			depthStencil: { format: 'depth24plus-stencil8', depthWriteEnabled: false, depthCompare: 'always' },
 			multisample: { count: variant & SINGLE_KEY ? 1 : samples }
-		} );
+		};
+
+	}
+
+	function backgroundPipeline( variant ) {
+
+		let value = backgroundPipelines.get( variant );
+		if ( value ) return value;
+		value = device.createRenderPipeline( backgroundDescriptor( variant ) );
 		backgroundPipelines.set( variant, value );
 		return value;
+
+	}
+
+	// Builds the background pass of `variant` without blocking, for `compile`.
+	function prepareBackground( variant ) {
+
+		if ( backgroundPipelines.has( variant ) ) return Promise.resolve();
+		return device.createRenderPipelineAsync( backgroundDescriptor( variant ) ).then( ( value ) => {
+
+			if ( ! backgroundPipelines.has( variant ) ) backgroundPipelines.set( variant, value );
+
+		} );
 
 	}
 
@@ -306,6 +359,8 @@ export function createEnvironmentPasses( device, { format, samples, texture, tex
 		environment,
 		background,
 		backgroundPipeline,
+		prepareBackground,
+		preparePmrem,
 
 		dispose() {
 

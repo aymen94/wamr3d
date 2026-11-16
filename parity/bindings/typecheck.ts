@@ -97,8 +97,10 @@ export async function main( canvas: HTMLCanvasElement ): Promise<void> {
 	const hex: string = new THREE.Color().setRGB( 0.5, 0.5, 0.5, THREE.SRGBColorSpace ).getHexString( THREE.LinearSRGBColorSpace ) + area + scene.uuid;
 	hex.toUpperCase();
 
-	const renderer = new THREE.WebGPURenderer( { canvas, antialias: true } );
+	const renderer = new THREE.WebGPURenderer( { canvas, antialias: true, alpha: true } );
 	await renderer.init();
+	renderer.setClearColor( 0xffffff, 0.5 );
+	renderer.setClearAlpha( renderer.getClearAlpha() * 0.5 );
 	renderer.setPixelRatio( 2 );
 	renderer.setSize( 800, 600 );
 	const clock = new THREE.Clock();

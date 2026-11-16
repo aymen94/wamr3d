@@ -254,6 +254,31 @@ export function installTextures( ctx ) {
 
 	}
 
+	// The pass that tone-maps and encodes canvas frames drawn through the HDR target.
+	const outputDescriptor = () => {
+
+		const outputModule = device.createShaderModule( { code: Renderer.outputShaderSource() } );
+		return { layout: 'auto', vertex: { module: outputModule, entryPoint: 'vertex' }, fragment: { module: outputModule, entryPoint: 'fragment', targets: [ { format } ] } };
+
+	};
+
+	// Builds the output pass without blocking, for `compile`.
+	function prepareOutput() {
+
+		if ( ctx.outputPipeline ) return Promise.resolve();
+		return ctx.outputPending ??= device.createRenderPipelineAsync( outputDescriptor() ).then( ( value ) => {
+
+			ctx.outputPipeline ??= value;
+
+		}, ( error ) => {
+
+			ctx.outputPending = null;
+			throw error;
+
+		} );
+
+	}
+
 	function ensureHdrTargets() {
 
 		if ( ctx.hdrTexture && ctx.hdrTexture.width === ctx.targetWidth && ctx.hdrTexture.height === ctx.targetHeight ) return;
@@ -264,13 +289,8 @@ export function installTextures( ctx ) {
 		ctx.hdrView = ctx.hdrTexture.createView();
 		ctx.hdrMultisampleView = ctx.hdrMultisample ? ctx.hdrMultisample.createView() : null;
 
-		if ( ! ctx.outputPipeline ) {
-
-			const outputModule = device.createShaderModule( { code: Renderer.outputShaderSource() } );
-			ctx.outputPipeline = device.createRenderPipeline( { layout: 'auto', vertex: { module: outputModule, entryPoint: 'vertex' }, fragment: { module: outputModule, entryPoint: 'fragment', targets: [ { format } ] } } );
-			ctx.outputSettings = device.createBuffer( { size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
-
-		}
+		ctx.outputPipeline ??= device.createRenderPipeline( outputDescriptor() );
+		ctx.outputSettings ??= device.createBuffer( { size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
 
 		ctx.outputGroup = device.createBindGroup( { layout: ctx.outputPipeline.getBindGroupLayout( 0 ), entries: [ { binding: 0, resource: { buffer: ctx.outputSettings } }, { binding: 1, resource: ctx.hdrView } ] } );
 
@@ -368,7 +388,7 @@ export function installTextures( ctx ) {
 	}
 
 	const environmentPasses = createEnvironmentPasses( device, { format, samples, texture, textureOf: ( id ) => textures.get( id )?.texture ?? renderTargetBindings.get( id )?.texture ?? null, frame: () => ctx.frameNumber } );
-	const { sampler: environmentSampler, empty: noEnvironmentView, environment, background, backgroundPipeline } = environmentPasses;
+	const { sampler: environmentSampler, empty: noEnvironmentView, environment, background, backgroundPipeline, prepareBackground, preparePmrem } = environmentPasses;
 	ctx.environmentView = noEnvironmentView;
 
 	// A target with a depth texture was drawn: its depth copy is out of date.
@@ -379,6 +399,6 @@ export function installTextures( ctx ) {
 
 	}
 
-	Object.assign( ctx, { depthDrawn, background, backgroundPipeline, ensureColorTarget, ensureHdrTargets, ensureTargets, ensureTransmission, environment, environmentPasses, environmentSampler, generateMipmaps, noEnvironmentView, renderTarget, renderTargets, setGroups, texture, textureSetGroup, textureSets, white } );
+	Object.assign( ctx, { depthDrawn, background, backgroundPipeline, prepareBackground, prepareOutput, preparePmrem, ensureColorTarget, ensureHdrTargets, ensureTargets, ensureTransmission, environment, environmentPasses, environmentSampler, generateMipmaps, noEnvironmentView, renderTarget, renderTargets, setGroups, texture, textureSetGroup, textureSets, white } );
 
 }

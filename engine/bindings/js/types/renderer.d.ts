@@ -17,6 +17,8 @@ export interface WebGPURendererParameters {
 	backend?: 'auto' | 'webgpu' | 'webgl';
 	/** As in three.js: the same as `backend: 'webgl'`. */
 	forceWebGL?: boolean;
+	/** Whether the canvas keeps transparency; the clear alpha then starts at 0. As in three.js, the default is true on `WebGPURenderer` and false on `WebGLRenderer`. */
+	alpha?: boolean;
 
 }
 
@@ -57,8 +59,12 @@ export class WebGPURenderer {
 	setPixelRatio( value: number ): void;
 	setSize( width: number, height: number, updateStyle?: boolean ): void;
 	getSize( target: Vector2 ): Vector2;
-	setClearColor( color: ColorRepresentation ): void;
+	setClearColor( color: ColorRepresentation, alpha?: number ): void;
 	getClearColor( target: Color ): Color;
+	setClearAlpha( alpha: number ): void;
+	getClearAlpha(): number;
+	/** Whether the canvas keeps transparency (the `alpha` parameter). */
+	readonly alpha: boolean;
 	render( scene: Scene, camera: Camera ): void;
 	renderAsync( scene: Scene, camera: Camera ): Promise<void>;
 	/** Builds the shaders that rendering the scene needs without drawing, so that the first `render` does not wait for them. */
@@ -68,7 +74,7 @@ export class WebGPURenderer {
 
 }
 
-/** The same renderer drawing with WebGL 2, for code written for three.js's `WebGLRenderer`; it starts `init()` itself. */
+/** The same renderer drawing with WebGL 2, for code written for three.js's `WebGLRenderer`; it starts `init()` itself. As in three.js, `alpha` defaults to false. */
 export class WebGLRenderer extends WebGPURenderer {
 
 	readonly isWebGLRenderer: true;
