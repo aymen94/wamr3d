@@ -123,6 +123,20 @@ check( 'plugin hooks', hooks.join() === 'before:2.0,after:1' && withPlugin.userD
 check( 'plugin listed', withPlugin.parser.plugins.EXT_probe?.name === 'EXT_probe' && withPlugin.parser.extensions.EXT_probe === true );
 const light = scene.getObjectByProperty( 'isSpotLight', true );
 check( 'light', light && light.intensity === 3 && Math.abs( light.angle - 0.4 ) < 1e-6 && Math.abs( light.penumbra - 0.5 ) < 1e-6 );
+// Primitives sharing a material without vertex tangents share one copy of it (normal
+// scales flipped); vertex colours need a second copy; copies keep the material's associations.
+const variants = await loader.parseAsync( JSON.stringify( {
+	asset: { version: '2.0' }, scene: 0, scenes: [ { nodes: [ 0, 1, 2 ] } ],
+	nodes: [ { name: 'a', mesh: 0 }, { name: 'b', mesh: 1 }, { name: 'c', mesh: 2 } ],
+	meshes: [ { primitives: [ { attributes: { POSITION: 0, NORMAL: 1 }, material: 0 } ] }, { primitives: [ { attributes: { POSITION: 0, NORMAL: 1 }, material: 0 } ] }, { primitives: [ { attributes: { POSITION: 0, NORMAL: 1, COLOR_0: 3 }, material: 0 } ] } ],
+	materials: [ gltf.materials[ 0 ] ], accessors: gltf.accessors.slice( 0, 4 ), bufferViews: gltf.bufferViews, buffers: gltf.buffers
+} ), '' );
+const [ va, vb, vc ] = variants.scene.children.map( ( child ) => child.material );
+const source = await variants.parser.getDependency( 'material', 0 );
+check( 'material copies: shared between primitives', va === vb && va !== source && new Set( [ va, vb, vc ] ).size === 2 );
+check( 'material copies: normal scales flipped once', va.normalScale.y === - 1 && va.clearcoatNormalScale.y === - 1 && vc.normalScale.y === - 1 && source.normalScale.y === 1, `${va.normalScale.y} ${vc.normalScale.y} ${source.normalScale.y}` );
+check( 'material copies: vertex colours', vc.vertexColors === true && va.vertexColors === false );
+check( 'material copies: keep associations', [ va, vc ].every( ( m ) => variants.parser.associations.get( m )?.materials === 0 ) );
 const instanced = scene.getObjectByProperty( 'isInstancedMesh', true );
 const m = new C.Matrix4();
 instanced?.getMatrixAt( 1, m );

@@ -116,22 +116,7 @@ export class GLTFMeshes {
 
 			if ( mode === 4 || mode === 5 || mode === 6 ) {
 
-				// derived tangents follow GL's y, glTF's normal maps the other way
-				if ( geometry.attributes.tangent === undefined && material.normalScale && ! material._flippedNormalScale ) {
-
-					material = material.clone();
-					material.normalScale.y *= - 1;
-					if ( material.clearcoatNormalScale ) material.clearcoatNormalScale.y *= - 1;
-					material._flippedNormalScale = true;
-
-				}
-
-				if ( geometry.attributes.color !== undefined && ! material.vertexColors ) {
-
-					material = material.clone();
-					material.vertexColors = true;
-
-				}
+				material = this.primitiveMaterial( material, geometry );
 
 				mesh = skinned ? new SkinnedMesh( geometry, material ) : new Mesh( geometry, material );
 				if ( skinned && geometry.attributes.skinWeight !== undefined && ! geometry.attributes.skinWeight.normalized ) mesh.normalizeSkinWeights();
@@ -180,6 +165,36 @@ export class GLTFMeshes {
 		for ( const mesh of meshes ) group.add( mesh );
 		this.associations.set( group, { meshes: index } );
 		return group;
+
+	}
+
+	// The material a triangle primitive draws with: `material` itself, or one copy of it per
+	// variant the geometry needs, shared by every primitive needing that variant. Derived
+	// tangents follow GL's y while glTF's normal maps go the other way, so without vertex
+	// tangents the normal scales are flipped. Copies keep the source's associations.
+	primitiveMaterial( material, geometry ) {
+
+		const flip = geometry.attributes.tangent === undefined && material.normalScale !== undefined;
+		const colors = geometry.attributes.color !== undefined && ! material.vertexColors;
+		if ( ! flip && ! colors ) return material;
+
+		return this.cached( 'material-variant:' + material.uuid + ( flip ? ':flip' : '' ) + ( colors ? ':colors' : '' ), () => {
+
+			const copy = material.clone();
+
+			if ( flip ) {
+
+				copy.normalScale.y *= - 1;
+				if ( copy.clearcoatNormalScale ) copy.clearcoatNormalScale.y *= - 1;
+
+			}
+
+			if ( colors ) copy.vertexColors = true;
+			const mapping = this.associations.get( material );
+			if ( mapping !== undefined ) this.associations.set( copy, mapping );
+			return copy;
+
+		} );
 
 	}
 
