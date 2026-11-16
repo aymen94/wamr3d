@@ -168,7 +168,9 @@ export class Material {
 		for ( const [ key, initial ] of Object.entries( STATE_DEFAULTS ) ) this[ key ] = initial();
 		this.userData = {};
 		this._side = FrontSide;
-		this._sent = new Array( 80 ).fill( NaN );
+		// The last values sent to the engine, by slot. Slots 49 to 59 and 80 to 94 belong to
+		// MeshPhysicalMaterial, 79 to shader materials; the rest to `_sync` below.
+		this._sent = new Array( 95 ).fill( NaN );
 		// per map of the table: texture id, then offset, repeat, rotation, centre and uv set
 		this._sentMaps = new Float64Array( MAP_TABLE.length * 9 ).fill( NaN );
 		this._mapIds = new Uint32Array( MAP_TABLE.length );

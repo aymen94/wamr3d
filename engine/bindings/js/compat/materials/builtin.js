@@ -338,8 +338,8 @@ export class MeshPhysicalMaterial extends MeshStandardMaterial {
 
 		for ( let i = 0; i < extensions.length; i ++ ) {
 
-			if ( extensions[ i ] !== sent[ 70 + i ] ) changed = true;
-			sent[ 70 + i ] = extensions[ i ];
+			if ( extensions[ i ] !== sent[ 80 + i ] ) changed = true;
+			sent[ 80 + i ] = extensions[ i ];
 
 		}
 
