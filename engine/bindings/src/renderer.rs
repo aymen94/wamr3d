@@ -36,7 +36,24 @@ pub struct Renderer {
 /// Vertex inputs of the shader with their floats per vertex: position, normal, uv and
 /// colour have a buffer each; tangent, second uv set, skinning and line distances are
 /// interleaved by the host into one (see `AUX_KEY`).
-const VERTEX_ATTRIBUTES: [(&str, usize); 9] = [("position", 3), ("normal", 3), ("uv", 2), ("color", 3), ("tangent", 4), ("uv1", 2), ("skinIndex", 4), ("skinWeight", 4), ("lineDistance", 1)];
+pub(crate) const VERTEX_ATTRIBUTES: [(&str, usize); 9] = [("position", 3), ("normal", 3), ("uv", 2), ("color", 3), ("tangent", 4), ("uv1", 2), ("skinIndex", 4), ("skinWeight", 4), ("lineDistance", 1)];
+
+/// The position of attribute `name` in [`VERTEX_ATTRIBUTES`]; a `match` on the name
+/// compares its length first, so most names cost one string comparison.
+pub(crate) fn vertex_input(name: &str) -> Option<usize> {
+    match name {
+        "position" => Some(0),
+        "normal" => Some(1),
+        "uv" => Some(2),
+        "color" => Some(3),
+        "tangent" => Some(4),
+        "uv1" => Some(5),
+        "skinIndex" => Some(6),
+        "skinWeight" => Some(7),
+        "lineDistance" => Some(8),
+        _ => None,
+    }
+}
 
 /// Slot index, generation, vertex count, a (version, address) pair per vertex input,
 /// index version, floats per colour (3 or 4).
@@ -51,13 +68,21 @@ fn push_geometry_state(out: &mut Vec<u32>, world: &wamr_core::World, handle: Geo
     let start = out.len();
     out.extend([handle.index(), handle.generation()]);
     if let Some(geometry) = world.geometry(handle) {
-        let vertices = geometry.get_attribute("position").map_or(0, |a| a.count());
+        // One pass over the geometry's attributes (names are unique) rather than a search
+        // per input: this runs for every distinct geometry of every frame.
+        let mut inputs: [Option<&BufferAttribute>; VERTEX_ATTRIBUTES.len()] = [None; VERTEX_ATTRIBUTES.len()];
+        for (name, attribute) in geometry.attributes() {
+            if let Some(slot) = vertex_input(name) {
+                inputs[slot] = Some(attribute);
+            }
+        }
+        let vertices = inputs[0].map_or(0, |a| a.count());
         out.push(vertices as u32);
         // colours may carry alpha; the renderer then marks the draw's pipeline
-        let color_size = geometry.get_attribute("color").map_or(3, |a| if a.item_size == 4 { 4 } else { 3 });
-        for (name, size) in VERTEX_ATTRIBUTES {
+        let color_size = inputs[3].map_or(3, |a| if a.item_size == 4 { 4 } else { 3 });
+        for ((name, size), input) in VERTEX_ATTRIBUTES.into_iter().zip(inputs) {
             let size = if name == "color" { color_size } else { size };
-            let state = geometry.get_attribute(name).and_then(|a| match &a.array {
+            let state = input.and_then(|a| match &a.array {
                 AttributeArray::Float32(values) if a.item_size == size && values.len() == vertices * size => Some([a.version, values.as_ptr() as usize as u32]),
                 _ => None,
             });
