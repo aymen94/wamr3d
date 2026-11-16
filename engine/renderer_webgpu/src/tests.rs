@@ -503,6 +503,19 @@ fn order_free_opaque_draws_are_grouped_by_material_then_depth() {
 }
 
 #[test]
+fn order_free_draws_of_one_material_stay_together_with_a_geometry_each() {
+    let (mut world, root, camera, b) = alternating(Material { color: Color::new(0.0, 1.0, 0.0), ..Material::default() });
+    for &e in &b {
+        let material = world.renderable(e).unwrap().material;
+        let geometry = world.create_geometry(box_geometry(1.0, 1.0, 1.0, 1, 1, 1));
+        world.set_renderable(e, Some(Renderable::mesh(geometry, material)));
+    }
+    let frame = prepare_frame(&mut world, root, camera, &Lighting::default()).unwrap();
+    // the material of the nearest draw first; each material nearest first
+    assert_eq!(frame.draws.iter().map(|d| d.object).collect::<Vec<_>>(), [b[0], b[2], b[4], b[1], b[3], b[5]]);
+}
+
+#[test]
 fn a_run_with_an_order_dependent_draw_keeps_depth_order() {
     let depth_order = |world: &mut World, root, camera| prepare_frame(world, root, camera, &Lighting::default()).unwrap().draws.iter().map(|d| d.object).collect::<Vec<_>>();
     let dependent = [
