@@ -27,6 +27,10 @@ pub struct Renderer {
     draw_texture_sets: Vec<u32>,
     /// The same for the draws of each shadow pass.
     shadow_texture_sets: Vec<Vec<u32>>,
+    /// Working buffers kept between frames, so that preparing one allocates nothing.
+    scratch: wamr_renderer::FrameScratch,
+    geometry_records: wamr_core::IdHashMap<GeometryHandle, u32>,
+    set_records: wamr_core::IdHashMap<[u32; wamr_renderer::TEXTURE_SLOTS], u32>,
 }
 
 /// Vertex inputs of the shader with their floats per vertex: position, normal, uv and
@@ -131,13 +135,17 @@ impl Renderer {
     /// Builds the frame for `camera` looking at the subtree of `root` and returns the
     /// number of draws. World matrices must be up to date.
     pub fn prepare(&mut self, world: &mut World, root: u64, camera: u64) -> Result<u32, JsError> {
-        self.frame = wamr_renderer::prepare_frame(&mut world.inner, entity(root), entity(camera), &self.lighting)
-            .ok_or_else(|| JsError::new("object is not a camera"))?;
+        if !wamr_renderer::prepare_frame_into(&mut world.inner, entity(root), entity(camera), &self.lighting, &mut self.frame, &mut self.scratch) {
+            return Err(JsError::new("object is not a camera"));
+        }
 
+        // the per-pass lists of the previous frame are refilled, keeping their capacity
+        let passes = self.frame.shadows.len();
         self.geometry_slots.clear();
         self.geometry_state.clear();
-        self.shadow_geometry_slots.clear();
-        let mut records: wamr_core::IdHashMap<GeometryHandle, u32> = wamr_core::IdHashMap::default();
+        self.shadow_geometry_slots.resize_with(passes, Vec::new);
+        let records = &mut self.geometry_records;
+        records.clear();
         let state = &mut self.geometry_state;
         let mut slot_of = |geometry: GeometryHandle| -> u32 {
             *records.entry(geometry).or_insert_with(|| {
@@ -149,14 +157,16 @@ impl Renderer {
         for draw in &self.frame.draws {
             self.geometry_slots.push(slot_of(draw.geometry));
         }
-        for pass in &self.frame.shadows {
-            self.shadow_geometry_slots.push(pass.draws.iter().map(|d| slot_of(d.geometry)).collect());
+        for (pass, slots) in self.frame.shadows.iter().zip(&mut self.shadow_geometry_slots) {
+            slots.clear();
+            slots.extend(pass.draws.iter().map(|d| slot_of(d.geometry)));
         }
 
         self.texture_sets.clear();
         self.draw_texture_sets.clear();
-        self.shadow_texture_sets.clear();
-        let mut sets: wamr_core::IdHashMap<[u32; wamr_renderer::TEXTURE_SLOTS], u32> = wamr_core::IdHashMap::default();
+        self.shadow_texture_sets.resize_with(passes, Vec::new);
+        let sets = &mut self.set_records;
+        sets.clear();
         // Draws are ordered by state, so neighbours usually share a set: comparing with the
         // previous draw skips hashing the twelve ids for most of them.
         let texture_sets = &mut self.texture_sets;
@@ -179,10 +189,9 @@ impl Renderer {
             }
         };
         intern(&self.frame.draws, &mut self.draw_texture_sets);
-        for pass in &self.frame.shadows {
-            let mut out = Vec::with_capacity(pass.draws.len());
-            intern(&pass.draws, &mut out);
-            self.shadow_texture_sets.push(out);
+        for (pass, out) in self.frame.shadows.iter().zip(&mut self.shadow_texture_sets) {
+            out.clear();
+            intern(&pass.draws, out);
         }
 
         Ok(self.frame.draws.len() as u32)
