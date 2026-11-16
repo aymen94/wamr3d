@@ -60,7 +60,8 @@ impl World {
 
     #[wasm_bindgen(js_name = hasAttribute)]
     pub fn has_attribute(&self, handle: u64, name: &str) -> bool {
-        self.attribute(handle, name).is_ok()
+        // not through `attribute`: its error for a missing name builds a JavaScript Error
+        self.inner.geometry(geometry(handle)).is_some_and(|g| g.has_attribute(name))
     }
 
     /// A copy of the attribute's values.

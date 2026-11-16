@@ -30,6 +30,16 @@ fn world_shell_round_trips_handles() {
 }
 
 #[test]
+fn has_attribute_answers_without_an_error() {
+    let mut world = World::new();
+    let geometry = world.create_box_geometry(1.0, 1.0, 1.0, 1, 1, 1);
+    assert!(world.has_attribute(geometry, "position"));
+    assert!(!world.has_attribute(geometry, "tangent"));
+    assert!(world.dispose_geometry(geometry));
+    assert!(!world.has_attribute(geometry, "position"));
+}
+
+#[test]
 fn geometry_state_describes_each_distinct_geometry_once() {
     let mut world = World::new();
     let (root, camera) = (world.create_object(), world.create_object());
