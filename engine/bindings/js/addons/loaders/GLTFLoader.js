@@ -155,6 +155,16 @@ export class GLTFLoader extends Loader {
 		}
 
 		const parser = new GLTFParser( json, { path: path || this.resourcePath || '', crossOrigin: this.crossOrigin, requestHeader: this.requestHeader, manager: this.manager, body, dracoLoader: this.dracoLoader, ktx2Loader: this.ktx2Loader, meshoptDecoder: this.meshoptDecoder } );
+
+		for ( const callback of this.pluginCallbacks ) {
+
+			const plugin = callback( parser );
+			if ( ! plugin.name ) console.error( 'WAMR3D: GLTFLoader: invalid plugin found: missing name' );
+			parser.plugins[ plugin.name ] = plugin;
+			parser.extensions[ plugin.name ] = true;
+
+		}
+
 		parser.parse( onLoad, onError );
 
 	}
@@ -222,12 +232,14 @@ class GLTFParser {
 			const json = this.json;
 			// joints become bones, meshes that are skinned become skinned meshes
 			this.markDefs();
+			await Promise.all( this.invokeAll( ( plugin ) => plugin.beforeRoot && plugin.beforeRoot() ) );
 			const scenes = await Promise.all( ( json.scenes ?? [] ).map( ( _, i ) => this.getDependency( 'scene', i ) ) );
 			const animations = await Promise.all( ( json.animations ?? [] ).map( ( _, i ) => this.getDependency( 'animation', i ) ) );
 			const cameras = await Promise.all( ( json.cameras ?? [] ).map( ( _, i ) => this.getDependency( 'camera', i ) ) );
 			const scene = scenes[ json.scene ?? 0 ] ?? scenes[ 0 ] ?? new Group();
 			const result = { scene, scenes, animations, cameras, asset: json.asset, parser: this, userData: {} };
 			if ( json.extras ) result.userData = json.extras;
+			await Promise.all( this.invokeAll( ( plugin ) => plugin.afterRoot && plugin.afterRoot( result ) ) );
 			onLoad( result );
 
 		} catch ( error ) {
@@ -236,6 +248,22 @@ class GLTFParser {
 			else console.error( error );
 
 		}
+
+	}
+
+	// What `call` returns for each registered plugin, leaving out empty results.
+	invokeAll( call ) {
+
+		const results = [];
+
+		for ( const plugin of Object.values( this.plugins ) ) {
+
+			const result = call( plugin );
+			if ( result ) results.push( result );
+
+		}
+
+		return results;
 
 	}
 
