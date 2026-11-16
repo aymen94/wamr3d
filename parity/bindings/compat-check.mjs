@@ -312,6 +312,13 @@ function scenario( L ) {
 
 	// texture maps and the alpha test
 	const bumpy = new L.MeshStandardMaterial( { normalMap: new L.Texture(), normalScale: new L.Vector2( 0.5, - 1 ), aoMapIntensity: 0.25, alphaTest: 0.4 } ), plainLambert = new L.MeshLambertMaterial();
+	// a physical material's copy owns its vectors and ranges
+	const coated = new L.MeshPhysicalMaterial( { clearcoat: 0.5, iridescence: 1, clearcoatNormalScale: new L.Vector2( 2, 3 ), iridescenceThicknessRange: [ 200, 500 ] } );
+	const coatedCopy = coated.clone();
+	coatedCopy.clearcoatNormalScale.y *= - 1;
+	coatedCopy.iridescenceThicknessRange[ 1 ] = 900;
+	put( 'physical material clone', [ coated.clearcoatNormalScale.x, coated.clearcoatNormalScale.y, ...coated.iridescenceThicknessRange, coatedCopy.clearcoatNormalScale.y, ...coatedCopy.iridescenceThicknessRange ] );
+
 	const copiedMaps = bumpy.clone();
 	put( 'texture maps', [
 		bumpy.normalMap.isTexture, bumpy.normalScale.x, bumpy.normalScale.y, bumpy.aoMapIntensity, bumpy.alphaTest, bumpy.roughnessMap === null, bumpy.metalnessMap === null, bumpy.emissiveMap === null, bumpy.alphaMap === null, bumpy.aoMap === null,

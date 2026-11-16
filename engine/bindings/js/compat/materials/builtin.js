@@ -308,7 +308,8 @@ export class MeshPhysicalMaterial extends MeshStandardMaterial {
 
 			const value = source[ key ];
 			if ( key === 'reflectivity' || value === undefined ) continue;
-			if ( value !== null && value.isColor ) this[ key ].copy( value );
+			if ( value !== null && ( value.isColor || value.isVector2 ) ) this[ key ].copy( value );
+			else if ( Array.isArray( value ) ) this[ key ] = [ ...value ];
 			else this[ key ] = value;
 
 		}
