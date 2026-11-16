@@ -90,6 +90,30 @@ export class GLTFNodes {
 
 	}
 
+	// The object a node shows for mesh `index`. A mesh used by several nodes gives each node
+	// its own copy, made before any node has set a transform or name on it, so that a
+	// node only gets the fields its own definition sets; copies keep the associations
+	// of the objects they copy.
+	meshReference( index, mesh ) {
+
+		if ( ( this.meshRefs.get( index ) ?? 0 ) <= 1 ) return mesh;
+		const use = this.meshUses.get( index ) ?? 0;
+		this.meshUses.set( index, use + 1 );
+		const copy = cloneObject( mesh );
+		const keep = ( original, clone ) => {
+
+			const mapping = this.associations.get( original );
+			if ( mapping !== undefined ) this.associations.set( clone, mapping );
+			original.children.forEach( ( child, i ) => keep( child, clone.children[ i ] ) );
+
+		};
+
+		keep( mesh, copy );
+		copy.name += '_instance_' + use;
+		return copy;
+
+	}
+
 	async loadNode( index ) {
 
 		const definition = this.json.nodes[ index ];
@@ -99,8 +123,7 @@ export class GLTFNodes {
 		if ( definition.mesh !== undefined ) {
 
 			const mesh = await this.getDependency( 'mesh', definition.mesh );
-			node = this.cache.has( 'node-mesh:' + definition.mesh ) ? cloneObject( mesh ) : mesh;
-			this.cache.set( 'node-mesh:' + definition.mesh, true );
+			node = this.meshReference( definition.mesh, mesh );
 			const instancing = definition.extensions?.EXT_mesh_gpu_instancing;
 			if ( instancing ) node = await this.instanced( node, instancing.attributes );
 
