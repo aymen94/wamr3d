@@ -128,5 +128,9 @@ const mixer = new C.AnimationMixer( scene );
 mixer.clipAction( clip ).play();
 mixer.update( 0.5 );
 check( 'animation plays', Math.abs( morph.position.x - 1 ) < 1e-6, 'x at t=0.5: ' + morph.position.x );
+// a node that is its mesh's object maps to the mesh, its primitive and the node
+const mapping = ( object ) => JSON.stringify( result.parser.associations.get( object ) );
+check( 'associations: single-primitive node', mapping( skinned ) === '{"meshes":1,"primitives":0,"nodes":1}', mapping( skinned ) );
+check( 'associations: multi-primitive node', mapping( lines ) === '{"meshes":2,"nodes":8}' && mapping( lines.children[ 1 ] ) === '{"meshes":2,"primitives":1}', mapping( lines ) + ' ' + mapping( lines?.children[ 1 ] ) );
 check( 'binary glb rejected without JSON', await loader.parseAsync( new Uint8Array( [ 0x67, 0x6C, 0x54, 0x46, 2, 0, 0, 0, 12, 0, 0, 0 ] ).buffer, '' ).then( () => false, () => true ) );
 process.exitCode = failed ? 1 : 0;

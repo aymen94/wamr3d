@@ -138,7 +138,9 @@ export class GLTFNodes {
 
 		}
 
-		this.associations.set( object, { nodes: index } );
+		// a node that is its mesh's object adds its index to the mesh's mapping; a new
+		// mapping, since copies of a shared mesh may share the one they were copied with
+		this.associations.set( object, { ...this.associations.get( object ), nodes: index } );
 		this.nodeObjects[ index ] = object;
 		return object;
 
