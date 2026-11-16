@@ -124,8 +124,10 @@ export class Mesh extends Object3D {
 	copy( source, recursive ) {
 
 		super.copy( source, recursive );
+		if ( source.morphTargetInfluences !== undefined ) this.morphTargetInfluences = source.morphTargetInfluences.slice();
+		if ( source.morphTargetDictionary !== undefined ) this.morphTargetDictionary = Object.assign( {}, source.morphTargetDictionary );
 		this._geometry = source.geometry;
-		this._material = source.material;
+		this._material = Array.isArray( source.material ) ? source.material.slice() : source.material;
 		this._link();
 		return this;
 

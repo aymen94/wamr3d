@@ -220,6 +220,19 @@ function scenario( L ) {
 	scene.updateMatrixWorld();
 	put( 'clone', [ copy.children.length, copy.children[ 0 ].children.length, copy.children[ 0 ].name === 'cube' ? 1 : 0, copy.children[ 0 ].geometry === cube.geometry ? 1 : 0, ...copy.children[ 0 ].children[ 0 ].matrixWorld.elements ] );
 
+	// a clone keeps its own copy of the morph weights, the target names and the material list
+	const morphGeometry = new L.BufferGeometry();
+	morphGeometry.setAttribute( 'position', new L.Float32BufferAttribute( [ 0, 0, 0, 1, 0, 0, 0, 1, 0 ], 3 ) );
+	morphGeometry.morphAttributes.position = [ new L.Float32BufferAttribute( [ 0, 0, 1, 0, 0, 1, 0, 0, 1 ], 3 ), new L.Float32BufferAttribute( [ 1, 0, 0, 1, 0, 0, 1, 0, 0 ], 3 ) ];
+	morphGeometry.morphAttributes.position[ 1 ].name = 'shift';
+	const morphMaterials = [ new L.MeshBasicMaterial(), new L.MeshBasicMaterial() ];
+	const morphing = new L.Mesh( morphGeometry, morphMaterials );
+	morphing.morphTargetInfluences[ 0 ] = 0.25;
+	morphing.morphTargetInfluences[ 1 ] = 0.75;
+	const morphCopy = morphing.clone();
+	morphing.morphTargetInfluences[ 0 ] = 1;
+	put( 'mesh clone', [ ...morphCopy.morphTargetInfluences, morphCopy.morphTargetDictionary.shift, morphCopy.morphTargetDictionary[ 0 ], morphCopy.material.length, morphCopy.material === morphMaterials ? 1 : 0, morphCopy.material[ 1 ] === morphMaterials[ 1 ] ? 1 : 0, morphCopy.geometry === morphGeometry ? 1 : 0 ] );
+
 	arm.remove( cube );
 	cube.visible = false;
 	copy.removeFromParent();
