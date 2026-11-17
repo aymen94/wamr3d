@@ -98,6 +98,40 @@ void main() {
 }
 `;
 
+// Unlit shader materials that write the colour themselves, in a row: three.js puts what
+// they write on the canvas unchanged unless they include `colorspace_fragment`.
+const UNLIT_VERTEX = `
+varying vec2 vUv;
+void main() {
+	vUv = uv;
+	gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+}
+`;
+
+// A gradient from dark to light across the quad, with a hue from `tint`.
+const gradient = ( output ) => `
+uniform vec3 tint;
+varying vec2 vUv;
+void main() {
+	gl_FragColor = vec4( tint * ( 0.15 + 0.85 * vUv.x ), 1.0 );
+	${output}
+}
+`;
+
+function unlitRow( L, materials, y ) {
+
+	return materials.map( ( material, i ) => {
+
+		const quad = new L.Mesh( new L.PlaneGeometry( 1.1, 0.9 ), material );
+		quad.position.set( ( i - ( materials.length - 1 ) / 2 ) * 1.25, y, 0 );
+		return quad;
+
+	} );
+
+}
+
+const tinted = ( L, color, fragmentShader, extra = {} ) => new L.ShaderMaterial( { uniforms: { tint: { value: new L.Color( color ) } }, vertexShader: UNLIT_VERTEX, fragmentShader, ...extra } );
+
 function material( L, color, fragmentShader = MASK_FRAGMENT ) {
 
 	return new L.ShaderMaterial( {
@@ -232,6 +266,85 @@ export const SHADER = {
 
 			renderer.shadowMap.enabled = true;
 			renderer.shadowMap.type = L.VSMShadowMap;
+
+		} };
+
+	},
+
+	// What shader materials write reaches the canvas as three.js puts it there: unchanged
+	// without `colorspace_fragment` (top row), encoded to sRGB with it or with
+	// `linearToOutputTexel` / `sRGBTransferOETF` called directly (middle row); GLSL 3 and
+	// raw materials with their own outputs, and a shader material drawn into a render
+	// target and shown by a basic material (bottom row).
+	shader_output_color( L ) {
+
+		const { scene, camera } = stage( L, 0, 0, 4.6 );
+		const raw = new L.RawShaderMaterial( {
+			glslVersion: L.GLSL3,
+			vertexShader: `in vec3 position;
+in vec2 uv;
+uniform mat4 modelViewMatrix;
+uniform mat4 projectionMatrix;
+out vec2 vUv;
+void main() {
+	vUv = uv;
+	gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+}
+`,
+			fragmentShader: `precision highp float;
+in vec2 vUv;
+layout(location = 0) out highp vec4 color;
+void main() {
+	color = vec4( vUv.x * 0.9, 0.35, 0.6 - vUv.x * 0.4, 1.0 );
+}
+` } );
+		const glsl3 = tinted( L, 0xe07a30, `
+uniform vec3 tint;
+in vec2 vUv;
+out vec4 outColor;
+void main() {
+	outColor = vec4( tint * ( 0.15 + 0.85 * vUv.x ), 1.0 );
+}
+`, { glslVersion: L.GLSL3 } );
+
+		const target = new L.WebGLRenderTarget( 128, 128 );
+		const inner = new L.Scene();
+		const innerCamera = new L.OrthographicCamera( - 0.5, 0.5, 0.5, - 0.5, 0.1, 10 );
+		innerCamera.position.z = 1;
+		inner.add( new L.Mesh( new L.PlaneGeometry( 1, 1 ), tinted( L, 0x40c0a0, gradient( '' ) ) ) );
+		const shown = new L.Mesh( new L.PlaneGeometry( 1.1, 0.9 ), new L.MeshBasicMaterial( { map: target.texture } ) );
+		shown.position.set( 1.25, - 1.05, 0 );
+
+		scene.add(
+			...unlitRow( L, [ tinted( L, 0x3080e0, gradient( '' ) ), tinted( L, 0xe05050, gradient( '' ) ), tinted( L, 0x80e040, gradient( '' ) ) ], 1.05 ),
+			...unlitRow( L, [ tinted( L, 0x3080e0, gradient( '#include <colorspace_fragment>' ) ), tinted( L, 0xe05050, gradient( 'gl_FragColor = linearToOutputTexel( gl_FragColor );' ) ), tinted( L, 0x80e040, gradient( 'gl_FragColor = sRGBTransferOETF( gl_FragColor );' ) ) ], 0 ),
+			...unlitRow( L, [ glsl3, raw ], - 1.05 ).map( ( quad ) => ( quad.position.x -= 1.25 / 2, quad ) ),
+			shown
+		);
+		return { scene, camera, setup( renderer ) {
+
+			renderer.setRenderTarget( target );
+			renderer.render( inner, innerCamera );
+			renderer.setRenderTarget( null );
+
+		} };
+
+	},
+
+	// With tone mapping, a shader material that includes `tonemapping_fragment` and
+	// `colorspace_fragment` is tone-mapped and encoded once, as in three.js.
+	shader_output_tonemapped( L ) {
+
+		const { scene, camera } = stage( L, 0, 0, 4.6 );
+		// three.js's WebGLRenderer does not tone-map the clear colour; black stays black either way
+		scene.background = new L.Color( 0x000000 );
+		const output = '#include <tonemapping_fragment>\n\t#include <colorspace_fragment>';
+		const bright = ( color ) => tinted( L, color, gradient( output ).replace( '0.15 + 0.85 * vUv.x', '0.2 + 3.0 * vUv.x' ) );
+		scene.add( ...unlitRow( L, [ bright( 0xff8040 ), bright( 0x40a0ff ), bright( 0xffffff ) ], 0.5 ), ...unlitRow( L, [ bright( 0x60ff60 ), bright( 0xff40c0 ) ], - 0.55 ) );
+		return { scene, camera, setup( renderer ) {
+
+			renderer.toneMapping = L.ACESFilmicToneMapping;
+			renderer.toneMappingExposure = 0.9;
 
 		} };
 

@@ -189,7 +189,7 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 
 				// a GLSL shader material: its program, the built-in uniforms of this draw, its uniforms
 				const lights = own.lights === true ? extras.lights : null, fog = own.fog === true ? extras.fog : null;
-				const shader = shaderProgram( own, instance !== null, srgb, lights, fog, entry.buffers[ 1 ] !== null );
+				const shader = shaderProgram( own, instance !== null, srgb ? 'srgb' : ctx.drawingInto !== 0 ? 'target' : 'linear', lights, fog, entry.buffers[ 1 ] !== null );
 				if ( shader !== current ) gl.useProgram( shader.id );
 				current = shader;
 				if ( shader.flip ) gl.uniform1f( shader.flip, flipY );

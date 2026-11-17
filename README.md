@@ -268,7 +268,7 @@ node engine/bindings/build.mjs
 node parity/bindings/compat-check.mjs                   # the object API against stored three.js values
 node parity/bindings/check.mjs                          # the low-level API against three.js live (needs `npm install`)
 
-node parity/visual/run.mjs                              # 45 cases against stored three.js images (server running, needs a GPU; --backend=webgl, --console, --headed, --browser=edge)
+node parity/visual/run.mjs                              # 47 cases against stored three.js images (server running, needs a GPU; --backend=webgl, --console, --headed, --browser=edge)
 tsc -p parity/bindings                                  # the typings, against an application-style program
 node examples/ports/check.mjs --three                   # every ported example draws on WAMR3D and on three.js
 node examples/webgpu/smoke.mjs                          # the demo page, and its image against three.js WebGL

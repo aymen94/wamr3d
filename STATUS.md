@@ -8,7 +8,7 @@
 
 - **TSL / node materials** (`src/nodes/`, `src/materials/nodes/`) are not ported: no node materials and no node-based post-processing.
 - **`ShaderMaterial`** draws unlit on WebGPU because GLSL shaders are WebGL-only. On WebGL 2 it supports lights, fog and shadows (three.js's `shadowmap_*` and `shadowmask_pars_fragment` chunks, from the engine's shadow maps) when `lights` and `fog` are enabled, but not rectangular area lights or spot light maps (`SpotLight.map`). Its `directionalShadowMap` and the other shadow "maps" are `vec4` handles, not samplers: code that passes them to `getShadow` and `getPointShadow` works, code that samples them itself does not. A `ShaderPass` with GLSL other than the built-in passes needs WebGL 2.
-- **`ShaderMaterial` output colour:** WAMR3D encodes what a shader material writes to sRGB on the canvas whether or not its fragment shader has `#include <colorspace_fragment>`; three.js writes it unchanged without that include, so such materials draw brighter than in three.js.
+- **`ShaderMaterial` output colour:** what a shader material writes reaches the canvas as in three.js's WebGLRenderer (unchanged, or encoded by `colorspace_fragment` / `linearToOutputTexel`). With tone mapping on, the output pass tone-maps every pixel, so a shader material without `tonemapping_fragment`, or with `toneMapped` false, is tone-mapped where three.js leaves it, and so is the background colour. Transparent shader materials blend in linear colour, where three.js's WebGLRenderer blends the encoded colours.
 - **`ShaderMaterial` light order:** three.js lists a material's lights in scene order; WAMR3D meets the children of an object last first. Lights with shadows come first in both, so shadow i belongs to light i, but `directionalLights[ i ]` may name another light among those without shadows.
 - `LineMaterial.dashOffset` does not move the dashes.
 - `GLTFLoader` plugins registered with `register()` get the parser and their `beforeRoot` and `afterRoot` hooks; the other hooks of three.js's plugin interface (`loadMesh`, `loadMaterial`, `extendMaterialParams`, `getMaterialType` and the rest) are not called.
@@ -22,6 +22,8 @@
 - Browser checks have run only in Chromium-based browsers; Firefox and Safari have not been tried.
 
 ## Verification
+
+2026-11-17, `ShaderMaterial` output colour (same machine): visual parity 43 of 47 with `--backend=webgl` and 44 of 47 on WebGPU, the failures those of unchanged `main`; the two new `shader_output_*` cases pass against three.js WebGLRenderer images and the colour case fails without the decoding (mean difference 16 of 255); with `EXT_color_buffer_float` forced off the shader cases match exactly. `test:api`, `test:types`, `test:gltf`, `test:loaders`, `test:controls`, both smoke checks, the showcase, ports `--three` and `--webgl`.
 
 2026-11-17, `ShaderMaterial` shadows on WebGL 2 (Apple M4, Chromium, macOS; ANGLE on Metal): `test:api` (with `UniformsLib` against three.js), `test:types`, `test:gltf`, `test:loaders`, `test:controls`, both smoke checks, the showcase check, the ported examples with `--three` and `--webgl`; visual parity 41 of 45 with `--backend=webgl` and 42 of 45 on WebGPU. The five new `shader_shadows_*` cases pass against three.js WebGLRenderer images; with the shadow mask or the light order broken on purpose they fail. On this machine `fog`, `lines` and `wireframe` (and `points` on WebGL 2) fail on unchanged `main` too, with the same numbers. The shader cases also pass with uniform-buffer ranges forced off. No Rust changed; `cargo test` was not run.
 
