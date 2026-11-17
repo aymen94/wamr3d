@@ -113,7 +113,7 @@ Setting `position`, `rotation` and `scale` does not call into WebAssembly: the o
 | Shadows | Directional, spot and point lights; `BasicShadowMap`, `PCFShadowMap` (`PCFSoftShadowMap` draws as PCF, as in three.js's WebGPURenderer) or `VSMShadowMap`; up to 16 shadow maps per frame, six per point light |
 | Environment maps | Equirectangular textures, `CubeTexture` (also HDR) and render-target textures; up to eight distinct environment maps per frame |
 | `RectAreaLight` with `RectAreaLightUniformsLib` | Works without the LTC tables; specular light is an approximation |
-| `ShaderMaterial` / `RawShaderMaterial` | GLSL draws on WebGL 2 (`backend: 'webgl'`) with `lights` and `fog`, but no shadows; on WebGPU it draws unlit, as three.js's WebGPURenderer does not take GLSL |
+| `ShaderMaterial` / `RawShaderMaterial` | GLSL draws on WebGL 2 (`backend: 'webgl'`) with `lights`, `fog` and three.js's shadow chunks (`getShadowMask()`, `getShadow()`); on WebGPU it draws unlit, as three.js's WebGPURenderer does not take GLSL |
 | Node materials (TSL) | Not ported; use the built-in materials, or `ShaderMaterial` on WebGL 2 |
 | `three/addons/...` | `wamr3d/addons/...`: controls (including `TransformControls` and `ArcballControls`), loaders (`GLTFLoader` with Draco, KTX2 and meshopt, `FBXLoader`, `OBJLoader`, `MTLLoader`, `RGBELoader`, `HDRLoader`, `EXRLoader`), post-processing, shaders and wide lines |
 | Clipping planes | `renderer.clippingPlanes` and material `clippingPlanes` (with `localClippingEnabled`): up to eight each |
@@ -250,7 +250,7 @@ The full typed API is in `dist/wamr3d/wamr3d_wasm.d.ts` after a build. A Node.js
 
 | Area | Unfinished or missing |
 |---|---|
-| Materials | No node (TSL) materials (out of scope). `ShaderMaterial` draws on WebGL 2 only, with lights and fog but no shadows. |
+| Materials | No node (TSL) materials (out of scope). `ShaderMaterial` draws on WebGL 2 only, with lights, fog and shadows but no rectangular area lights. |
 | Post-processing | The built-in passes draw on both backends; a `ShaderPass` with other GLSL needs WebGL 2. No TSL. |
 | Renderer | Area-light specular highlights are approximated (no LTC tables); skinned meshes are culled using posed bounds; `LineMaterial.dashOffset` has no effect. |
 | Browsers | Draws with WebGPU, or WebGL 2 where WebGPU is missing ([Choosing the backend](#choosing-the-backend)). Tested in Chromium-based browsers only. |
@@ -268,7 +268,7 @@ node engine/bindings/build.mjs
 node parity/bindings/compat-check.mjs                   # the object API against stored three.js values
 node parity/bindings/check.mjs                          # the low-level API against three.js live (needs `npm install`)
 
-node parity/visual/run.mjs                              # 39 cases against stored three.js images (server running, needs a GPU; --backend=webgl, --console, --headed, --browser=edge)
+node parity/visual/run.mjs                              # 45 cases against stored three.js images (server running, needs a GPU; --backend=webgl, --console, --headed, --browser=edge)
 tsc -p parity/bindings                                  # the typings, against an application-style program
 node examples/ports/check.mjs --three                   # every ported example draws on WAMR3D and on three.js
 node examples/webgpu/smoke.mjs                          # the demo page, and its image against three.js WebGL
