@@ -7,8 +7,9 @@
 
 import { Renderer, memory } from './index.js';
 import { lightFeatures, meshFeatures, quadInstances } from './webgpu/formats.js';
-import { BONE_UNIT, CUSTOM_BLENDING_FLOAT, ENVIRONMENT_UNIT, LOOP_KEY, MATERIAL_FLOATS, MATERIAL_STRIDE, OBJECT_BLOCK_DRAWS, OBJECT_FLOATS, OBJECT_STRIDE, QUAD_KEY, SHADOW_UNIT, TRANSMISSION_UNIT, UNUSED_FRAMES, VSM_UNIT, WIREFRAME_KEY } from './webgl/constants.js';
+import { BONE_UNIT, CUSTOM_BLENDING_FLOAT, ENVIRONMENT_UNIT, LOOP_KEY, MATERIAL_FLOATS, MATERIAL_STRIDE, OBJECT_BLOCK_DRAWS, OBJECT_FLOATS, OBJECT_STRIDE, QUAD_KEY, RECEIVE_SHADOW_FLAG, RECEIVE_SHADOW_FLOAT, SHADOW_UNIT, TRANSMISSION_UNIT, UNUSED_FRAMES, VSM_UNIT, WIREFRAME_KEY } from './webgl/constants.js';
 import { installPrograms } from './webgl/programs.js';
+import { shadowUniforms } from './webgl/shader-chunks.js';
 import { installBuffers } from './webgl/buffers.js';
 import { installTextures } from './webgl/textures.js';
 import { installShadows } from './webgl/shadows.js';
@@ -188,12 +189,12 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 
 				// a GLSL shader material: its program, the built-in uniforms of this draw, its uniforms
 				const lights = own.lights === true ? extras.lights : null, fog = own.fog === true ? extras.fog : null;
-				const shader = shaderProgram( own, instance !== null, srgb, lights, fog );
+				const shader = shaderProgram( own, instance !== null, srgb ? 'srgb' : ctx.drawingInto !== 0 ? 'target' : 'linear', lights, fog, entry.buffers[ 1 ] !== null );
 				if ( shader !== current ) gl.useProgram( shader.id );
 				current = shader;
 				if ( shader.flip ) gl.uniform1f( shader.flip, flipY );
 				const model = data.objects.subarray( i * OBJECT_FLOATS, i * OBJECT_FLOATS + 16 ), view = extras.view, modelView = multiply( view, model, new Float32Array( 16 ) );
-				setUniforms( shader, own, { modelMatrix: model, viewMatrix: view, projectionMatrix: extras.projection, modelViewMatrix: modelView, normalMatrix: normalMatrix( modelView, new Float32Array( 9 ) ), cameraPosition: extras.position, isOrthographic: extras.orthographic, ...lights?.uniforms, ...fog?.uniforms }, sources );
+				setUniforms( shader, own, { modelMatrix: model, viewMatrix: view, projectionMatrix: extras.projection, modelViewMatrix: modelView, normalMatrix: normalMatrix( modelView, new Float32Array( 9 ) ), cameraPosition: extras.position, isOrthographic: extras.orthographic, ...lights?.uniforms, ...lights?.shadowUniforms, receiveShadow: ( data.objects[ i * OBJECT_FLOATS + RECEIVE_SHADOW_FLOAT ] & RECEIVE_SHADOW_FLAG ) !== 0, ...fog?.uniforms }, sources );
 				applyState( key, customBlending( key, data.materials, draws[ o + 6 ] ) );
 				applyMaterialState( key, data.materials, draws[ o + 6 ] * MATERIAL_FLOATS );
 				defaultArrays();
@@ -398,6 +399,8 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 			info.candidates = renderer.candidateCount();
 			const frameUniforms = renderer.frameUniforms();
 			upload( gl.UNIFORM_BUFFER, frameUniforms, frameBuffer );
+			// where shader materials with lights find each light's shadow map this frame
+			if ( extras?.lights ) extras.lights.shadowUniforms = shadowUniforms( frameUniforms, extras.lights );
 			ctx.lightFeatures = lightFeatures( frameUniforms );
 
 			const geometryState = renderer.geometryState(), slots = renderer.drawGeometrySlots(), draws = renderer.drawInfo();

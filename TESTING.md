@@ -20,7 +20,7 @@ Commands run from the repository root unless they start with `cd`. "A build" mea
 | `npm run test:loaders` | `OBJLoader`, `MTLLoader`, `HDRLoader`/`RGBELoader` on generated files | a build |
 | `npm run test:controls` | `TransformControls` through its pointer methods | a build |
 | `npm run test:types` (`tsc -p parity/bindings`) | the typings, with an application-style program | a build, TypeScript (`npx -y -p typescript@5 tsc -p parity/bindings` without a global `tsc`) |
-| `node parity/visual/run.mjs` | every visual case against stored three.js WebGPU images | a build, server, GPU |
+| `node parity/visual/run.mjs` | every visual case against stored three.js WebGPU images (the GLSL shader-material cases against three.js WebGLRenderer images, always on WebGL 2) | a build, server, GPU |
 | `node parity/visual/run.mjs --backend=webgl` | the same drawn with WebGL 2 | a build, server |
 | `node examples/webgpu/smoke.mjs` | the object-API demo: frames, picking, orbiting | a build, server |
 | `node examples/browser/smoke.mjs` | the low-level demo | a build, server |
@@ -30,7 +30,7 @@ Commands run from the repository root unless they start with `cd`. "A build" mea
 
 Visual parity options: `--cases=a,b`, `--headed`, `--browser=edge`, `--console` (prints what each page logs; use it when a case renders black or times out). Diffs go to `parity/visual/out/` (gitignored); screenshots saved from WebGL 2 runs are black (the canvas does not keep its drawing buffer), but the comparison reads the pixels itself. Tolerances: `parity/visual/cases.js` (mean difference 1.5 of 255, at most 2% of pixels off by more than 12).
 
-**Known failures:** with `--backend=webgl`, `lines`, `points` and `wireframe` differ by 2.5–4.4% of pixels because WebGL 2 rasterizes 1-pixel primitives differently (37 of 40 pass). Any other failure is a regression.
+**Known failures:** with `--backend=webgl`, `lines`, `points` and `wireframe` differ by 2.5–4.4% of pixels because WebGL 2 rasterizes 1-pixel primitives differently (44 of 47 pass). Any other failure is a regression.
 
 ## What to run for a change
 
@@ -52,7 +52,7 @@ Visual parity options: `--cases=a,b`, `--headed`, `--browser=edge`, `--console` 
 - **Rust unit tests** sit next to the code (`#[cfg(test)]` modules, `tests.rs` files such as `engine/renderer_webgpu/src/tests.rs`). Every ported public function has at least one.
 - **Parity fixtures** for engine behavior: extend the generator in `parity/<area>/gen/generate.mjs` (it imports `three/src`), run `npm install` and `npm run reference:fixtures`, and replay the new entries in `engine/<crate>/tests/parity.rs`. Never hand-write expected values.
 - **Object-API values:** add to the script in `parity/bindings/compat-check.mjs`, then store three.js's values with `node parity/bindings/compat-check.mjs --generate`.
-- **Visual cases:** add a case to `parity/visual/cases/*.js` (written once against a library object `L`), then store its reference with `node parity/visual/run.mjs --generate --cases=<name>` (loads the pinned three.js WebGPU build from cdnjs).
+- **Visual cases:** add a case to `parity/visual/cases/*.js` (written once against a library object `L`), then store its reference with `node parity/visual/run.mjs --generate --cases=<name>` (loads the pinned three.js WebGPU build from cdnjs). Cases with GLSL shader materials go in `cases/shader.js`: their references are drawn by the pinned three.js WebGLRenderer, since its WebGPU renderer draws no GLSL (D27).
 - **Typings:** extend `parity/bindings/typecheck.ts` for new public API.
 
 Regenerate references only when a case is added or changed on purpose, never to make a failing check pass, and only with the pinned three.js version.

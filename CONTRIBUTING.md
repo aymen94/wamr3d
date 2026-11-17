@@ -56,7 +56,7 @@ Rust core (edition 2021), with JavaScript where it is simpler or faster. Math st
 - **D16** `engine/core/src/constants.rs` holds the buffer usage and attribute type values of three.js.
 - **D18** Integer typed-array stores wrap as JavaScript does (`Uint8ClampedArray` clamps and rounds half to even); they do not saturate.
 - **D21** `engine/bindings` (package `wamr3d`) is a thin `wasm-bindgen` shell; zero-copy views are built in JavaScript.
-- **D27** Visual parity compares against stored three.js WebGPU renders, within the tolerance in `parity/visual/cases.js`.
+- **D27** Visual parity compares against stored three.js WebGPU renders, within the tolerance in `parity/visual/cases.js`. Cases of GLSL shader materials, which three.js's WebGPU renderer cannot draw, compare WAMR3D's WebGL 2 backend against stored three.js WebGLRenderer renders instead (`WEBGL_REFERENCE` in `parity/visual/cases.js`).
 - **D32** Rust prepares frame data and the WGSL and GLSL sources; the JavaScript hosts (`webgpu.js`, `webgl.js`) own the device, pipelines, buffers, textures and passes. Both hosts read the engine's uniform layout, so a layout change ships with both hosts.
 - **D39** Random helpers use a SplitMix64 generator, seeded by `init()` and resettable with `setRandomSeed`; `seededRandom` stays Mulberry32.
 - **D40** Mesh shaders are specialised per material: the hosts pass the material's shading mode and features as GLSL `#define`s or WGSL `override`s; a constant only clears a feature the material does not have, so output is unchanged.

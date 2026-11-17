@@ -27,12 +27,14 @@
 // ?case=<name> draws the case with WAMR3D and compares it with reference/<name>.png.
 // ?case=<name>&mode=generate draws it with three.js instead, for run.mjs to store.
 
-import { CASES, REFERENCE_URL, WIDTH, HEIGHT, MEAN_LIMIT, DIFFERENT_LIMIT, PIXEL_THRESHOLD, BACKGROUND_RGB } from './cases.js';
+import { CASES, REFERENCE_URL, REFERENCE_WEBGL_URL, WEBGL_REFERENCE, WIDTH, HEIGHT, MEAN_LIMIT, DIFFERENT_LIMIT, PIXEL_THRESHOLD, BACKGROUND_RGB } from './cases.js';
 
 const params = new URLSearchParams( location.search );
 const name = params.get( 'case' ) || 'cube', generate = params.get( 'mode' ) === 'generate';
-// ?backend=webgl checks WAMR3D's WebGL 2 backend against the same references
-const backend = params.get( 'backend' ) === 'webgl' ? 'webgl' : 'webgpu';
+// ?backend=webgl checks WAMR3D's WebGL 2 backend against the same references; cases with a
+// WebGLRenderer reference always draw with WebGL 2
+const webglReference = WEBGL_REFERENCE.has( name );
+const backend = params.get( 'backend' ) === 'webgl' || webglReference ? 'webgl' : 'webgpu';
 const result = window.__visual = { ready: false, error: null, case: name };
 const $ = ( id ) => document.getElementById( id );
 for ( const caseName of Object.keys( CASES ) ) {
@@ -59,15 +61,26 @@ try {
 
 	if ( generate ) {
 
-		const THREE = await import( REFERENCE_URL );
+		const THREE = await import( webglReference ? REFERENCE_WEBGL_URL : REFERENCE_URL );
 		const { scene, camera, setup } = CASES[ name ]( THREE );
-		const renderer = new THREE.WebGPURenderer( { canvas: $( 'actual' ), antialias: true } );
-		await renderer.init();
-		if ( ! renderer.backend.isWebGPUBackend ) throw new Error( 'the reference renderer fell back to WebGL' );
+		let renderer;
+
+		if ( webglReference ) {
+
+			renderer = new THREE.WebGLRenderer( { canvas: $( 'actual' ), antialias: true } );
+
+		} else {
+
+			renderer = new THREE.WebGPURenderer( { canvas: $( 'actual' ), antialias: true } );
+			await renderer.init();
+			if ( ! renderer.backend.isWebGPUBackend ) throw new Error( 'the reference renderer fell back to WebGL' );
+
+		}
+
 		renderer.setSize( WIDTH, HEIGHT, false );
 		await setup?.( renderer );
 		renderer.render( scene, camera );
-		$( 'actual-label' ).textContent = 'three.js, WebGPU';
+		$( 'actual-label' ).textContent = webglReference ? 'three.js, WebGL' : 'three.js, WebGPU';
 		result.png = $( 'actual' ).toDataURL( 'image/png' );
 		$( 'result' ).textContent = `${name}: reference image`;
 
@@ -77,6 +90,7 @@ try {
 		await WAMR3D.init();
 		const { scene, camera, setup, probes = [] } = CASES[ name ]( WAMR3D );
 		const renderer = new WAMR3D.WebGPURenderer( { canvas: $( 'actual' ), antialias: true, backend } );
+		if ( backend === 'webgl' ) $( 'actual-label' ).textContent = 'WAMR3D, WebGL 2';
 		await renderer.init();
 		renderer.setSize( WIDTH, HEIGHT, false );
 		await setup?.( renderer );

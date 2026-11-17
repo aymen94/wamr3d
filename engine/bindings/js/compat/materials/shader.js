@@ -15,7 +15,11 @@ let nextShaderId = 16;
  * (`modelMatrix`, `modelViewMatrix`, `projectionMatrix`, `viewMatrix`, `normalMatrix`,
  * `cameraPosition`) and attributes (`position`, `normal`, `uv`, and any other attribute of
  * the geometry). Drawn on WebGL 2 only, as three.js's WebGPURenderer draws no GLSL
- * either; on WebGPU it draws unlit in `color`. Lights and fog are not provided to it.
+ * either; on WebGPU it draws unlit in `color`. With `lights` it gets three.js's light
+ * uniforms and, when the renderer's shadow map is on, its shadow uniforms and chunks
+ * (`#include <shadowmap_pars_fragment>`, `getShadowMask()`); with `fog`, the fog's.
+ * What it writes reaches the canvas as three.js puts it there: unchanged, or encoded
+ * to sRGB with `#include <colorspace_fragment>`.
  * Set `needsUpdate = true` after changing the shaders or defines.
  */
 export class ShaderMaterial extends Material {

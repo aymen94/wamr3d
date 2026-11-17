@@ -5,6 +5,7 @@
 import { Renderer } from '../index.js';
 import { BONE_UNIT, ENVIRONMENT_UNIT, SHADOW_UNIT, SLOTS, TRANSMISSION_UNIT, VSM_UNIT } from './constants.js';
 import { FEATURE_NAMES } from '../webgpu/formats.js';
+import { SHADER_CHUNKS, shadowDefines } from './shader-chunks.js';
 
 /** Adds this part's functions and state to the host context `ctx`. */
 export function installPrograms( ctx ) {
@@ -126,11 +127,13 @@ export function installPrograms( ctx ) {
 	// three.js's prefixes of `ShaderMaterial` code: GLSL 1 style source compiled as GLSL ES
 	// 3.00, the built-in uniforms and attributes, and the common `#include`s. The user's
 	// `main` is renamed so that the vertex stage can flip render targets as the engine does.
+	// As in three.js, only the colour output is left to materials written in GLSL 3.
 	const GLSL1_VERTEX = '#define attribute in\n#define varying out\n#define texture2D texture\n';
-	const GLSL1_FRAGMENT = '#define varying in\nlayout(location = 0) out highp vec4 pc_fragColor;\n#define gl_FragColor pc_fragColor\n#define gl_FragDepthEXT gl_FragDepth\n#define texture2D texture\n#define textureCube texture\n#define texture2DProj textureProj\n#define texture2DLodEXT textureLod\n#define texture2DProjLodEXT textureProjLod\n#define textureCubeLodEXT textureLod\n#define texture2DGradEXT textureGrad\n#define texture2DProjGradEXT textureProjGrad\n#define textureCubeGradEXT textureGrad\n';
+	const GLSL1_OUTPUT = 'layout(location = 0) out highp vec4 pc_fragColor;\n#define gl_FragColor pc_fragColor\n';
+	const GLSL1_FRAGMENT = '#define varying in\n#define gl_FragDepthEXT gl_FragDepth\n#define texture2D texture\n#define textureCube texture\n#define texture2DProj textureProj\n#define texture2DLodEXT textureLod\n#define texture2DProjLodEXT textureProjLod\n#define textureCubeLodEXT textureLod\n#define texture2DGradEXT textureGrad\n#define texture2DProjGradEXT textureProjGrad\n#define textureCubeGradEXT textureGrad\n';
 	const INCLUDES = {
 		common: '#define PI 3.141592653589793\n#define PI2 6.283185307179586\n#define HALF_PI 1.5707963267948966\n#define RECIPROCAL_PI 0.3183098861837907\n#define EPSILON 1e-6\n#define saturate( a ) clamp( a, 0.0, 1.0 )\nfloat pow2( const in float x ) { return x * x; }\nvec3 pow2( const in vec3 x ) { return x * x; }\nfloat luminance( const in vec3 rgb ) { return dot( rgb, vec3( 0.2126, 0.7152, 0.0722 ) ); }\nfloat pow3( const in float x ) { return x * x * x; }\nfloat pow4( const in float x ) { float x2 = x * x; return x2 * x2; }\nstruct IncidentLight { vec3 color; vec3 direction; bool visible; };\nstruct ReflectedLight { vec3 directDiffuse; vec3 directSpecular; vec3 indirectDiffuse; vec3 indirectSpecular; };\nvec3 transformDirection( in vec3 dir, in mat4 matrix ) { return normalize( ( matrix * vec4( dir, 0.0 ) ).xyz ); }\nvec3 transformDirectionByInverseViewMatrix( in vec3 dir, in mat4 matrix ) { return normalize( ( vec4( dir, 0.0 ) * matrix ).xyz ); }\n#define inverseTransformDirection transformDirectionByInverseViewMatrix\nvec3 transformNormalByInverseViewMatrix( in vec3 normal, in mat4 viewMatrix ) { return normalize( ( vec4( normal, 0.0 ) * viewMatrix ).xyz ); }\n',
-		colorspace_fragment: '',
+		colorspace_fragment: 'gl_FragColor = linearToOutputTexel( gl_FragColor );\n',
 		tonemapping_fragment: '',
 		fog_pars_vertex: '#ifdef USE_FOG\nvarying float vFogDepth;\n#endif\n',
 		fog_vertex: '#ifdef USE_FOG\nvFogDepth = - mvPosition.z;\n#endif\n',
@@ -138,7 +141,8 @@ export function installPrograms( ctx ) {
 		fog_fragment: '#ifdef USE_FOG\n#ifdef FOG_EXP2\nfloat fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );\n#else\nfloat fogFactor = smoothstep( fogNear, fogFar, vFogDepth );\n#endif\ngl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );\n#endif\n',
 		lights_pars_begin: 'uniform bool receiveShadow;\nuniform vec3 ambientLightColor;\n#if defined( USE_LIGHT_PROBES )\nuniform vec3 lightProbe[ 9 ];\n#endif\nvec3 shGetIrradianceAt( in vec3 normal, in vec3 shCoefficients[ 9 ] ) {\n\tfloat x = normal.x, y = normal.y, z = normal.z;\n\tvec3 result = shCoefficients[ 0 ] * 0.886227;\n\tresult += shCoefficients[ 1 ] * 2.0 * 0.511664 * y;\n\tresult += shCoefficients[ 2 ] * 2.0 * 0.511664 * z;\n\tresult += shCoefficients[ 3 ] * 2.0 * 0.511664 * x;\n\tresult += shCoefficients[ 4 ] * 2.0 * 0.429043 * x * y;\n\tresult += shCoefficients[ 5 ] * 2.0 * 0.429043 * y * z;\n\tresult += shCoefficients[ 6 ] * ( 0.743125 * z * z - 0.247708 );\n\tresult += shCoefficients[ 7 ] * 2.0 * 0.429043 * x * z;\n\tresult += shCoefficients[ 8 ] * 0.429043 * ( x * x - y * y );\n\treturn result;\n}\nvec3 getLightProbeIrradiance( const in vec3 lightProbe[ 9 ], const in vec3 normal ) {\n\treturn shGetIrradianceAt( transformNormalByInverseViewMatrix( normal, viewMatrix ), lightProbe );\n}\nvec3 getAmbientLightIrradiance( const in vec3 ambientLightColor ) {\n\treturn ambientLightColor;\n}\nfloat getDistanceAttenuation( const in float lightDistance, const in float cutoffDistance, const in float decayExponent ) {\n\tfloat distanceFalloff = 1.0 / max( pow( lightDistance, decayExponent ), 0.01 );\n\tif ( cutoffDistance > 0.0 ) distanceFalloff *= pow2( saturate( 1.0 - pow4( lightDistance / cutoffDistance ) ) );\n\treturn distanceFalloff;\n}\nfloat getSpotAttenuation( const in float coneCosine, const in float penumbraCosine, const in float angleCosine ) {\n\treturn smoothstep( coneCosine, penumbraCosine, angleCosine );\n}\n#if NUM_DIR_LIGHTS > 0\nstruct DirectionalLight { vec3 direction; vec3 color; };\nuniform DirectionalLight directionalLights[ NUM_DIR_LIGHTS ];\nvoid getDirectionalLightInfo( const in DirectionalLight directionalLight, out IncidentLight light ) {\n\tlight.color = directionalLight.color;\n\tlight.direction = directionalLight.direction;\n\tlight.visible = true;\n}\n#endif\n#if NUM_POINT_LIGHTS > 0\nstruct PointLight { vec3 position; vec3 color; float distance; float decay; };\nuniform PointLight pointLights[ NUM_POINT_LIGHTS ];\nvoid getPointLightInfo( const in PointLight pointLight, const in vec3 geometryPosition, out IncidentLight light ) {\n\tvec3 lVector = pointLight.position - geometryPosition;\n\tlight.direction = normalize( lVector );\n\tlight.color = pointLight.color * getDistanceAttenuation( length( lVector ), pointLight.distance, pointLight.decay );\n\tlight.visible = ( light.color != vec3( 0.0 ) );\n}\n#endif\n#if NUM_SPOT_LIGHTS > 0\nstruct SpotLight { vec3 position; vec3 direction; vec3 color; float distance; float decay; float coneCos; float penumbraCos; };\nuniform SpotLight spotLights[ NUM_SPOT_LIGHTS ];\nvoid getSpotLightInfo( const in SpotLight spotLight, const in vec3 geometryPosition, out IncidentLight light ) {\n\tvec3 lVector = spotLight.position - geometryPosition;\n\tlight.direction = normalize( lVector );\n\tfloat spotAttenuation = getSpotAttenuation( spotLight.coneCos, spotLight.penumbraCos, dot( light.direction, spotLight.direction ) );\n\tlight.color = spotAttenuation > 0.0 ? spotLight.color * spotAttenuation * getDistanceAttenuation( length( lVector ), spotLight.distance, spotLight.decay ) : vec3( 0.0 );\n\tlight.visible = ( light.color != vec3( 0.0 ) );\n}\n#endif\n#if NUM_HEMI_LIGHTS > 0\nstruct HemisphereLight { vec3 direction; vec3 skyColor; vec3 groundColor; };\nuniform HemisphereLight hemisphereLights[ NUM_HEMI_LIGHTS ];\nvec3 getHemisphereLightIrradiance( const in HemisphereLight hemiLight, const in vec3 normal ) {\n\tfloat hemiDiffuseWeight = 0.5 * dot( normal, hemiLight.direction ) + 0.5;\n\treturn mix( hemiLight.groundColor, hemiLight.skyColor, hemiDiffuseWeight );\n}\n#endif\n',
 		logdepthbuf_pars_vertex: '', logdepthbuf_vertex: '', logdepthbuf_pars_fragment: '', logdepthbuf_fragment: '',
-		premultiplied_alpha_fragment: '#ifdef PREMULTIPLIED_ALPHA\ngl_FragColor.rgb *= gl_FragColor.a;\n#endif\n'
+		premultiplied_alpha_fragment: '#ifdef PREMULTIPLIED_ALPHA\ngl_FragColor.rgb *= gl_FragColor.a;\n#endif\n',
+		...SHADER_CHUNKS
 	};
 	const resolveIncludes = ( source ) => source.replace( /^[ \t]*#include +<([\w\d./]+)>/gm, ( _, name ) => {
 
@@ -146,36 +150,84 @@ export function installPrograms( ctx ) {
 		return INCLUDES[ name ] ?? '';
 
 	} );
+	// three.js repeats the body of a loop between `#pragma unroll_loop_start` and `_end`
+	// for each index, with `[ i ]` and `UNROLLED_LOOP_INDEX` replaced by it. The bound is a
+	// number or one of the light counts in `numbers`.
+	const UNROLLED = /#pragma unroll_loop_start\s+for\s*\(\s*int\s+i\s*=\s*(\d+)\s*;\s*i\s*<\s*(\w+)\s*;\s*i\s*\+\+\s*\)\s*{([\s\S]+?)}\s+#pragma unroll_loop_end/g;
+	const unrollLoops = ( source, numbers ) => source.replace( UNROLLED, ( match, start, end, body ) => {
+
+		const count = /^\d+$/.test( end ) ? Number( end ) : numbers[ end ];
+		if ( count === undefined ) return match;
+		let out = '';
+		for ( let i = Number( start ); i < count; i ++ ) out += body.replace( /\[\s*i\s*\]/g, '[ ' + i + ' ]' ).replace( /UNROLLED_LOOP_INDEX/g, i );
+		return out;
+
+	} );
+	// three.js's colour transfer functions, and `linearToOutputTexel` for the output: sRGB
+	// on the canvas, unchanged in a render target, which holds linear colour.
+	const COLORSPACE_PARS = 'vec4 LinearTransferOETF( in vec4 value ) { return value; }\nvec4 sRGBTransferEOTF( in vec4 value ) { return vec4( mix( pow( value.rgb * 0.9478672986 + vec3( 0.0521327014 ), vec3( 2.4 ) ), value.rgb * 0.0773993808, vec3( lessThanEqual( value.rgb, vec3( 0.04045 ) ) ) ), value.a ); }\nvec4 sRGBTransferOETF( in vec4 value ) { return vec4( mix( pow( value.rgb, vec3( 0.41666 ) ) * 1.055 - vec3( 0.055 ), value.rgb * 12.92, vec3( lessThanEqual( value.rgb, vec3( 0.0031308 ) ) ) ), value.a ); }\n';
+	const outputTexel = ( output ) => `vec4 linearToOutputTexel( vec4 value ) { return ${output === 'target' ? 'LinearTransferOETF' : 'sRGBTransferOETF'}( value ); }\n`;
+	// The canvas pass draws into a linear target that is encoded to sRGB afterwards; three.js
+	// puts what a shader material writes on the canvas as it is. The fragment stage's
+	// colour is therefore decoded from sRGB once the user's main has run, so that the
+	// encoding gives it back. `name` is the colour output.
+	const decodeOutput = ( name ) => '\n#undef main\nvoid main() {\n\twamr_user_main();\n\tvec3 wamr_c = max( ' + name + '.rgb, vec3( 0.0 ) );\n\t' + name + '.rgb = mix( pow( wamr_c * 0.9478672986 + vec3( 0.0521327014 ), vec3( 2.4 ) ), wamr_c * 0.0773993808, vec3( lessThanEqual( wamr_c, vec3( 0.04045 ) ) ) );\n}\n';
+	// The colour output of fragment source in GLSL 3: the `out vec4` at location 0, or the only one.
+	function outputName( source ) {
+
+		const outputs = [ ...source.matchAll( /(layout\s*\(\s*location\s*=\s*(\d+)\s*\)\s*)?\bout\s+(?:(?:highp|mediump|lowp)\s+)?vec4\s+(\w+)\s*;/g ) ];
+		return ( outputs.find( ( m ) => m[ 2 ] === '0' ) ?? ( outputs.length === 1 ? outputs[ 0 ] : null ) )?.[ 3 ] ?? null;
+
+	}
+
 	const STANDARD_ATTRIBUTES = [ [ 'position', 0 ], [ 'normal', 1 ], [ 'uv', 2 ], [ 'color', 3 ], [ 'instanceMatrix', 4 ], [ 'instanceColor', 8 ], [ 'tangent', 9 ], [ 'uv1', 10 ], [ 'skinIndex', 11 ], [ 'skinWeight', 12 ] ];
 
-	// `lights` and `fog` are the frame's (see the compat renderer's extras), or null when the
-	// material does not use them; three.js defines the light counts in every program.
-	function shaderProgram( material, instanced, srgb, lights = null, fog = null ) {
+	// `output` is where the pass draws: 'srgb' straight onto the canvas, 'linear' into the
+	// linear target of the canvas, 'target' into a render target. `lights` and `fog` are the
+	// frame's (see the compat renderer's extras), or null when the material does not use
+	// them; three.js defines the light counts in every program. `normals`: whether the
+	// geometry has normals (three.js's `HAS_NORMAL`).
+	function shaderProgram( material, instanced, output, lights = null, fog = null, normals = true ) {
 
-		const key = 'shader:' + material.id + ':' + material.version + ':' + instanced + ':' + srgb + ':' + ( lights?.key ?? '' ) + ':' + ( fog ? ( fog.exp2 ? 2 : 1 ) : 0 );
+		const side = material.side ?? 0;
+		const key = 'shader:' + material.id + ':' + material.version + ':' + instanced + ':' + output + ':' + ( lights?.key ?? '' ) + ':' + ( fog ? ( fog.exp2 ? 2 : 1 ) : 0 ) + ':' + normals + ':' + side;
 		let value = programs.get( key );
 		if ( value ) return value;
 		const defines = Object.entries( material.defines ?? {} ).map( ( [ name, v ] ) => ( v === false ? '' : `#define ${name} ${v === true ? '' : v}` ) ).join( '\n' ) + '\n';
-		const [ directional, point, spot, hemisphere ] = lights?.counts ?? [ 0, 0, 0, 0 ];
-		const lighting = `#define NUM_DIR_LIGHTS ${directional}\n#define NUM_POINT_LIGHTS ${point}\n#define NUM_SPOT_LIGHTS ${spot}\n#define NUM_RECT_AREA_LIGHTS 0\n#define NUM_HEMI_LIGHTS ${hemisphere}\n#define NUM_DIR_LIGHT_SHADOWS 0\n#define NUM_POINT_LIGHT_SHADOWS 0\n#define NUM_SPOT_LIGHT_SHADOWS 0\n#define NUM_SPOT_LIGHT_MAPS 0\n#define NUM_SPOT_LIGHT_COORDS 0\n` + ( lights?.probes ? '#define USE_LIGHT_PROBES\n' : '' ) + ( fog ? '#define USE_FOG\n' + ( fog.exp2 ? '#define FOG_EXP2\n' : '' ) : '' );
-		const flags = lighting + ( instanced ? '#define USE_INSTANCING\n' : '' ) + ( material.vertexColors ? '#define USE_COLOR\n' : '' ) + ( material.premultipliedAlpha ? '#define PREMULTIPLIED_ALPHA\n' : '' );
+		const [ directional, point, spot, hemisphere, directionalShadows, pointShadows, spotShadows ] = lights?.counts ?? [ 0, 0, 0, 0, 0, 0, 0 ];
+		const numbers = { NUM_DIR_LIGHTS: directional, NUM_POINT_LIGHTS: point, NUM_SPOT_LIGHTS: spot, NUM_RECT_AREA_LIGHTS: 0, NUM_HEMI_LIGHTS: hemisphere, NUM_DIR_LIGHT_SHADOWS: directionalShadows, NUM_POINT_LIGHT_SHADOWS: pointShadows, NUM_SPOT_LIGHT_SHADOWS: spotShadows, NUM_SPOT_LIGHT_MAPS: 0, NUM_SPOT_LIGHT_COORDS: spotShadows };
+		const lighting = `#define NUM_DIR_LIGHTS ${directional}\n#define NUM_POINT_LIGHTS ${point}\n#define NUM_SPOT_LIGHTS ${spot}\n#define NUM_RECT_AREA_LIGHTS 0\n#define NUM_HEMI_LIGHTS ${hemisphere}\n` + shadowDefines( lights ) + ( lights?.probes ? '#define USE_LIGHT_PROBES\n' : '' ) + ( fog ? '#define USE_FOG\n' + ( fog.exp2 ? '#define FOG_EXP2\n' : '' ) : '' );
+		const flags = lighting + ( instanced ? '#define USE_INSTANCING\n' : '' ) + ( material.vertexColors ? '#define USE_COLOR\n' : '' ) + ( material.premultipliedAlpha ? '#define PREMULTIPLIED_ALPHA\n' : '' ) + ( normals ? '#define HAS_NORMAL\n' : '' ) + ( side === 2 ? '#define DOUBLE_SIDED\n' : side === 1 ? '#define FLIP_SIDED\n' : '' );
 		const raw = material.isRawShaderMaterial === true, glsl3 = material.glslVersion === '300 es';
 		const strip = ( source ) => source.replace( /^\s*#version[^\n]*\n/, '' );
 		let vertex, fragment;
 
 		if ( raw ) {
 
-			vertex = material.vertexShader;
-			fragment = material.fragmentShader;
+			// as three.js, a raw material in GLSL 3 gets the version line
+			const version = glsl3 ? '#version 300 es\n' : '';
+			vertex = version + material.vertexShader;
+			fragment = version + material.fragmentShader;
+			const name = output === 'linear' ? ( /^\s*#version\s+300/.test( fragment ) ? outputName( fragment ) : 'gl_FragColor' ) : null;
+
+			if ( name !== null ) {
+
+				// after the `#version` line, which comes first
+				const version = fragment.match( /^\s*#version[^\n]*\n/ )?.[ 0 ] ?? '';
+				fragment = version + '#define main wamr_user_main\n' + fragment.slice( version.length ) + decodeOutput( name );
+
+			}
 
 		} else {
 
 			const header = '#version 300 es\nprecision highp float;\nprecision highp int;\n' + defines + flags;
 			const uniforms = 'uniform mat4 modelMatrix;\nuniform mat4 modelViewMatrix;\nuniform mat4 projectionMatrix;\nuniform mat4 viewMatrix;\nuniform mat3 normalMatrix;\nuniform vec3 cameraPosition;\nuniform bool isOrthographic;\n';
-			const attributes = ( glsl3 ? '' : GLSL1_VERTEX ) + 'in vec3 position;\nin vec3 normal;\nin vec2 uv;\n#ifdef USE_INSTANCING\nin mat4 instanceMatrix;\n#endif\n#ifdef USE_COLOR\nin vec3 color;\n#endif\n';
+			const attributes = GLSL1_VERTEX + 'in vec3 position;\nin vec3 normal;\nin vec2 uv;\n#ifdef USE_INSTANCING\nin mat4 instanceMatrix;\n#endif\n#ifdef USE_COLOR\nin vec3 color;\n#endif\n';
 			// the user's main, then the engine's flip of render targets
-			vertex = header + uniforms + attributes + 'uniform float wamr_flip_y;\n#define main wamr_user_main\n' + resolveIncludes( strip( material.vertexShader ) ) + '\n#undef main\nvoid main() {\n\twamr_user_main();\n\tgl_Position.y *= wamr_flip_y;\n}\n';
-			fragment = header + 'uniform mat4 viewMatrix;\nuniform vec3 cameraPosition;\nuniform bool isOrthographic;\n' + ( glsl3 ? '' : GLSL1_FRAGMENT ) + resolveIncludes( strip( material.fragmentShader ) );
+			vertex = header + uniforms + attributes + 'uniform float wamr_flip_y;\n#define main wamr_user_main\n' + unrollLoops( resolveIncludes( strip( material.vertexShader ) ), numbers ) + '\n#undef main\nvoid main() {\n\twamr_user_main();\n\tgl_Position.y *= wamr_flip_y;\n}\n';
+			const source = unrollLoops( resolveIncludes( strip( material.fragmentShader ) ), numbers );
+			const name = output === 'linear' ? ( glsl3 ? outputName( source ) : 'gl_FragColor' ) : null;
+			fragment = header + 'uniform mat4 viewMatrix;\nuniform vec3 cameraPosition;\nuniform bool isOrthographic;\n' + ( glsl3 ? '' : GLSL1_OUTPUT ) + GLSL1_FRAGMENT + COLORSPACE_PARS + outputTexel( output ) + ( name !== null ? '#define main wamr_user_main\n' + source + decodeOutput( name ) : source );
 
 		}
 
@@ -211,11 +263,15 @@ export function installPrograms( ctx ) {
 
 		if ( ! gl.getProgramParameter( id, gl.LINK_STATUS ) ) throw new Error( `WAMR3D: ShaderMaterial: ${gl.getProgramInfoLog( id )}` );
 		const uniforms = [];
+		// the engine's shadow maps stay on the units the frame binds them to
+		const engineUnits = { wamr_shadow_map: SHADOW_UNIT, wamr_vsm_map: VSM_UNIT };
+		gl.useProgram( id );
 
 		for ( let i = 0, n = gl.getProgramParameter( id, gl.ACTIVE_UNIFORMS ); i < n; i ++ ) {
 
 			const uniform = gl.getActiveUniform( id, i ), name = uniform.name.replace( /\[0\]$/, '' );
-			uniforms.push( { name, type: uniform.type, size: uniform.size, location: gl.getUniformLocation( id, uniform.name ) } );
+			if ( engineUnits[ name ] !== undefined ) gl.uniform1i( gl.getUniformLocation( id, uniform.name ), engineUnits[ name ] );
+			else uniforms.push( { name, type: uniform.type, size: uniform.size, location: gl.getUniformLocation( id, uniform.name ) } );
 
 		}
 
