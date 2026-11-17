@@ -120,6 +120,8 @@ export class ShaderMaterial extends Material {
 
 export class RawShaderMaterial extends ShaderMaterial { readonly isRawShaderMaterial: true }
 
+/** three.js `UniformsLib`: the uniform sets of the built-in shaders, by group (`lights`, `fog`, `common`, ...). */
+export const UniformsLib: Record<'common' | 'specularmap' | 'envmap' | 'aomap' | 'lightmap' | 'bumpmap' | 'normalmap' | 'displacementmap' | 'emissivemap' | 'metalnessmap' | 'roughnessmap' | 'gradientmap' | 'fog' | 'lights' | 'points' | 'sprite', Record<string, IUniform>>;
 export const UniformsUtils: { clone( uniforms: Record<string, IUniform> ): Record<string, IUniform>; merge( uniforms: Record<string, IUniform>[] ): Record<string, IUniform> };
 
 export class DepthTexture extends Texture {

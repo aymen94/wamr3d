@@ -171,7 +171,7 @@ The choices in force, and the IDs that code comments cite. Change one only toget
 - **D16** `engine/core/src/constants.rs` holds the buffer usage and attribute type values from three.js `constants.js`.
 - **D18** Integer typed-array stores wrap as JavaScript does (`Uint8ClampedArray` clamps and rounds half to even); they do not saturate.
 - **D21** `engine/bindings` (package `wamr3d`) is a thin `wasm-bindgen` shell with no `unsafe`; zero-copy views are built in JavaScript.
-- **D27** Visual parity compares against stored three.js WebGPU renders, within the tolerance in `parity/visual/cases.js`.
+- **D27** Visual parity compares against stored three.js WebGPU renders, within the tolerance in `parity/visual/cases.js`. Cases of GLSL shader materials, which three.js's WebGPU renderer cannot draw, compare WAMR3D's WebGL 2 backend against stored three.js WebGLRenderer renders instead (`WEBGL_REFERENCE` in `parity/visual/cases.js`).
 - **D32** Renderer split: Rust/Wasm prepares frame data and the WGSL and GLSL sources; JavaScript hosts (`webgpu.js`, `webgl.js`) own and issue the device, pipeline, buffer, texture and pass calls. Both hosts read the engine's uniform layout, so the engine and hosts ship together.
 - **D39** Random helpers use a SplitMix64 generator, seeded by `init()` and resettable with `setRandomSeed`; `seededRandom` stays Mulberry32.
 - **D40** Mesh shaders are specialised per material: the hosts pass the material's shading mode and present features (`SHADING_MODE`, `MATERIAL_FEATURES`, `STATE_FEATURES`, `MAP_FEATURES`, `LIGHT_FEATURES`) as GLSL `#define`s or WGSL `override`s; unset, every feature is decided at run time. A constant only clears a feature the material does not have, so output is unchanged.

@@ -25,11 +25,15 @@ function emptyShaderLights( lights ) {
 	lights.point = [];
 	lights.spot = [];
 	lights.hemisphere = [];
+	lights.casting = false;
 	return lights;
 
 }
 
-function collectShaderLight( lights, light ) {
+// `engineLight` is the light's index in the engine's light list when the engine draws its
+// shadow this frame, or -1. As in three.js, a light with `castShadow` counts as shadowed
+// even when no map is drawn for it; its shadow then lets all light through.
+function collectShaderLight( lights, light, engineLight ) {
 
 	const { r, g, b } = light.color, k = light.intensity, color = [ r * k, g * k, b * k ];
 
@@ -58,12 +62,35 @@ function collectShaderLight( lights, light ) {
 
 	const m = w().matrixWorld( light.handle ), position = [ m[ 12 ], m[ 13 ], m[ 14 ] ];
 	const t = light.target ? w().matrixWorld( light.target.handle ) : null, towards = t ? [ m[ 12 ] - t[ 12 ], m[ 13 ] - t[ 13 ], m[ 14 ] - t[ 14 ] ] : null;
-	if ( light.isHemisphereLight ) lights.hemisphere.push( { direction: position, skyColor: color, groundColor: [ light.groundColor.r * k, light.groundColor.g * k, light.groundColor.b * k ] } );
-	else if ( light.isDirectionalLight ) lights.directional.push( { direction: towards, color } );
-	else if ( light.isPointLight ) lights.point.push( { position, color, distance: light.distance, decay: light.decay } );
-	else if ( light.isSpotLight ) lights.spot.push( { position, direction: towards, color, distance: light.distance, decay: light.decay, coneCos: Math.cos( light.angle ), penumbraCos: Math.cos( light.angle * ( 1 - light.penumbra ) ) } );
+	if ( light.castShadow === true ) lights.casting = true;
+	if ( light.isHemisphereLight ) {
+
+		lights.hemisphere.push( { direction: position, skyColor: color, groundColor: [ light.groundColor.r * k, light.groundColor.g * k, light.groundColor.b * k ] } );
+		return;
+
+	}
+
+	let shadow = null;
+
+	if ( light.castShadow === true && ( light.isDirectionalLight || light.isPointLight || light.isSpotLight ) ) {
+
+		const s = light.shadow, far = light.isDirectionalLight ? s.camera.far : light.distance || s.camera.far;
+		shadow = { light: engineLight, shadowIntensity: s.intensity, shadowBias: s.bias, shadowNormalBias: s.normalBias, shadowRadius: s.radius, shadowMapSize: [ s.mapSize.width, s.mapSize.height ], shadowCameraNear: s.camera.near, shadowCameraFar: far, position };
+
+	}
+
+	if ( light.isDirectionalLight ) lights.directional.push( { direction: towards, color, shadow } );
+	else if ( light.isPointLight ) lights.point.push( { position, color, distance: light.distance, decay: light.decay, shadow } );
+	else if ( light.isSpotLight ) lights.spot.push( { position, direction: towards, color, distance: light.distance, decay: light.decay, coneCos: Math.cos( light.angle ), penumbraCos: Math.cos( light.angle * ( 1 - light.penumbra ) ), shadow } );
 
 }
+
+// The `SHADOWMAP_TYPE_` of a shadow map type; three.js draws PCFSoftShadowMap as PCF.
+const shadowKind = ( type ) => ( type === BasicShadowMap ? 'BASIC' : type === VSMShadowMap ? 'VSM' : 'PCF' );
+
+// three.js puts the lights that cast shadows first (keeping their order otherwise), so
+// that light i of a kind and shadow i of that kind are the same light.
+const castingFirst = ( a, b ) => ( b.shadow ? 1 : 0 ) - ( a.shadow ? 1 : 0 );
 
 // three.js's light uniforms of shader materials, in view space as three.js gives them.
 function shaderLightUniforms( lights, view ) {
@@ -83,12 +110,27 @@ function shaderLightUniforms( lights, view ) {
 		for ( const [ field, convert ] of fields ) uniforms[ `${name}[${i}].${field}` ] = convert ? convert( light[ field ] ) : light[ field ];
 
 	} );
+	lights.directional.sort( castingFirst );
+	lights.point.sort( castingFirst );
+	lights.spot.sort( castingFirst );
 	add( 'directionalLights', lights.directional, [ [ 'direction', direction ], [ 'color' ] ] );
 	add( 'pointLights', lights.point, [ [ 'position', point ], [ 'color' ], [ 'distance' ], [ 'decay' ] ] );
 	add( 'spotLights', lights.spot, [ [ 'position', point ], [ 'direction', direction ], [ 'color' ], [ 'distance' ], [ 'decay' ], [ 'coneCos' ], [ 'penumbraCos' ] ] );
 	add( 'hemisphereLights', lights.hemisphere, [ [ 'direction', direction ], [ 'skyColor' ], [ 'groundColor' ] ] );
-	const counts = [ lights.directional.length, lights.point.length, lights.spot.length, lights.hemisphere.length ];
-	return { uniforms, counts, probes: lights.probes, key: counts.join( ',' ) + ( lights.probes ? ',p' : '' ) };
+	// the shadow uniforms that do not depend on the maps; the WebGL host adds the maps and matrices
+	const shadows = { directional: [], point: [], spot: [] };
+	const SHADOW_FIELDS = [ [ 'shadowIntensity' ], [ 'shadowBias' ], [ 'shadowNormalBias' ], [ 'shadowRadius' ], [ 'shadowMapSize' ] ];
+
+	for ( const kind of [ 'directional', 'point', 'spot' ] ) {
+
+		for ( const light of lights[ kind ] ) if ( light.shadow ) shadows[ kind ].push( light.shadow );
+		add( kind + 'LightShadows', shadows[ kind ], kind === 'point' ? [ ...SHADOW_FIELDS, [ 'shadowCameraNear' ], [ 'shadowCameraFar' ] ] : SHADOW_FIELDS );
+
+	}
+
+	const counts = [ lights.directional.length, lights.point.length, lights.spot.length, lights.hemisphere.length, shadows.directional.length, shadows.point.length, shadows.spot.length ];
+	const shadowMap = lights.shadowMap;
+	return { uniforms, counts, shadows, shadowMap, probes: lights.probes, key: counts.join( ',' ) + ( lights.probes ? ',p' : '' ) + ( shadowMap !== null ? ',s' + shadowMap : '' ) };
 
 }
 
@@ -363,7 +405,13 @@ export class WebGPURenderer {
 			} else if ( object.isLight ) {
 
 				const { r, g, b } = object.color, k = object.intensity;
-				if ( shaderLights !== null ) collectShaderLight( shaderLights, object );
+				if ( shaderLights !== null ) {
+
+					// the index the engine gives this light, when it draws its shadow
+					const drawn = shadows && object.castShadow && lights < MAX_LIGHTS && ( object.isDirectionalLight || object.isPointLight || object.isSpotLight );
+					collectShaderLight( shaderLights, object, drawn ? lights : - 1 );
+
+				}
 
 				if ( object.isRectAreaLight ) {
 
@@ -437,6 +485,8 @@ export class WebGPURenderer {
 
 		}
 
+		// as three.js, shader materials get shadows when the shadow map is on and a light casts one
+		if ( shaderLights !== null ) shaderLights.shadowMap = shadows && shaderLights.casting ? shadowKind( this.shadowMap.type ) : null;
 		this._frame.setAmbientLight( ...sky, ...ground );
 		this._frame.setLightProbe( probe );
 

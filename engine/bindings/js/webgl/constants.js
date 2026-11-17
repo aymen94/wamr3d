@@ -27,6 +27,8 @@ export const SLOTS = 12, SHADOW_UNIT = 12, ENVIRONMENT_UNIT = 13, TRANSMISSION_U
 // the engine's object block, bound OBJECT_BLOCK_DRAWS at a time (16 KiB), and its
 // material block; `createWebGLBackend` checks both against the engine
 export const OBJECT_STRIDE = 128, OBJECT_FLOATS = 32, OBJECT_BLOCK_DRAWS = 128, MATERIAL_STRIDE = 2048, MATERIAL_FLOATS = 512;
+// the object block's flags (see the engine's `object_flags`), and the bit of `receiveShadow`
+export const RECEIVE_SHADOW_FLOAT = 28, RECEIVE_SHADOW_FLAG = 4;
 // Indices of a wireframe over `count` triangle vertices: two per edge, three edges per triangle.
 export const wireframeCount = ( count ) => Math.floor( count / 3 ) * 6;
 

@@ -340,6 +340,15 @@ function scenario( L ) {
 		copiedMaps.normalMap === bumpy.normalMap, copiedMaps.normalScale.y, copiedMaps.alphaTest
 	] );
 
+	// the uniform sets shader materials with lights and fog merge into theirs
+	const lib = L.UniformsLib, merged = L.UniformsUtils.merge( [ lib.common, lib.fog, lib.lights, { diffuse: { value: new L.Color( 0x336699 ) } } ] );
+	const lit = new L.ShaderMaterial( { lights: true, fog: true, uniforms: merged } );
+	put( 'uniforms lib', [
+		...[ 'common', 'specularmap', 'envmap', 'aomap', 'lightmap', 'bumpmap', 'normalmap', 'displacementmap', 'emissivemap', 'metalnessmap', 'roughnessmap', 'gradientmap', 'fog', 'lights', 'points', 'sprite' ].map( ( group ) => Object.keys( lib[ group ] ).length ),
+		lib.common.diffuse.value.getHex(), lib.common.opacity.value, lib.common.mapTransform.value.elements[ 0 ], lib.envmap.ior.value, lib.envmap.refractionRatio.value, lib.normalmap.normalScale.value.y, lib.fog.fogDensity.value, lib.fog.fogNear.value, lib.fog.fogFar.value, lib.fog.fogColor.value.getHex(),
+		lib.lights.directionalLights.value.length, lib.lights.directionalLightShadows.properties.shadowIntensity, lib.lights.pointLightShadows.value.length, lib.lights.ltc_1.value === null, lib.points.size.value, lib.sprite.center.value.x,
+		Object.keys( merged ).length, merged.diffuse.value.getHex(), merged.fogColor.value !== lib.fog.fogColor.value, merged.fogColor.value.getHex(), lit.lights, lit.fog, lit.uniforms.fogFar.value, lit.uniforms.directionalShadowMatrix.value.length
+	] );
 
 	return out;
 
@@ -351,7 +360,8 @@ let expected;
 
 if ( generate ) {
 
-	const T = await import( 'three/src/Three.Core.js' );
+	// UniformsLib and UniformsUtils are exported with the WebGL renderer, not by the core
+	const T = { ...await import( 'three/src/Three.Core.js' ), ...await import( 'three/src/renderers/shaders/UniformsLib.js' ), ...await import( 'three/src/renderers/shaders/UniformsUtils.js' ) };
 	expected = scenario( T );
 	const lines = expected.map( ( [ label, values ] ) => JSON.stringify( [ label, values.map( encode ) ] ) );
 	fs.writeFileSync( EXPECTED, `{"reference":"three@0.186.1","generator":"parity/bindings/compat-check.mjs --generate","groups":[\n${lines.join( ',\n' )}\n]}\n` );

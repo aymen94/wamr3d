@@ -21,6 +21,9 @@ export async function main( canvas: HTMLCanvasElement ): Promise<void> {
 	camera.lookAt( 0, 0, 0 );
 
 	const material = new THREE.MeshStandardMaterial( { color: 0x4f8cff, roughness: 0.5, metalness: 0.1, transparent: true, opacity: 0.8 } );
+	// a shader material that receives shadows, with three.js's light uniforms merged in
+	const shadowed = new THREE.ShaderMaterial( { lights: true, uniforms: THREE.UniformsUtils.merge( [ THREE.UniformsLib.lights, { diffuse: { value: new THREE.Color( 0xffffff ) } } ] ) } );
+	shadowed.uniforms.diffuse.value.setHex( 0x808080 );
 	const cube = new THREE.Mesh( new THREE.BoxGeometry( 1, 1, 1 ), material );
 	cube.rotation.y += 0.01;
 	cube.quaternion.normalize();
