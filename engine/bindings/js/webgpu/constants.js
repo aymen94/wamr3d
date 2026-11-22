@@ -12,13 +12,13 @@ export const warnOnce = ( what ) => {
 
 };
 
-// Vertex inputs with a buffer of their own, in location order: name, floats per vertex.
-// They are the first records of `Renderer.geometryState`; tangent, uv1, skinIndex,
-// skinWeight and lineDistance follow and are interleaved into one buffer (`AUX_SLOT`).
-export const ATTRIBUTES = [ [ 'position', 3 ], [ 'normal', 3 ], [ 'uv', 2 ], [ 'color', 3 ] ];
+// Vertex inputs with a buffer of their own (`ATTRIBUTES`, shared with the WebGL 2 host);
+// tangent, uv1, skinIndex, skinWeight and lineDistance follow them in the geometry records
+// and are interleaved into one buffer (`AUX_SLOT`).
+export { ATTRIBUTES, VERTEX_COLOR_SLOT } from '../pools.js';
 export const AUX_ATTRIBUTES = 5, AUX_STRIDE = 60, AUX_FLOATS = 15, AUX_SIZES = [ 4, 2, 4, 4, 1 ], AUX_OFFSETS = [ 0, 4, 6, 10, 14 ];
 export const TOPOLOGIES = [ 'triangle-list', 'line-strip', 'line-list', 'point-list' ];
-export const VERTEX_COLOR_SLOT = 3, MATRIX_SLOT = 4, COLOR_SLOT = 5, AUX_SLOT = 6, OBJECT_SLOT = 7;
+export const MATRIX_SLOT = 4, COLOR_SLOT = 5, AUX_SLOT = 6, OBJECT_SLOT = 7;
 
 // Engine pipeline-key bits: a line strip closed back to its first vertex, colours of four
 // floats, a mesh drawn as the edges of its triangles, interleaved extra attributes,

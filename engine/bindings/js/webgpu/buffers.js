@@ -3,6 +3,7 @@
 // Part of the WebGPU host; `../webgpu.js` creates the device and draws the frames.
 
 import { memory } from '../index.js';
+import { POOL_MAX_INDICES, POOL_MIN_INDICES, POOL_MIN_VERTICES, allocate, deallocate, poolSignature } from '../pools.js';
 import { auxRecord } from './formats.js';
 import { ATTRIBUTES, AUX_ATTRIBUTES, AUX_FLOATS, AUX_OFFSETS, AUX_SIZES, AUX_SLOT, VERTEX_COLOR_SLOT, wireframeCount } from './constants.js';
 
@@ -29,68 +30,13 @@ export function installBuffers( ctx ) {
 	}
 
 	// Small geometries without tangents, second uvs or skinning share buffers: one pool per
-	// set of inputs (which of position, normal, uv and colour the shader reads, and the
-	// colour's floats), with a buffer per input and one for the indices. A draw reaches its
+	// set of inputs (`poolSignature`: which of position, normal, uv and colour the shader
+	// reads, and the colour's floats), with a buffer per input and one for the indices. A draw reaches its
 	// geometry through `baseVertex` and `firstIndex`, so going from one pooled geometry to
 	// another of the same pool binds nothing; indices stay relative to their geometry.
 	// Pools grow by copying into larger buffers, which happens only while geometries are
 	// uploaded, before the frame's passes are recorded.
-	const POOL_MAX_VERTICES = 65536, POOL_MAX_INDICES = 393216, POOL_MIN_VERTICES = 16384, POOL_MIN_INDICES = 49152;
 	const pools = new Map();
-
-	function poolSignature( state, o, vertices, colorSize, auxKey ) {
-
-		if ( auxKey !== '' || vertices === 0 || vertices > POOL_MAX_VERTICES ) return - 1;
-		let signature = 0;
-		for ( let i = 0, p = o + 4; i < ATTRIBUTES.length; i ++, p += 2 ) if ( state[ p ] !== 0 ) signature |= 1 << i;
-		return signature & 1 << VERTEX_COLOR_SLOT ? signature | colorSize << 4 : signature;
-
-	}
-
-	// First fit in a list of free `start, length` pairs in address order.
-	function allocate( free, length ) {
-
-		for ( let i = 0; i < free.length; i += 2 ) {
-
-			if ( free[ i + 1 ] < length ) continue;
-			const start = free[ i ];
-			if ( free[ i + 1 ] === length ) free.splice( i, 2 );
-			else {
-
-				free[ i ] += length;
-				free[ i + 1 ] -= length;
-
-			}
-
-			return start;
-
-		}
-
-		return - 1;
-
-	}
-
-	function deallocate( free, start, length ) {
-
-		let i = 0;
-		while ( i < free.length && free[ i ] < start ) i += 2;
-		free.splice( i, 0, start, length );
-
-		if ( i + 2 < free.length && start + length === free[ i + 2 ] ) {
-
-			free[ i + 1 ] += free[ i + 3 ];
-			free.splice( i + 2, 2 );
-
-		}
-
-		if ( i > 0 && free[ i - 2 ] + free[ i - 1 ] === start ) {
-
-			free[ i - 1 ] += free[ i + 1 ];
-			free.splice( i, 2 );
-
-		}
-
-	}
 
 	function poolStride( pool, slot ) {
 

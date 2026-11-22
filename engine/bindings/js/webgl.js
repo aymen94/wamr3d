@@ -55,7 +55,7 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 	installTextures( ctx );
 	installShadows( ctx );
 	installEnvironment( ctx );
-	const { applyMaterialState, applyState, resetState, background, backgroundBuffer, backgroundProgram, bindObjects, objectRange, uploadObjects, bindCustomAttributes, bindGeometry, bindGeometryArrays, bindInstances, bindMaps, bindQuads, bindRange, defaultArrays, depthSampler, distinct, draw, drawShadows, drawWireframe, effectProgram, ensureShadowTexture, finishPrograms, entries, environment, environmentFramebuffer, environments, frameBuffer, geometries, geometry, hdrTarget, info, instanced, instances, levelBuffers, materialBuffer, meshProgram, multiply, normalMatrix, objectBuffer, panoramaSampler, perInstance, program, programs, quadSource, release, renderTarget, renderTargets, scratchBuffer, screenSampler, setTextures, setUniforms, shaderProgram, shadowFramebuffer, startProgram, shadowObjectBuffer, stackFramebuffer, texture, textures, transmissionTarget, unbindArrays, upload, uploadBones, vsmFramebuffer, white } = ctx;
+	const { disposePools, ownBuffers, poolIndex, applyMaterialState, applyState, resetState, background, backgroundBuffer, backgroundProgram, bindObjects, objectRange, uploadObjects, bindCustomAttributes, bindGeometry, bindGeometryArrays, bindInstances, bindMaps, bindQuads, bindRange, defaultArrays, depthSampler, distinct, draw, drawShadows, drawWireframe, effectProgram, ensureShadowTexture, finishPrograms, entries, environment, environmentFramebuffer, environments, frameBuffer, geometries, geometry, hdrTarget, info, instanced, instances, levelBuffers, materialBuffer, meshProgram, multiply, normalMatrix, objectBuffer, panoramaSampler, perInstance, program, programs, quadSource, release, renderTarget, renderTargets, scratchBuffer, screenSampler, setTextures, setUniforms, shaderProgram, shadowFramebuffer, startProgram, shadowObjectBuffer, stackFramebuffer, texture, textures, transmissionTarget, unbindArrays, upload, uploadBones, vsmFramebuffer, white } = ctx;
 	// ---------------------------------------------------------------- frame
 
 	gl.enable( gl.DEPTH_TEST );
@@ -203,6 +203,8 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 				set = null;
 				bindInstances( instance );
 				boundInstances = instance;
+				// its own attributes and gl_VertexID number the geometry's vertices from 0
+				ownBuffers( world, entry );
 				bindGeometry( entry );
 				bindCustomAttributes( world, entry, shader );
 				bound = null;
@@ -272,12 +274,13 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 
 			if ( instance === null && ( key & WIREFRAME_KEY ) === 0 ) {
 
-				if ( entry !== arrays ) {
+				// geometries of one pool share their vertex array
+				if ( ( entry.pool ?? entry ) !== arrays ) {
 
 					bindGeometryArrays( entry );
-					arrays = entry;
+					arrays = entry.pool ?? entry;
 
-				}
+				} else if ( entry.pool ) poolIndex( entry );
 
 				// The following draws of the same geometry range, material, textures and key,
 				// with blocks in the bound group, are the next instances of one draw.
@@ -583,6 +586,7 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 			renderTargets.clear();
 			for ( const entry of geometries.values() ) release( entry );
 			geometries.clear();
+			disposePools();
 			for ( const entry of textures.values() ) gl.deleteTexture( entry.texture );
 			textures.clear();
 			for ( const entry of instanced.values() ) {
