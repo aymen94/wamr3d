@@ -553,6 +553,8 @@ export async function createWebGLBackend( canvas, { antialias = true, powerPrefe
 
 				}
 
+				disposePools( true );
+
 				for ( const [ id, entry ] of textures ) if ( stale( entry ) ) {
 
 					gl.deleteTexture( entry.texture );

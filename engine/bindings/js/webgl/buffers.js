@@ -3,7 +3,7 @@
 // Part of the WebGL 2 host; `../webgl.js` creates the context and draws the frames.
 
 import { memory } from '../index.js';
-import { POOL_MIN_VERTICES, allocate, deallocate, poolSignature } from '../pools.js';
+import { POOL_MIN_VERTICES, allocate, deallocate, grownCapacity, mayJoin, poolSignature, refusal } from '../pools.js';
 import { auxRecord } from '../webgpu/formats.js';
 import { OBJECT_BLOCK_DRAWS, OBJECT_FLOATS, OBJECT_STRIDE } from './constants.js';
 import { ALPHA_TO_COVERAGE_KEY, ATTRIBUTES, AUX_ATTRIBUTES, BLEND_COLOR_FLOAT, COLOR_WRITE_OFF_KEY, DEPTH_FUNC_SHIFT, POLYGON_OFFSET_FLOAT, STENCIL_FLOAT, AUX_FLOATS, AUX_LOCATIONS, AUX_OFFSETS, AUX_SIZES, AUX_STRIDE, INSTANCE_COLOR_SLOT, INSTANCE_SLOT, LOOP_KEY, MISSING, PREMULTIPLIED_KEY, QUAD_B, QUAD_COLOR_B, QUAD_KEY, VERTEX_COLOR_SLOT, wireframeCount } from './constants.js';
@@ -54,8 +54,8 @@ export function installBuffers( ctx ) {
 	function growPool( pool, needed ) {
 
 		const old = pool.vertexCapacity;
-		const capacity = Math.max( old * 2, old + needed, POOL_MIN_VERTICES );
-		if ( capacity * 16 > POOL_MAX_BYTES ) return false;
+		const capacity = grownCapacity( old, needed, POOL_MIN_VERTICES, 16, POOL_MAX_BYTES );
+		if ( capacity < 0 ) return false;
 		// the vertex array reads the old buffers
 		dropPoolArrays( pool );
 
@@ -128,7 +128,7 @@ export function installBuffers( ctx ) {
 	function joinPool( world, entry, signature, vertices ) {
 
 		let pool = pools.get( signature );
-		if ( ! pool ) pools.set( signature, pool = { signature, colorSize: signature >> 4, buffers: [ null, null, null, null ], arrays: null, boundIndex: null, vertexCapacity: 0, vertexFree: [], members: new Set() } );
+		if ( ! pool ) pools.set( signature, pool = { signature, colorSize: signature >> 4, buffers: [ null, null, null, null ], arrays: null, boundIndex: null, vertexCapacity: 0, vertexFree: [], members: new Set(), freed: 0 } );
 		let base = allocate( pool.vertexFree, vertices );
 		if ( base < 0 && growPool( pool, vertices ) ) base = allocate( pool.vertexFree, vertices );
 		if ( base < 0 ) return false;
@@ -170,6 +170,7 @@ export function installBuffers( ctx ) {
 		const pool = entry.pool;
 		pool.members.delete( entry );
 		deallocate( pool.vertexFree, entry.baseVertex, entry.poolVertices );
+		pool.freed ++;
 		entry.pool = null;
 		entry.baseVertex = 0;
 		entry.buffers.fill( null );
@@ -190,16 +191,18 @@ export function installBuffers( ctx ) {
 
 	}
 
-	function disposePools() {
+	// Frees the pools, or with `emptyOnly` those no geometry is in. Called between frames:
+	// a geometry that leaves its pool and joins it again within a frame keeps it.
+	function disposePools( emptyOnly = false ) {
 
-		for ( const pool of pools.values() ) {
+		for ( const [ signature, pool ] of pools ) {
 
+			if ( emptyOnly && pool.members.size > 0 ) continue;
 			dropPoolArrays( pool );
 			for ( const buffer of pool.buffers ) if ( buffer ) gl.deleteBuffer( buffer );
+			pools.delete( signature );
 
 		}
-
-		pools.clear();
 
 	}
 
@@ -217,7 +220,7 @@ export function installBuffers( ctx ) {
 
 		}
 
-		if ( ! entry ) geometries.set( slot, entry = { generation, handle: BigInt( generation ) << 32n | BigInt( slot ), buffers: [ null, null, null, null ], versions: [ - 1, - 1, - 1, - 1 ], sizes: [ 0, 0, 0, 0 ], aux: null, auxVersions: '', index: null, indexVersion: - 1, quads: null, checked: 0, pool: null, baseVertex: 0, poolVertices: 0, refused: - 2, unpooled: false, record: null, recordAt: 0 } );
+		if ( ! entry ) geometries.set( slot, entry = { generation, handle: BigInt( generation ) << 32n | BigInt( slot ), buffers: [ null, null, null, null ], versions: [ - 1, - 1, - 1, - 1 ], sizes: [ 0, 0, 0, 0 ], aux: null, auxVersions: '', index: null, indexVersion: - 1, quads: null, checked: 0, pool: null, baseVertex: 0, poolVertices: 0, refused: null, unpooled: false, record: null, recordAt: 0 } );
 		entry.checked = ctx.frameNumber;
 		entry.record = state;
 		entry.recordAt = o;
@@ -234,10 +237,10 @@ export function installBuffers( ctx ) {
 
 		}
 
-		if ( ! entry.pool && signature >= 0 && entry.refused !== indexVersion ) {
+		if ( ! entry.pool && signature >= 0 && mayJoin( entry.refused, signature, indexVersion, vertices ) ) {
 
-			if ( joinPool( world, entry, signature, vertices ) ) entry.indexVersion = indexVersion;
-			else entry.refused = indexVersion;
+			entry.refused = joinPool( world, entry, signature, vertices ) ? null : refusal( pools.get( signature ) ?? null, signature, indexVersion, vertices );
+			if ( entry.pool ) entry.indexVersion = indexVersion;
 
 		}
 

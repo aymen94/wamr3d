@@ -21,6 +21,30 @@ export function poolSignature( state, o, vertices, colorSize, auxKey ) {
 
 }
 
+// The capacity a pool of `old` elements of up to `bytes` each grows to for `needed` more,
+// at most `maxBytes`; -1 if they do not fit.
+export function grownCapacity( old, needed, minimum, bytes, maxBytes ) {
+
+	const capacity = Math.min( Math.max( old * 2, old + needed, minimum ), Math.floor( maxBytes / bytes ) );
+	return capacity < old + needed ? - 1 : capacity;
+
+}
+
+// A geometry left out of its pool tries again only when that may change: its inputs,
+// index or vertex count changed, or its pool (`pool`, which was full) gave space back
+// since. A pool counts that in `freed`.
+export function refusal( pool, signature, indexVersion, vertices ) {
+
+	return { pool, freed: pool ? pool.freed : 0, signature, indexVersion, vertices };
+
+}
+
+export function mayJoin( refused, signature, indexVersion, vertices ) {
+
+	return refused === null || refused.signature !== signature || refused.indexVersion !== indexVersion || refused.vertices !== vertices || ( refused.pool !== null && refused.pool.freed !== refused.freed );
+
+}
+
 // First fit in a list of free `start, length` pairs in address order.
 export function allocate( free, length ) {
 
