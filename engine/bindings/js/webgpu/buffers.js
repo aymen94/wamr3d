@@ -3,6 +3,7 @@
 // Part of the WebGPU host; `../webgpu.js` creates the device and draws the frames.
 
 import { memory } from '../index.js';
+import { POOL_MAX_INDICES, POOL_MIN_INDICES, POOL_MIN_VERTICES, allocate, deallocate, grownCapacity, mayJoin, poolSignature, refusal } from '../pools.js';
 import { auxRecord } from './formats.js';
 import { ATTRIBUTES, AUX_ATTRIBUTES, AUX_FLOATS, AUX_OFFSETS, AUX_SIZES, AUX_SLOT, VERTEX_COLOR_SLOT, wireframeCount } from './constants.js';
 
@@ -29,68 +30,13 @@ export function installBuffers( ctx ) {
 	}
 
 	// Small geometries without tangents, second uvs or skinning share buffers: one pool per
-	// set of inputs (which of position, normal, uv and colour the shader reads, and the
-	// colour's floats), with a buffer per input and one for the indices. A draw reaches its
+	// set of inputs (`poolSignature`: which of position, normal, uv and colour the shader
+	// reads, and the colour's floats), with a buffer per input and one for the indices. A draw reaches its
 	// geometry through `baseVertex` and `firstIndex`, so going from one pooled geometry to
 	// another of the same pool binds nothing; indices stay relative to their geometry.
 	// Pools grow by copying into larger buffers, which happens only while geometries are
 	// uploaded, before the frame's passes are recorded.
-	const POOL_MAX_VERTICES = 65536, POOL_MAX_INDICES = 393216, POOL_MIN_VERTICES = 16384, POOL_MIN_INDICES = 49152;
 	const pools = new Map();
-
-	function poolSignature( state, o, vertices, colorSize, auxKey ) {
-
-		if ( auxKey !== '' || vertices === 0 || vertices > POOL_MAX_VERTICES ) return - 1;
-		let signature = 0;
-		for ( let i = 0, p = o + 4; i < ATTRIBUTES.length; i ++, p += 2 ) if ( state[ p ] !== 0 ) signature |= 1 << i;
-		return signature & 1 << VERTEX_COLOR_SLOT ? signature | colorSize << 4 : signature;
-
-	}
-
-	// First fit in a list of free `start, length` pairs in address order.
-	function allocate( free, length ) {
-
-		for ( let i = 0; i < free.length; i += 2 ) {
-
-			if ( free[ i + 1 ] < length ) continue;
-			const start = free[ i ];
-			if ( free[ i + 1 ] === length ) free.splice( i, 2 );
-			else {
-
-				free[ i ] += length;
-				free[ i + 1 ] -= length;
-
-			}
-
-			return start;
-
-		}
-
-		return - 1;
-
-	}
-
-	function deallocate( free, start, length ) {
-
-		let i = 0;
-		while ( i < free.length && free[ i ] < start ) i += 2;
-		free.splice( i, 0, start, length );
-
-		if ( i + 2 < free.length && start + length === free[ i + 2 ] ) {
-
-			free[ i + 1 ] += free[ i + 3 ];
-			free.splice( i + 2, 2 );
-
-		}
-
-		if ( i > 0 && free[ i - 2 ] + free[ i - 1 ] === start ) {
-
-			free[ i - 1 ] += free[ i + 1 ];
-			free.splice( i, 2 );
-
-		}
-
-	}
 
 	function poolStride( pool, slot ) {
 
@@ -102,8 +48,9 @@ export function installBuffers( ctx ) {
 	function growPool( pool, needed, indices ) {
 
 		const old = indices ? pool.indexCapacity : pool.vertexCapacity;
-		const capacity = Math.max( old * 2, old + needed, indices ? POOL_MIN_INDICES : POOL_MIN_VERTICES );
-		if ( capacity * 16 > device.limits.maxBufferSize ) return false;
+		// a vertex takes at most 16 bytes in a pool buffer (and in the buffer of zeros), an index 4
+		const capacity = indices ? grownCapacity( old, needed, POOL_MIN_INDICES, 4, device.limits.maxBufferSize ) : grownCapacity( old, needed, POOL_MIN_VERTICES, 16, device.limits.maxBufferSize );
+		if ( capacity < 0 ) return false;
 		const encoder = device.createCommandEncoder(), retired = [];
 
 		const replace = ( buffer, stride, usage ) => {
@@ -159,7 +106,7 @@ export function installBuffers( ctx ) {
 		const index = world.getIndex( entry.handle );
 		if ( index.length > POOL_MAX_INDICES ) return false;
 		let pool = pools.get( signature );
-		if ( ! pool ) pools.set( signature, pool = { signature, colorSize: signature >> 4, buffers: [ null, null, null, null ], index: null, vertexCapacity: 0, indexCapacity: 0, vertexFree: [], indexFree: [], members: new Set() } );
+		if ( ! pool ) pools.set( signature, pool = { signature, colorSize: signature >> 4, buffers: [ null, null, null, null ], index: null, vertexCapacity: 0, indexCapacity: 0, vertexFree: [], indexFree: [], members: new Set(), freed: 0 } );
 
 		let base = allocate( pool.vertexFree, vertices );
 		if ( base < 0 && growPool( pool, vertices, false ) ) base = allocate( pool.vertexFree, vertices );
@@ -203,6 +150,7 @@ export function installBuffers( ctx ) {
 		pool.members.delete( entry );
 		deallocate( pool.vertexFree, entry.baseVertex, entry.poolVertices );
 		if ( entry.indexCount > 0 ) deallocate( pool.indexFree, entry.firstIndex, entry.indexCount );
+		pool.freed ++;
 		entry.pool = null;
 		entry.baseVertex = entry.firstIndex = entry.indexCount = 0;
 		entry.buffers.fill( null );
@@ -212,16 +160,18 @@ export function installBuffers( ctx ) {
 
 	}
 
-	function disposePools() {
+	// Frees the pools, or with `emptyOnly` those no geometry is in. Called between frames:
+	// a geometry that leaves its pool and joins it again within a frame keeps it.
+	function disposePools( emptyOnly = false ) {
 
-		for ( const pool of pools.values() ) {
+		for ( const [ signature, pool ] of pools ) {
 
+			if ( emptyOnly && pool.members.size > 0 ) continue;
 			for ( const buffer of pool.buffers ) buffer?.destroy();
 			pool.index?.destroy();
+			pools.delete( signature );
 
 		}
-
-		pools.clear();
 
 	}
 
@@ -241,7 +191,7 @@ export function installBuffers( ctx ) {
 
 		}
 
-		if ( ! entry ) geometries.set( slot, entry = { generation, handle: BigInt( generation ) << 32n | BigInt( slot ), vertices: 0, buffers: [ null, null, null, null ], versions: [ - 1, - 1, - 1, - 1 ], sizes: [ 0, 0, 0, 0 ], aux: null, auxVersions: '', index: null, indexVersion: - 1, loops: null, quads: null, checked: 0, pool: null, baseVertex: 0, firstIndex: 0, indexCount: 0, poolVertices: 0, refused: - 2 } );
+		if ( ! entry ) geometries.set( slot, entry = { generation, handle: BigInt( generation ) << 32n | BigInt( slot ), vertices: 0, buffers: [ null, null, null, null ], versions: [ - 1, - 1, - 1, - 1 ], sizes: [ 0, 0, 0, 0 ], aux: null, auxVersions: '', index: null, indexVersion: - 1, loops: null, quads: null, checked: 0, pool: null, baseVertex: 0, firstIndex: 0, indexCount: 0, poolVertices: 0, refused: null } );
 		entry.checked = ctx.frameNumber;
 		entry.vertices = vertices;
 		const records = ATTRIBUTES.length + AUX_ATTRIBUTES;
@@ -251,10 +201,10 @@ export function installBuffers( ctx ) {
 		// a geometry whose inputs, size or index changed is placed again
 		if ( entry.pool && ( signature !== entry.pool.signature || vertices !== entry.poolVertices || indexVersion !== entry.indexVersion ) ) leavePool( entry );
 
-		if ( ! entry.pool && signature >= 0 && entry.refused !== indexVersion ) {
+		if ( ! entry.pool && signature >= 0 && mayJoin( entry.refused, signature, indexVersion, vertices ) ) {
 
-			if ( joinPool( world, entry, signature, vertices ) ) entry.indexVersion = indexVersion;
-			else entry.refused = indexVersion;
+			entry.refused = joinPool( world, entry, signature, vertices ) ? null : refusal( pools.get( signature ) ?? null, signature, indexVersion, vertices );
+			if ( entry.pool ) entry.indexVersion = indexVersion;
 
 		}
 

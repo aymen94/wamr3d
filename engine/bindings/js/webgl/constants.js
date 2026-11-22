@@ -3,10 +3,10 @@
 // Part of the WebGL 2 host; `../webgl.js` creates the context and draws the frames.
 
 export const UNUSED_FRAMES = 300;
-// Vertex inputs with a buffer each, in location order, with their floats per vertex; the
-// colour may have four. Tangent, uv1, skinIndex and skinWeight follow in the geometry
-// records and are interleaved into one buffer at locations 9 to 12, with lineDistance at 15.
-export const ATTRIBUTES = [ [ 'position', 3 ], [ 'normal', 3 ], [ 'uv', 2 ], [ 'color', 3 ] ];
+// Vertex inputs with a buffer each (`ATTRIBUTES`, shared with the WebGPU host), at their
+// slot's location. Tangent, uv1, skinIndex and skinWeight follow in the geometry records
+// and are interleaved into one buffer at locations 9 to 12, with lineDistance at 15.
+export { ATTRIBUTES, VERTEX_COLOR_SLOT } from '../pools.js';
 // tangent 4 floats, uv1 2, skinIndex 4, skinWeight 4, lineDistance 1, at these locations
 // Pipeline-key bits of a material's state (see the engine's `pipeline_key`), and the
 // floats of a material block the host reads: blend colour, then depth function, colour
@@ -19,7 +19,7 @@ export const AUX_ATTRIBUTES = 5, AUX_STRIDE = 60, AUX_FLOATS = 15;
 export const AUX_LOCATIONS = [ 9, 10, 11, 12, 15 ], AUX_SIZES = [ 4, 2, 4, 4, 1 ], AUX_OFFSETS = [ 0, 4, 6, 10, 14 ];
 // What a missing input reads, as the WebGPU host's buffer of zeros gives it.
 export const MISSING = [ [ 0, 0, 0, 1 ], [ 0, 0, 0, 1 ], [ 0, 0, 0, 1 ], [ 0, 0, 0, 1 ] ];
-export const VERTEX_COLOR_SLOT = 3, INSTANCE_SLOT = 4, INSTANCE_COLOR_SLOT = 8, QUAD_B = 13, QUAD_COLOR_B = 14;
+export const INSTANCE_SLOT = 4, INSTANCE_COLOR_SLOT = 8, QUAD_B = 13, QUAD_COLOR_B = 14;
 export const LOOP_KEY = 1 << 7, RGBA_COLOR_KEY = 1 << 8, WIREFRAME_KEY = 1 << 9, PREMULTIPLIED_KEY = 1 << 14, QUAD_KEY = 1 << 15;
 // Texture units: the twelve slots of a draw (the vertex stage reads slot 9), then the
 // shadow maps, the environments, the transmission copy, the VSM moments, and the bones.

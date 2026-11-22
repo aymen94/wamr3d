@@ -538,6 +538,8 @@ export async function createBackend( canvas, { antialias = true, powerPreference
 
 				}
 
+				disposePools( true );
+
 				for ( const [ id, entry ] of textures ) {
 
 					if ( ctx.frameNumber - entry.checked < UNUSED_FRAMES ) continue;

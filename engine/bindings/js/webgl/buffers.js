@@ -3,6 +3,7 @@
 // Part of the WebGL 2 host; `../webgl.js` creates the context and draws the frames.
 
 import { memory } from '../index.js';
+import { POOL_MIN_VERTICES, allocate, deallocate, grownCapacity, mayJoin, poolSignature, refusal } from '../pools.js';
 import { auxRecord } from '../webgpu/formats.js';
 import { OBJECT_BLOCK_DRAWS, OBJECT_FLOATS, OBJECT_STRIDE } from './constants.js';
 import { ALPHA_TO_COVERAGE_KEY, ATTRIBUTES, AUX_ATTRIBUTES, BLEND_COLOR_FLOAT, COLOR_WRITE_OFF_KEY, DEPTH_FUNC_SHIFT, POLYGON_OFFSET_FLOAT, STENCIL_FLOAT, AUX_FLOATS, AUX_LOCATIONS, AUX_OFFSETS, AUX_SIZES, AUX_STRIDE, INSTANCE_COLOR_SLOT, INSTANCE_SLOT, LOOP_KEY, MISSING, PREMULTIPLIED_KEY, QUAD_B, QUAD_COLOR_B, QUAD_KEY, VERTEX_COLOR_SLOT, wireframeCount } from './constants.js';
@@ -34,6 +35,177 @@ export function installBuffers( ctx ) {
 	const geometries = new Map(), instanced = new Map();
 	const entries = [], perInstance = [], distinct = [], setTextures = [];
 
+	// Small geometries share vertex buffers as on the WebGPU host (`poolSignature`): a
+	// buffer per input and one vertex array per pool, so going from one geometry to the next
+	// binds at most its index (a vertex array switch per draw cost ANGLE on Metal about
+	// 2 µs). WebGL 2 has no base vertex: a pooled geometry's index, a buffer of its own, is
+	// stored with its first vertex added, and its draws without index start at that vertex.
+	// The indices stay apart because ANGLE checks each draw's index range in its buffer: in
+	// one shared index buffer that ran out of memory at 10,000 geometries.
+	// Draws that number the geometry's vertices themselves (shader materials, with their
+	// own attribute buffers) take it out of its pool for good (`ownBuffers`).
+	// Geometries write their place in a pool buffer directly; pools grow into larger
+	// buffers, which happens only while geometries are uploaded, before the frame's draws.
+	const POOL_MAX_BYTES = 1 << 28;
+	const pools = new Map();
+
+	const poolSize = ( pool, slot ) => ( slot === VERTEX_COLOR_SLOT ? pool.colorSize : ATTRIBUTES[ slot ][ 1 ] );
+
+	function growPool( pool, needed ) {
+
+		const old = pool.vertexCapacity;
+		const capacity = grownCapacity( old, needed, POOL_MIN_VERTICES, 16, POOL_MAX_BYTES );
+		if ( capacity < 0 ) return false;
+		// the vertex array reads the old buffers
+		dropPoolArrays( pool );
+
+		for ( let slot = 0; slot < ATTRIBUTES.length; slot ++ ) {
+
+			if ( ( pool.signature & 1 << slot ) === 0 ) continue;
+			const floats = poolSize( pool, slot ), previous = pool.buffers[ slot ], buffer = gl.createBuffer();
+			const data = new Float32Array( capacity * floats );
+
+			// Read back rather than `copyBufferSubData`: on ANGLE on Metal every later
+			// `bufferSubData` into a buffer written by a copy was slow (10,000 geometries took
+			// 3.5 s instead of 0.4 s to their first frame).
+			if ( previous ) {
+
+				gl.bindBuffer( gl.COPY_READ_BUFFER, previous );
+				gl.getBufferSubData( gl.COPY_READ_BUFFER, 0, data, 0, old * floats );
+				gl.deleteBuffer( previous );
+
+			}
+
+			gl.bindBuffer( gl.COPY_WRITE_BUFFER, buffer );
+			gl.bufferData( gl.COPY_WRITE_BUFFER, data, gl.DYNAMIC_DRAW );
+			info.uploads ++;
+
+			pool.buffers[ slot ] = buffer;
+
+		}
+
+		pool.vertexCapacity = capacity;
+		deallocate( pool.vertexFree, old, capacity - old );
+		for ( const entry of pool.members ) poolBuffers( entry );
+		return true;
+
+	}
+
+	function poolBuffers( entry ) {
+
+		const pool = entry.pool;
+		for ( let slot = 0; slot < ATTRIBUTES.length; slot ++ ) entry.buffers[ slot ] = pool.buffers[ slot ];
+
+	}
+
+	function dropPoolArrays( pool ) {
+
+		if ( ! pool.arrays ) return;
+		if ( arraysBound === pool.arrays ) defaultArrays();
+		gl.deleteVertexArray( pool.arrays );
+		pool.arrays = null;
+		pool.boundIndex = null;
+
+	}
+
+	// Binds a pooled geometry's index in its pool's vertex array, which is bound.
+	function poolIndex( entry ) {
+
+		const pool = entry.pool;
+
+		if ( pool.boundIndex !== entry.index ) {
+
+			gl.bindBuffer( gl.ELEMENT_ARRAY_BUFFER, entry.index );
+			pool.boundIndex = entry.index;
+
+		}
+
+	}
+
+	// Moves `entry` into the pool for `signature` and uploads its index, rebased; its
+	// attributes are written afterwards (their versions are reset). Returns false if it
+	// stays on its own.
+	function joinPool( world, entry, signature, vertices ) {
+
+		let pool = pools.get( signature );
+		if ( ! pool ) pools.set( signature, pool = { signature, colorSize: signature >> 4, buffers: [ null, null, null, null ], arrays: null, boundIndex: null, vertexCapacity: 0, vertexFree: [], members: new Set(), freed: 0 } );
+		let base = allocate( pool.vertexFree, vertices );
+		if ( base < 0 && growPool( pool, vertices ) ) base = allocate( pool.vertexFree, vertices );
+		if ( base < 0 ) return false;
+		dropArrays( entry );
+		for ( const buffer of entry.buffers ) if ( buffer ) gl.deleteBuffer( buffer );
+		uploadRebased( world, entry, base );
+		entry.pool = pool;
+		entry.baseVertex = base;
+		entry.poolVertices = vertices;
+		entry.versions.fill( - 1 );
+		pool.members.add( entry );
+		poolBuffers( entry );
+		return true;
+
+	}
+
+	// Uploads the geometry's index with `base` added, or frees its index buffer if it has
+	// no index.
+	function uploadRebased( world, entry, base ) {
+
+		const index = world.getIndex( entry.handle );
+
+		if ( index.length > 0 ) {
+
+			if ( base > 0 ) for ( let i = 0; i < index.length; i ++ ) index[ i ] += base;
+			entry.index = upload( gl.ELEMENT_ARRAY_BUFFER, index, entry.index );
+
+		} else if ( entry.index ) {
+
+			gl.deleteBuffer( entry.index );
+			entry.index = null;
+
+		}
+
+	}
+
+	function leavePool( entry ) {
+
+		const pool = entry.pool;
+		pool.members.delete( entry );
+		deallocate( pool.vertexFree, entry.baseVertex, entry.poolVertices );
+		pool.freed ++;
+		entry.pool = null;
+		entry.baseVertex = 0;
+		entry.buffers.fill( null );
+		entry.versions.fill( - 1 );
+		// its index, rebased, is uploaded again into the same buffer
+		entry.indexVersion = - 1;
+
+	}
+
+	// Takes a pooled geometry out of its pool for good and uploads its own buffers again,
+	// from this frame's record of it.
+	function ownBuffers( world, entry ) {
+
+		if ( ! entry.pool ) return;
+		entry.unpooled = true;
+		leavePool( entry );
+		geometry( world, entry.record, entry.recordAt );
+
+	}
+
+	// Frees the pools, or with `emptyOnly` those no geometry is in. Called between frames:
+	// a geometry that leaves its pool and joins it again within a frame keeps it.
+	function disposePools( emptyOnly = false ) {
+
+		for ( const [ signature, pool ] of pools ) {
+
+			if ( emptyOnly && pool.members.size > 0 ) continue;
+			dropPoolArrays( pool );
+			for ( const buffer of pool.buffers ) if ( buffer ) gl.deleteBuffer( buffer );
+			pools.delete( signature );
+
+		}
+
+	}
+
 	// GPU buffers follow the engine's data, re-uploaded when an attribute's version changes
 	// (see `Renderer.geometryState`).
 	function geometry( world, state, o ) {
@@ -48,10 +220,29 @@ export function installBuffers( ctx ) {
 
 		}
 
-		if ( ! entry ) geometries.set( slot, entry = { generation, handle: BigInt( generation ) << 32n | BigInt( slot ), buffers: [ null, null, null, null ], versions: [ - 1, - 1, - 1, - 1 ], sizes: [ 0, 0, 0, 0 ], aux: null, auxVersions: '', index: null, indexVersion: - 1, quads: null, checked: 0 } );
+		if ( ! entry ) geometries.set( slot, entry = { generation, handle: BigInt( generation ) << 32n | BigInt( slot ), buffers: [ null, null, null, null ], versions: [ - 1, - 1, - 1, - 1 ], sizes: [ 0, 0, 0, 0 ], aux: null, auxVersions: '', index: null, indexVersion: - 1, quads: null, checked: 0, pool: null, baseVertex: 0, poolVertices: 0, refused: null, unpooled: false, record: null, recordAt: 0 } );
 		entry.checked = ctx.frameNumber;
+		entry.record = state;
+		entry.recordAt = o;
 		const records = ATTRIBUTES.length + AUX_ATTRIBUTES;
-		const colorSize = state[ o + 4 + records * 2 ];
+		const colorSize = state[ o + 4 + records * 2 ], indexVersion = state[ o + 3 + records * 2 ];
+		const auxKey = auxRecord( state, o + 3 + ATTRIBUTES.length * 2, AUX_ATTRIBUTES );
+		const signature = entry.unpooled ? - 1 : poolSignature( state, o, vertices, colorSize, auxKey );
+		// a geometry whose inputs or size changed is placed again; a new index keeps its place
+		if ( entry.pool && ( signature !== entry.pool.signature || vertices !== entry.poolVertices ) ) leavePool( entry );
+		else if ( entry.pool && indexVersion !== entry.indexVersion ) {
+
+			uploadRebased( world, entry, entry.baseVertex );
+			entry.indexVersion = indexVersion;
+
+		}
+
+		if ( ! entry.pool && signature >= 0 && mayJoin( entry.refused, signature, indexVersion, vertices ) ) {
+
+			entry.refused = joinPool( world, entry, signature, vertices ) ? null : refusal( pools.get( signature ) ?? null, signature, indexVersion, vertices );
+			if ( entry.pool ) entry.indexVersion = indexVersion;
+
+		}
 
 		for ( let i = 0, p = o + 3; i < ATTRIBUTES.length; i ++, p += 2 ) {
 
@@ -73,14 +264,25 @@ export function installBuffers( ctx ) {
 			}
 
 			if ( version === entry.versions[ i ] && size === entry.sizes[ i ] ) continue;
-			if ( ! entry.buffers[ i ] || size !== entry.sizes[ i ] ) dropArrays( entry );
-			entry.buffers[ i ] = upload( gl.ARRAY_BUFFER, new Float32Array( memory().buffer, address, vertices * size ), entry.buffers[ i ] );
+			const data = new Float32Array( memory().buffer, address, vertices * size );
+
+			if ( entry.pool ) {
+
+				gl.bindBuffer( gl.ARRAY_BUFFER, entry.buffers[ i ] );
+				gl.bufferSubData( gl.ARRAY_BUFFER, entry.baseVertex * size * 4, data );
+				info.uploads ++;
+
+			} else {
+
+				if ( ! entry.buffers[ i ] || size !== entry.sizes[ i ] ) dropArrays( entry );
+				entry.buffers[ i ] = upload( gl.ARRAY_BUFFER, data, entry.buffers[ i ] );
+
+			}
+
 			entry.versions[ i ] = version;
 			entry.sizes[ i ] = size;
 
 		}
-
-		const auxKey = auxRecord( state, o + 3 + ATTRIBUTES.length * 2, AUX_ATTRIBUTES );
 
 		if ( auxKey !== entry.auxVersions ) {
 
@@ -114,9 +316,8 @@ export function installBuffers( ctx ) {
 
 		}
 
-		const indexVersion = state[ o + 3 + records * 2 ];
-
-		if ( indexVersion !== entry.indexVersion ) {
+		// a pooled geometry's index is written rebased, above
+		if ( ! entry.pool && indexVersion !== entry.indexVersion ) {
 
 			const index = world.getIndex( entry.handle );
 
@@ -175,6 +376,7 @@ export function installBuffers( ctx ) {
 
 	function release( entry ) {
 
+		if ( entry.pool ) leavePool( entry );
 		dropArrays( entry );
 		for ( const buffer of entry.buffers ) if ( buffer ) gl.deleteBuffer( buffer );
 		if ( entry.aux ) gl.deleteBuffer( entry.aux );
@@ -191,11 +393,12 @@ export function installBuffers( ctx ) {
 	// them. Kept per geometry until its index changes.
 	function wireframeIndex( world, entry, start, count ) {
 
-		if ( ! entry.edges || entry.edgesVersion !== entry.indexVersion ) {
+		if ( ! entry.edges || entry.edgesVersion !== entry.indexVersion || entry.edgesBase !== entry.baseVertex ) {
 
 			if ( entry.edges ) for ( const edges of entry.edges.values() ) gl.deleteBuffer( edges );
 			entry.edges = new Map();
 			entry.edgesVersion = entry.indexVersion;
+			entry.edgesBase = entry.baseVertex;
 
 		}
 
@@ -203,12 +406,12 @@ export function installBuffers( ctx ) {
 		let buffer = entry.edges.get( key );
 		if ( buffer ) return buffer;
 
-		const index = entry.index ? world.getIndex( entry.handle ) : null;
+		const index = entry.index ? world.getIndex( entry.handle ) : null, base = entry.baseVertex;
 		const data = new Uint32Array( wireframeCount( count ) );
 
 		for ( let i = start, o = 0; o < data.length; i += 3, o += 6 ) {
 
-			const a = index ? index[ i ] : i, b = index ? index[ i + 1 ] : i + 1, c = index ? index[ i + 2 ] : i + 2;
+			const a = ( index ? index[ i ] : i ) + base, b = ( index ? index[ i + 1 ] : i + 1 ) + base, c = ( index ? index[ i + 2 ] : i + 2 ) + base;
 			data[ o ] = a; data[ o + 1 ] = b; data[ o + 2 ] = b; data[ o + 3 ] = c; data[ o + 4 ] = c; data[ o + 5 ] = a;
 
 		}
@@ -323,11 +526,12 @@ export function installBuffers( ctx ) {
 	// it before they change any input.
 	function bindGeometryArrays( entry ) {
 
-		let arrays = entry.arrays;
+		const owner = entry.pool ?? entry;
+		let arrays = owner.arrays;
 
 		if ( ! arrays ) {
 
-			arrays = entry.arrays = gl.createVertexArray();
+			arrays = owner.arrays = gl.createVertexArray();
 			gl.bindVertexArray( arrays );
 
 			for ( let slot = 0; slot < ATTRIBUTES.length; slot ++ ) {
@@ -353,11 +557,13 @@ export function installBuffers( ctx ) {
 
 			}
 
-			gl.bindBuffer( gl.ELEMENT_ARRAY_BUFFER, entry.index );
+			// a pool's array gets the index of each geometry drawn (`poolIndex`)
+			if ( ! entry.pool ) gl.bindBuffer( gl.ELEMENT_ARRAY_BUFFER, entry.index );
 
 		} else if ( arraysBound !== arrays ) gl.bindVertexArray( arrays );
 
 		arraysBound = arrays;
+		if ( entry.pool ) poolIndex( entry );
 
 		// what the inputs without arrays read: as `bindGeometry` and `bindInstances( null )` set them
 		for ( let slot = 0; slot < ATTRIBUTES.length; slot ++ ) {
@@ -411,7 +617,8 @@ export function installBuffers( ctx ) {
 
 			}
 
-			return { position: entry.buffers[ 0 ], color: entry.buffers[ VERTEX_COLOR_SLOT ], colorSize: entry.sizes[ VERTEX_COLOR_SLOT ], distance: entry.distances.buffer };
+			// the geometry's own vertices start at its place in a pool
+			return { position: entry.buffers[ 0 ], color: entry.buffers[ VERTEX_COLOR_SLOT ], colorSize: entry.sizes[ VERTEX_COLOR_SLOT ], distance: entry.distances.buffer, shift: entry.baseVertex };
 
 		}
 
@@ -439,7 +646,7 @@ export function installBuffers( ctx ) {
 
 		const colorSize = entry.sizes[ VERTEX_COLOR_SLOT ];
 		entry.quads = {
-			key, colorSize,
+			key, colorSize, shift: 0,
 			position: upload( gl.ARRAY_BUFFER, unrolled( world.getAttribute( entry.handle, 'position' ), 3 ) ),
 			color: entry.buffers[ VERTEX_COLOR_SLOT ] ? upload( gl.ARRAY_BUFFER, unrolled( world.getAttribute( entry.handle, 'color' ), colorSize ) ) : null,
 			distance: ( ',' + entry.auxVersions ).includes( ',4:' ) ? upload( gl.ARRAY_BUFFER, unrolled( world.getAttribute( entry.handle, 'lineDistance' ), 1 ) ) : null
@@ -451,16 +658,16 @@ export function installBuffers( ctx ) {
 	// Points or segments read per instance, from the first instance on.
 	function bindQuads( source, topology, first ) {
 
-		const pairs = topology === 2, step = pairs ? 2 : 1;
+		const pairs = topology === 2, step = pairs ? 2 : 1, vertex = first * step + source.shift;
 
-		arrayInput( 0, source.position, 3, step * 12, first * step * 12, 1 );
-		arrayInput( QUAD_B, source.position, 3, step * 12, first * step * 12 + ( topology === 3 ? 0 : 12 ), 1 );
+		arrayInput( 0, source.position, 3, step * 12, vertex * 12, 1 );
+		arrayInput( QUAD_B, source.position, 3, step * 12, vertex * 12 + ( topology === 3 ? 0 : 12 ), 1 );
 
 		if ( source.color ) {
 
 			const c = source.colorSize;
-			arrayInput( VERTEX_COLOR_SLOT, source.color, c, step * c * 4, first * step * c * 4, 1 );
-			arrayInput( QUAD_COLOR_B, source.color, c, step * c * 4, first * step * c * 4 + ( topology === 3 ? 0 : c * 4 ), 1 );
+			arrayInput( VERTEX_COLOR_SLOT, source.color, c, step * c * 4, vertex * c * 4, 1 );
+			arrayInput( QUAD_COLOR_B, source.color, c, step * c * 4, vertex * c * 4 + ( topology === 3 ? 0 : c * 4 ), 1 );
 
 		} else {
 
@@ -645,7 +852,7 @@ export function installBuffers( ctx ) {
 	function draw( key, entry, start, vertices, copies ) {
 
 		if ( entry.index ) gl.drawElementsInstanced( mode( key ), vertices, gl.UNSIGNED_INT, start * 4, copies );
-		else gl.drawArraysInstanced( mode( key ), start, vertices, copies );
+		else gl.drawArraysInstanced( mode( key ), entry.baseVertex + start, vertices, copies );
 
 	}
 
@@ -735,6 +942,6 @@ export function installBuffers( ctx ) {
 
 	}
 
-	Object.assign( ctx, { applyMaterialState, resetState, applyState, arrayInput, forgetInput, backgroundBuffer, bindGeometry, bindGeometryArrays, bindObjects, defaultArrays, bindInstances, bindMaps, bindQuads, bindRange, objectRange, uploadObjects, distinct, draw, drawWireframe, entries, frameBuffer, geometries, geometry, info, instanced, instances, materialBuffer, objectBuffer, perInstance, quadSource, release, scratchBuffer, setTextures, shadowObjectBuffer, unbindArrays, upload } );
+	Object.assign( ctx, { disposePools, ownBuffers, poolIndex, applyMaterialState, resetState, applyState, arrayInput, forgetInput, backgroundBuffer, bindGeometry, bindGeometryArrays, bindObjects, defaultArrays, bindInstances, bindMaps, bindQuads, bindRange, objectRange, uploadObjects, distinct, draw, drawWireframe, entries, frameBuffer, geometries, geometry, info, instanced, instances, materialBuffer, objectBuffer, perInstance, quadSource, release, scratchBuffer, setTextures, shadowObjectBuffer, unbindArrays, upload } );
 
 }
